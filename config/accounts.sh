@@ -5,13 +5,13 @@
 # Do NOT put secrets here - use 1Password for those.
 
 # 1Password account shorthand
-export OP_ACCOUNT="guild_education"
+export OP_ACCOUNT="my"
 
 # Project directories for `proj` command (colon-separated)
 export PROJ_DIRS="$HOME/projects:$HOME/work:$HOME/src"
 
 # Default AWS profile (optional)
-export AWS_PROFILE="guild-dev"
+export AWS_PROFILE
 
 # Default Git branch names
 export GIT_MAIN_BRANCH="main"
