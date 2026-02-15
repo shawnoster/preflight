@@ -3,14 +3,19 @@
 #
 # This file contains account identifiers and configuration.
 # Do NOT put secrets here - use 1Password for those.
+#
+# SETUP: Copy this to accounts.sh and customize for your environment
+#   cp config/accounts.sh.template config/accounts.sh
 
 # 1Password account shorthand
+# Examples: "my", "personal", "work", "guild_education"
 export OP_ACCOUNT="my"
 
 # Project directories for `proj` command (colon-separated)
 export PROJ_DIRS="$HOME/projects:$HOME/work:$HOME/src"
 
 # Default AWS profile (optional)
+# Examples: "default", "guild-dev", "personal"
 export AWS_PROFILE
 
 # Default Git branch names

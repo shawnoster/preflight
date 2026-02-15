@@ -1,0 +1,7 @@
+# Local configuration files (use .template versions as starting point)
+config/accounts.sh
+lib/1password.sh
+
+# Environment-specific overrides
+.env
+.env.local
