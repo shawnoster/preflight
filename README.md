@@ -50,10 +50,9 @@ op account add --shorthand guild_education
 
 | Command | Description |
 |---------|-------------|
-| `switch-aws-profile` / `awsp` | Fuzzy-select AWS profile |
-| `aws-whoami` | Show current AWS identity |
-| `aws-login [profile]` | SSO login for profile |
-| `aws-sso-switch` | Select profile and SSO login |
+| `awsp` | Fuzzy-select and switch AWS profile |
+| `aws-whoami` | Show current profile, region, and identity |
+| `aws-login [profile]` | SSO login (fuzzy-selects if no profile given) |
 
 ### Project Tools (`lib/project.sh`)
 

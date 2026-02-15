@@ -13,32 +13,20 @@ Available Commands:
 -------------------
 
 aws-help
-  Display this help message showing all available AWS commands.
-
-switch-aws-profile
-  Interactively select and switch AWS profile using fzf.
-  Sets the AWS_PROFILE environment variable.
+  Display this help message.
 
 awsp
-  Alias for switch-aws-profile.
+  Fuzzy-select and switch AWS profile (alias for switch-aws-profile).
+  Sets the AWS_PROFILE environment variable without logging in.
 
 aws-whoami
-  Show current AWS identity and profile information.
-  Displays the AWS_PROFILE and runs sts get-caller-identity.
+  Show current AWS profile, region, and caller identity.
 
 aws-login [profile]
-  Perform SSO login for specified profile.
-  Arguments:
-    profile - Optional. AWS profile name (default: $AWS_PROFILE)
+  SSO login. Uses the given profile, falls back to $AWS_PROFILE,
+  or offers fuzzy selection if neither is set.
+  Also sets AWS_PROFILE to the resolved profile.
   Example: aws-login guild-dev
-
-aws-sso-switch
-  Interactively select profile and perform SSO login.
-  Combines profile switching with SSO authentication.
-
-Common Aliases:
----------------
-awsp - Quick access to switch-aws-profile
 
 Configuration:
 --------------
@@ -76,26 +64,25 @@ aws-whoami() {
   else
     echo "📍 Profile: $AWS_PROFILE"
   fi
-  aws sts get-caller-identity 2>/dev/null || echo "❌ Not authenticated or no valid credentials"
+
+  local region
+  region=$(aws configure get region 2>/dev/null)
+  [[ -n "$region" ]] && echo "🌎 Region:  $region"
+
+  aws sts get-caller-identity --output table 2>/dev/null || echo "❌ Not authenticated or no valid credentials"
 }
 
-# Quick SSO login for current profile
+# SSO login — with optional profile arg or fzf selection
 aws-login() {
   local profile="${1:-$AWS_PROFILE}"
-  if [[ -z "$profile" ]]; then
-    echo "⚠️ No profile specified and AWS_PROFILE not set"
-    echo "Usage: aws-login <profile> or set AWS_PROFILE first"
-    return 1
-  fi
-  aws sso login --profile "$profile"
-}
 
-# List and switch to an SSO session
-aws-sso-switch() {
-  local profile
-  profile=$(aws configure list-profiles | fzf --prompt="Select profile for SSO login > ")
-  if [[ -n "$profile" ]]; then
-    export AWS_PROFILE="$profile"
-    aws sso login --profile "$profile"
+  # No profile given and none set — offer interactive selection
+  if [[ -z "$profile" ]]; then
+    profile=$(aws configure list-profiles | fzf --prompt="Select profile for SSO login > ")
+    [[ -z "$profile" ]] && return 0
   fi
+
+  export AWS_PROFILE="$profile"
+  echo "📍 Profile: $AWS_PROFILE"
+  aws sso login --profile "$profile"
 }

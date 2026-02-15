@@ -17,7 +17,7 @@ Module Help Commands:
 
 aws-help
   AWS CLI utilities including profile switching, SSO login, and identity.
-  Commands: switch-aws-profile, aws-whoami, aws-login, aws-sso-switch
+  Commands: awsp, aws-whoami, aws-login
 
 docker-help
   Docker utilities for container management and cleanup.
