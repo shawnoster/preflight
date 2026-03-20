@@ -35,6 +35,10 @@ project-help
   Project navigation and build tool runners.
   Commands: bake, yak, poet, proj, serve
 
+assistant-help
+  Assistant launcher shortcuts.
+  Commands: ace
+
 Quick Reference:
 ----------------
 
@@ -56,6 +60,7 @@ Build tools:
   bake                     # Run Makefile targets
   yak                      # Run npm scripts
   poet                     # Run poetry scripts
+  ace                      # Jump to ~/guild and launch claude
 
 Configuration:
 --------------
@@ -88,6 +93,7 @@ Getting Started:
    git-help
    op-help
    project-help
+   assistant-help
 
 For more details on any module, run its help command (e.g., 'aws-help').
 
@@ -96,3 +102,21 @@ EOF
 
 # Alias for convenience
 alias devhelp='dev-help'
+
+assistant-help() {
+  cat <<'EOF'
+Assistant Launcher Utilities
+============================
+
+Available Commands:
+-------------------
+
+ace
+  Jump to ~/guild and launch Claude CLI.
+  Equivalent to: cd ~/guild && claude
+
+Usage:
+  ace
+
+EOF
+}

@@ -22,9 +22,12 @@ source ~/.bashrc
 ├── init.sh              # Main loader
 ├── lib/
 │   ├── 1password.sh     # 1Password CLI utilities
+│   ├── assistant.sh     # Claude launcher (ace)
 │   ├── aws.sh           # AWS profile management
 │   ├── docker.sh        # Docker utilities
+│   ├── doctor.sh        # Environment health check (doctor / dr)
 │   ├── git.sh           # Git shortcuts
+│   ├── help.sh          # Unified help system (dev-help / devhelp)
 │   └── project.sh       # Build tool wrappers
 └── config/
     └── accounts.sh      # Non-secret configuration
@@ -32,14 +35,40 @@ source ~/.bashrc
 
 ## Available Commands
 
+### Assistant (`lib/assistant.sh`)
+
+| Command | Description |
+|---------|-------------|
+| `ace` | `cd ~/guild && claude` — canonical AI assistant launch |
+
+### Environment Health (`lib/doctor.sh`)
+
+| Command | Description |
+|---------|-------------|
+| `doctor` / `dr` | Full environment health check: tokens, SSH, AWS, installed tools |
+
+### Help (`lib/help.sh`)
+
+| Command | Description |
+|---------|-------------|
+| `dev-help` / `devhelp` | Unified help menu for all modules |
+| `assistant-help` | Help for assistant commands |
+| `aws-help` | Help for AWS commands |
+| `docker-help` | Help for Docker commands |
+| `git-help` | Help for Git commands |
+| `op-help` | Help for 1Password commands |
+| `project-help` | Help for project navigation commands |
+
 ### 1Password (`lib/1password.sh`)
 
 | Command | Description |
 |---------|-------------|
 | `op-status` | Check if signed in to 1Password |
-| `op-signin [account]` | Sign in to 1Password (prompts for password) |
-| `set-secure-env` | Load secrets into environment variables |
-| `clear-secure-env` | Clear sensitive environment variables |
+| `op-signin [account]` | Sign in to 1Password |
+| `op-load-env` | Load all secrets from 1Password into env vars |
+| `op-clear-env` | Clear all sensitive environment variables |
+
+**Secrets loaded by `op-load-env`:** `ANTHROPIC_API_KEY`, `ATLASSIAN_API_TOKEN`, `GITHUB_TOKEN`, `NPM_TOKEN`, `DATADOG_API_KEY`, `SONAR_TOKEN`, and more.
 
 **Initial setup:**
 ```bash

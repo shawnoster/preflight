@@ -1,7 +1,21 @@
 {
   "permissions": {
     "allow": [
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(git stash show:*)",
+      "Bash(for file in README.md bashrc-snippet.sh config/accounts.sh init.sh lib/{aws,docker,git,help,project}.sh)",
+      "Bash(do echo \"=== $file ===\")",
+      "Bash(if git diff --quiet HEAD stash@{0}^3 -- \"$file\")",
+      "Bash(then echo \"No differences\")",
+      "Bash(else echo \"HAS DIFFERENCES\")",
+      "Bash(fi)",
+      "Bash(done)",
+      "Bash(git rm:*)",
+      "Bash(git stash:*)",
+      "Bash(git add:*)",
+      "Bash(git push:*)",
+      "Bash(git checkout:*)",
+      "Bash(git merge:*)"
     ]
   }
 }
