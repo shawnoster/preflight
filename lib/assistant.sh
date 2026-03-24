@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # ~/.dev/lib/assistant.sh - Assistant launcher shortcuts
 
-# ace: jump to guild control-plane root and launch Claude
-ace() {
+# aya: jump to guild control-plane root and launch Claude
+aya() {
   local target="$HOME/guild"
 
   if [[ ! -d "$target" ]]; then
