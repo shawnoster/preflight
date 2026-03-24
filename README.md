@@ -1,8 +1,33 @@
-# Developer Environment Scripts
+# Sizzle — Developer Environment Scripts
 
-A modular collection of shell utilities for development workflows.
+A modular collection of shell utilities for development workflows. Drop it in `~/.dev`, source it from `.bashrc`, and get fuzzy-powered shortcuts for AWS, Docker, Git, 1Password, project navigation, and AI assistants.
 
-## Installation
+## Getting Started
+
+```bash
+# 1. Clone to home directory
+git clone git@github.com:shawnoster/sizzle.git ~/.dev
+
+# 2. Add to your .bashrc (near the end)
+echo '[[ -f "$HOME/.dev/init.sh" ]] && source "$HOME/.dev/init.sh"' >> ~/.bashrc
+
+# 3. Reload your shell
+source ~/.bashrc
+
+# 4. Configure your accounts
+cp ~/.dev/config/accounts.sh.template ~/.dev/config/accounts.sh
+cp ~/.dev/lib/1password.sh.template ~/.dev/lib/1password.sh
+# Edit both files with your settings
+
+# 5. Start your session
+dev-up    # Signs in to 1Password, loads secrets, refreshes AWS, runs health check
+```
+
+After setup, start every new terminal session with `dev-up` or run individual commands as needed. Use `dev-commands` to see everything available, or `dev-help` for the full menu.
+
+## Manual Installation
+
+If you prefer not to clone:
 
 ```bash
 # Copy to home directory
