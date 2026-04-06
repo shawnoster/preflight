@@ -3,7 +3,6 @@
 #
 # Requires: docker, fzf
 
-# Display help for all Docker commands
 docker-help() {
   cat <<'EOF'
 Docker Utilities
@@ -13,37 +12,29 @@ Available Commands:
 -------------------
 
 docker-help
-  Display this help message showing all available Docker commands.
+  Display this help message.
 
-dex [shell]
-  Fuzzy select and exec into a running container.
-  Arguments:
-    shell - Optional. Shell to use (default: /bin/sh)
-  Example: dex /bin/bash
+dex [container] [shell]
+  Exec into a running container. Pass container name to skip fzf.
+  shell defaults to /bin/sh.
 
-dlogs
-  Fuzzy select a container and tail its logs.
-  Use Ctrl+C to stop tailing.
+dlogs [container]
+  Tail container logs. Pass container name to skip fzf.
 
-dstop
-  Fuzzy select and stop one or more running containers.
-  Supports multi-select (Tab to select multiple).
+dstop [container...]
+  Stop one or more containers. Pass names to skip fzf (supports multi-select).
 
-drm
-  Fuzzy select and remove one or more containers.
-  Supports multi-select (Tab to select multiple).
+drm [container...]
+  Remove one or more containers. Pass names to skip fzf (supports multi-select).
 
-drmi
-  Fuzzy select and remove one or more images.
-  Supports multi-select (Tab to select multiple).
+drmi [image...]
+  Remove one or more images. Pass names to skip fzf (supports multi-select).
 
 dprune
   Clean up Docker resources (stopped containers, dangling images, etc).
-  Non-interactive, safe cleanup.
 
 dprune-all
-  Aggressive cleanup including volumes.
-  Prompts for confirmation before proceeding.
+  Aggressive cleanup including volumes. Prompts for confirmation.
 
 Common Aliases:
 ---------------
@@ -63,50 +54,92 @@ Requirements:
 EOF
 }
 
-# dex: fuzzy exec into running container
+# dex: exec into running container
 dex() {
-  local container
-  container=$(docker ps --format '{{.Names}}\t{{.Image}}\t{{.Status}}' | fzf --prompt="Select container > " | cut -f1)
+  local container="${1:-}"
+  local shell="${2:-/bin/sh}"
+
+  if [[ -z "$container" ]]; then
+    if [[ ! -t 0 ]]; then
+      echo "Usage: dex <container> [shell]" >&2
+      return 1
+    fi
+    container=$(docker ps --format '{{.Names}}\t{{.Image}}\t{{.Status}}' | fzf --prompt="Select container > " | cut -f1)
+  fi
+
   if [[ -n "$container" ]]; then
-    local shell="${1:-/bin/sh}"
-    docker exec -it "$container" "$shell"
+    if [[ -t 0 && -t 1 ]]; then
+      docker exec -it "$container" "$shell"
+    else
+      docker exec -i "$container" "$shell"
+    fi
   fi
 }
 
-# dlogs: fuzzy select container and tail logs
+# dlogs: tail container logs
 dlogs() {
-  local container
-  container=$(docker ps -a --format '{{.Names}}\t{{.Image}}\t{{.Status}}' | fzf --prompt="Select container > " | cut -f1)
-  if [[ -n "$container" ]]; then
-    docker logs -f "$container"
+  local container="${1:-}"
+
+  if [[ -z "$container" ]]; then
+    if [[ ! -t 0 ]]; then
+      echo "Usage: dlogs <container>" >&2
+      return 1
+    fi
+    container=$(docker ps -a --format '{{.Names}}\t{{.Image}}\t{{.Status}}' | fzf --prompt="Select container > " | cut -f1)
   fi
+
+  [[ -n "$container" ]] && docker logs -f "$container"
 }
 
-# dstop: fuzzy select and stop containers
+# dstop: stop containers
 dstop() {
+  if [[ $# -gt 0 ]]; then
+    docker stop "$@"
+    return
+  fi
+
+  if [[ ! -t 0 ]]; then
+    echo "Usage: dstop <container...>" >&2
+    return 1
+  fi
+
   local containers
   containers=$(docker ps --format '{{.Names}}\t{{.Image}}' | fzf -m --prompt="Select containers to stop > " | cut -f1)
-  if [[ -n "$containers" ]]; then
-    echo "$containers" | xargs docker stop
-  fi
+  [[ -n "$containers" ]] && echo "$containers" | xargs docker stop
 }
 
-# drm: fuzzy select and remove containers
+# drm: remove containers
 drm() {
+  if [[ $# -gt 0 ]]; then
+    docker rm "$@"
+    return
+  fi
+
+  if [[ ! -t 0 ]]; then
+    echo "Usage: drm <container...>" >&2
+    return 1
+  fi
+
   local containers
   containers=$(docker ps -a --format '{{.Names}}\t{{.Image}}\t{{.Status}}' | fzf -m --prompt="Select containers to remove > " | cut -f1)
-  if [[ -n "$containers" ]]; then
-    echo "$containers" | xargs docker rm
-  fi
+  [[ -n "$containers" ]] && echo "$containers" | xargs docker rm
 }
 
-# drmi: fuzzy select and remove images
+# drmi: remove images
 drmi() {
+  if [[ $# -gt 0 ]]; then
+    docker rmi "$@"
+    return
+  fi
+
+  if [[ ! -t 0 ]]; then
+    echo "Usage: drmi <image...>" >&2
+    return 1
+  fi
+
   local images
   images=$(docker images --format '{{.Repository}}:{{.Tag}}\t{{.Size}}\t{{.CreatedSince}}' | fzf -m --prompt="Select images to remove > " | cut -f1)
-  if [[ -n "$images" ]]; then
-    echo "$images" | xargs docker rmi
-  fi
+  [[ -n "$images" ]] && echo "$images" | xargs docker rmi
 }
 
 # dprune: clean up docker resources
@@ -118,7 +151,7 @@ dprune() {
 
 # dprune-all: aggressive cleanup (includes volumes)
 dprune-all() {
-  echo "⚠️ This will remove all unused containers, networks, images, and volumes"
+  echo "⚠️  This will remove all unused containers, networks, images, and volumes"
   read -p "Continue? [y/N] " -n 1 -r
   echo
   if [[ $REPLY =~ ^[Yy]$ ]]; then

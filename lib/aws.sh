@@ -3,7 +3,6 @@
 #
 # Requires: aws cli, fzf
 
-# Display help for all AWS commands
 aws-help() {
   cat <<'EOF'
 AWS CLI Utilities
@@ -15,9 +14,10 @@ Available Commands:
 aws-help
   Display this help message.
 
-awsp
-  Fuzzy-select and switch AWS profile (alias for switch-aws-profile).
+awsp [profile]
+  Switch AWS profile. Pass a profile name directly or pick interactively with fzf.
   Sets the AWS_PROFILE environment variable without logging in.
+  Example: awsp guild-prod-readonly
 
 aws-whoami
   Show current AWS profile, region, and caller identity.
@@ -41,26 +41,32 @@ Requirements:
 EOF
 }
 
-# Switch AWS profile interactively
+# Switch AWS profile — pass a name directly or pick interactively
 switch-aws-profile() {
-  local profile
-  profile=$(aws configure list-profiles | fzf --prompt="Select AWS Profile > ")
+  local profile="${1:-}"
+
+  if [[ -z "$profile" ]]; then
+    if [[ ! -t 0 ]]; then
+      echo "Usage: awsp <profile>" >&2
+      return 1
+    fi
+    profile=$(aws configure list-profiles | fzf --prompt="Select AWS Profile > ")
+  fi
 
   if [[ -n "$profile" ]]; then
     export AWS_PROFILE="$profile"
     echo "✅ Switched to AWS profile: $AWS_PROFILE"
   else
-    echo "⚠️ No profile selected."
+    echo "⚠️  No profile selected."
   fi
 }
 
-# Alias for quick access
 alias awsp='switch-aws-profile'
 
 # Show current AWS identity
 aws-whoami() {
   if [[ -z "$AWS_PROFILE" ]]; then
-    echo "⚠️ AWS_PROFILE not set"
+    echo "⚠️  AWS_PROFILE not set"
   else
     echo "📍 Profile: $AWS_PROFILE"
   fi
@@ -76,8 +82,11 @@ aws-whoami() {
 aws-login() {
   local profile="${1:-$AWS_PROFILE}"
 
-  # No profile given and none set — offer interactive selection
   if [[ -z "$profile" ]]; then
+    if [[ ! -t 0 ]]; then
+      echo "Usage: aws-login <profile>" >&2
+      return 1
+    fi
     profile=$(aws configure list-profiles | fzf --prompt="Select profile for SSO login > ")
     [[ -z "$profile" ]] && return 0
   fi

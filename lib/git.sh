@@ -3,7 +3,6 @@
 #
 # Requires: git, fzf
 
-# Display help for all Git commands
 git-help() {
   cat <<'EOF'
 Git Utilities and Shortcuts
@@ -13,46 +12,32 @@ Available Commands:
 -------------------
 
 git-help
-  Display this help message showing all available Git commands.
+  Display this help message.
 
-gco
-  Fuzzy select and checkout a branch.
-  Shows both local and remote branches.
+gco [branch]
+  Fuzzy select and checkout a branch. Pass branch name directly to skip fzf.
 
 glog
-  Pretty git log with fzf preview.
-  Navigate commits and preview changes interactively.
+  Pretty git log. Interactive with fzf preview in a terminal, plain log otherwise.
 
-gstash
-  Fuzzy select and apply a stash.
-  Interactive stash selection and application.
+gstash [stash-ref]
+  Fuzzy select and apply a stash. Pass a stash ref (e.g. stash@{0}) to skip fzf.
 
 gpr
-  Create a pull request using GitHub CLI.
-  Opens browser to create PR (requires gh CLI).
+  Create a pull request using GitHub CLI (opens browser).
 
 gwip [message]
-  Quick work-in-progress commit.
-  Arguments:
-    message - Optional. Commit message suffix (default: "work in progress")
-  Example: gwip "adding feature X"
-  Creates commit: "WIP: adding feature X"
+  Quick work-in-progress commit. Skips pre-commit hooks.
+  Example: gwip "adding feature X" → "WIP: adding feature X"
 
 gunwip
   Undo last WIP commit, keeping changes staged.
-  Only works if the last commit message starts with "WIP:".
 
 gclean [main_branch]
-  Remove merged branches locally.
-  Arguments:
-    main_branch - Optional. Main branch name (default: main)
-  Switches to main, pulls, and deletes merged branches.
+  Remove merged branches locally. Switches to main, pulls, deletes merged.
 
 gsync [main_branch]
-  Sync fork with upstream repository.
-  Arguments:
-    main_branch - Optional. Main branch name (default: main)
-  Fetches from upstream, merges, and pushes to origin.
+  Sync fork with upstream: fetch, merge, push.
 
 Common Aliases:
 ---------------
@@ -68,38 +53,54 @@ Requirements:
 -------------
 - git
 - fzf (for interactive selection)
-- gh (GitHub CLI, optional, for gpr command)
+- gh (GitHub CLI, optional, for gpr)
 
 EOF
 }
 
 # gco: fuzzy checkout branch
 gco() {
-  local branch
-  branch=$(git branch --all | grep -v HEAD | sed 's/^..//' | sed 's/remotes\/origin\///' | sort -u | fzf --prompt="Checkout branch > ")
-  if [[ -n "$branch" ]]; then
-    git checkout "$branch"
+  local branch="${1:-}"
+
+  if [[ -z "$branch" ]]; then
+    if [[ ! -t 0 ]]; then
+      echo "Usage: gco <branch>" >&2
+      return 1
+    fi
+    branch=$(git branch --all | grep -v HEAD | sed 's/^..//' | sed 's/remotes\/origin\///' | sort -u | fzf --prompt="Checkout branch > ")
   fi
+
+  [[ -n "$branch" ]] && git checkout "$branch"
 }
 
 # glog: pretty git log with fzf preview
 glog() {
+  if [[ ! -t 0 ]]; then
+    git log --oneline
+    return
+  fi
   git log --oneline --color=always | fzf --ansi --preview 'git show --color=always {1}' --preview-window=right:60%
 }
 
 # gstash: fuzzy select and apply stash
 gstash() {
-  local stash
-  stash=$(git stash list | fzf --prompt="Select stash > " | cut -d: -f1)
-  if [[ -n "$stash" ]]; then
-    git stash apply "$stash"
+  local stash="${1:-}"
+
+  if [[ -z "$stash" ]]; then
+    if [[ ! -t 0 ]]; then
+      echo "Usage: gstash <stash-ref>" >&2
+      return 1
+    fi
+    stash=$(git stash list | fzf --prompt="Select stash > " | cut -d: -f1)
   fi
+
+  [[ -n "$stash" ]] && git stash apply "$stash"
 }
 
 # gpr: create PR (GitHub CLI)
 gpr() {
   if ! command -v gh &>/dev/null; then
-    echo "⚠️ GitHub CLI (gh) not installed"
+    echo "⚠️  GitHub CLI (gh) not installed"
     return 1
   fi
   gh pr create --web
@@ -117,7 +118,7 @@ gunwip() {
     git reset --soft HEAD~1
     echo "✅ Undid WIP commit"
   else
-    echo "⚠️ Last commit is not a WIP commit"
+    echo "⚠️  Last commit is not a WIP commit"
   fi
 }
 
