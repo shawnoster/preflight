@@ -67,7 +67,13 @@ dex() {
     container=$(docker ps --format '{{.Names}}\t{{.Image}}\t{{.Status}}' | fzf --prompt="Select container > " | cut -f1)
   fi
 
-  [[ -n "$container" ]] && docker exec -it "$container" "$shell"
+  if [[ -n "$container" ]]; then
+    if [[ -t 0 && -t 1 ]]; then
+      docker exec -it "$container" "$shell"
+    else
+      docker exec -i "$container" "$shell"
+    fi
+  fi
 }
 
 # dlogs: tail container logs

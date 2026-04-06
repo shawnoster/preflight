@@ -11,8 +11,8 @@ preflight() {
     case "$arg" in -u|--updates) check_updates=true ;; esac
   done
 
-  # Erase the Starship prompt line above our output (terminal only)
-  [[ -t 1 ]] && printf '\033[1A\033[2K\r'
+  # Optionally erase the previous terminal line (opt-in for Starship users).
+  [[ -t 1 && "${PREFLIGHT_ERASE_PREVIOUS_LINE:-}" == "1" ]] && printf '\033[1A\033[2K\r'
 
   echo "========================================"
   echo "          Preflight Check               "
@@ -25,7 +25,10 @@ preflight() {
   # ── Secrets ───────────────────────────────────────────────────────────────
 
   if command -v op &>/dev/null; then
-    op-load-env
+    if ! op-load-env; then
+      echo "⚠️  1Password sign-in or secret loading failed"
+      ((issues++))
+    fi
   else
     echo "⚠️  1Password CLI not installed — skipping secret loading"
     ((issues++))
@@ -43,7 +46,18 @@ preflight() {
       echo "✅ AWS session active ($(echo "$aws_identity" | jq -r '.Account' 2>/dev/null))"
     else
       echo "☁️  Refreshing AWS SSO..."
-      aws-login
+      if aws-login; then
+        aws_identity=$(aws sts get-caller-identity 2>/dev/null)
+        if [[ -n "$aws_identity" ]]; then
+          echo "✅ AWS session active ($(echo "$aws_identity" | jq -r '.Account' 2>/dev/null))"
+        else
+          echo "❌ AWS SSO refresh did not produce an active session"
+          ((issues++))
+        fi
+      else
+        echo "❌ AWS SSO refresh failed"
+        ((issues++))
+      fi
     fi
   else
     echo "❌ AWS CLI not installed"
@@ -117,7 +131,6 @@ preflight() {
     [jq]="sudo apt install jq  # or: github.com/jqlang/jq/releases (apt may lag)"
     [fzf]="github.com/junegunn/fzf/releases  # apt version lags — download binary"
     [tmux]="sudo apt install tmux  # or build from: github.com/tmux/tmux/releases"
-    [aya]="uv tool upgrade aya"
     [claude]="npm install -g @anthropic-ai/claude-code"
   )
 
@@ -138,8 +151,6 @@ preflight() {
       --jq '.tag_name | ltrimstr("v")' >"$tmpdir/fzf" 2>/dev/null &
     gh api repos/tmux/tmux/releases/latest \
       --jq '.tag_name' >"$tmpdir/tmux" 2>/dev/null &
-    gh api repos/shawnoster/aya/releases/latest \
-      --jq '.tag_name | ltrimstr("v")' >"$tmpdir/aya" 2>/dev/null &
     npm view @anthropic-ai/claude-code version >"$tmpdir/claude" 2>/dev/null &
     wait
   fi
@@ -182,24 +193,21 @@ preflight() {
     local key="${rest##*:}"
 
     if command -v "$cmd" &>/dev/null; then
-      local raw installed
-      raw=$("$cmd" --version 2>&1 | head -1 || "$cmd" -v 2>&1 | head -1 || echo "installed")
-      installed=$(echo "$raw" | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)*' | head -1)
+      local raw installed version_output
+      if version_output=$("$cmd" --version 2>&1); then
+        raw=$(printf '%s\n' "$version_output" | head -1)
+      elif version_output=$("$cmd" -V 2>&1); then
+        raw=$(printf '%s\n' "$version_output" | head -1)
+      else
+        raw="installed"
+      fi
+      installed=$(echo "$raw" | grep -oE '[0-9]+\.[0-9]+[a-zA-Z0-9]*' | head -1)
       [[ -z "$installed" ]] && installed="$raw"
       _pf_tool "$name" "$installed" "$raw" "$key"
     else
       echo "❌ $name not installed"
     fi
   done
-
-  # aya: version via JSON subcommand
-  if command -v aya &>/dev/null; then
-    local aya_ver
-    aya_ver=$(aya version 2>&1 | jq -r .version 2>/dev/null || echo "installed")
-    _pf_tool "Aya CLI" "$aya_ver" "$aya_ver" "aya"
-  else
-    echo "❌ Aya CLI not installed"
-  fi
 
   unset -f _pf_tool
   [[ -n "$tmpdir" ]] && rm -rf "$tmpdir"

@@ -98,7 +98,7 @@ awsp [profile]       Switch AWS profile
 bake [target]        Run Makefile target
 dev-commands         This list
 dev-help             Central help menu
-dex [container]      Exec into running container
+dex [container] [shell] Exec into running container
 dlogs [container]    Tail container logs
 dprune               Safe Docker cleanup
 dprune-all           Aggressive Docker cleanup (with volumes)
