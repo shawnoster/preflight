@@ -28,7 +28,7 @@ Use `dev-commands` to see everything available, or `dev-help` for the full menu.
 ## Manual Installation
 
 ```bash
-cp -r .dev ~/
+cp -r preflight ~/.preflight
 echo '[[ -f "$HOME/.preflight/init.sh" ]] && source "$HOME/.preflight/init.sh"' >> ~/.bashrc
 source ~/.bashrc
 ```
