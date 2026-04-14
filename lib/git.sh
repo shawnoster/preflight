@@ -124,8 +124,11 @@ gunwip() {
 
 # gclean: remove merged branches
 gclean() {
-  local main_branch="${1:-main}"
-  git checkout "$main_branch" 2>/dev/null || git checkout master
+  local main_branch="${1:-${GIT_MAIN_BRANCH:-main}}"
+  if ! git checkout "$main_branch"; then
+    echo "❌ Could not checkout '$main_branch'"
+    return 1
+  fi
   git pull
   git branch --merged | grep -v "^\*\|main\|master\|develop" | xargs -r git branch -d
   echo "✅ Cleaned merged branches"

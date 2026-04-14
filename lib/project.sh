@@ -124,7 +124,7 @@ poet() {
       echo "Usage: poet <script>" >&2
       return 1
     fi
-    script=$(grep -A 100 '^\[tool.poetry.scripts\]\|^\[project.scripts\]' "$pyproject" \
+    script=$(sed -n '/^\[tool\.poetry\.scripts\]\|^\[project\.scripts\]/,/^\[/{/^\[/!p}' "$pyproject" \
       | grep -E '^[a-zA-Z0-9_-]+\s*=' \
       | cut -d'=' -f1 \
       | tr -d ' ' \

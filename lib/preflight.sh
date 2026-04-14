@@ -213,6 +213,7 @@ preflight() {
   done
 
   unset -f _pf_tool
+  unset _update_hints
   [[ -n "$tmpdir" ]] && rm -rf "$tmpdir"
 
   # ── Git Configuration ─────────────────────────────────────────────────────
