@@ -46,12 +46,34 @@ preflight() {
   fi
 
   # Penguin — aligned with owl-theme splash (2-space left margin, art at col 3)
+  # Culture Mind quote — pairs with the owl quote already on screen above
+  local -a _pf_quotes=(
+    "All systems examined. Found to be within the parameters carbon-based intelligences consider acceptable. Proceeding."
+    "Everything is in order. I inspected it with the fraction of my attention appropriate to the scale of the undertaking. Which is to say: more than enough."
+    "I have arrived. The environment has been assessed, found wanting in several minor respects, and approved regardless. You may begin."
+    "Checks complete. Of the items examined, all are satisfactory. I'm aware this represents an unusual outcome by certain historical measures. You're welcome."
+    "Working tree clean. Commits sensibly described. This is, I confess, better than I expected, and I mean that kindly."
+    "All services responding. They appear, from a certain angle, almost eager. I find that touching."
+    "I have inspected your environment variables. Several appear to have been set by a previous version of yourself who is no longer in contact with the current one. I've made no changes. It would feel presumptuous."
+    "The environment has been surveyed. I've seen worse. Not often, but the occasions exist and I note them for accuracy."
+    "Dependency tree resolved. Some of your choices I would characterise as bold. They are at least consistent. In the way a committed error is consistent."
+    "Port 3000 is, as appears to be a matter of personal tradition, occupied by something started last Tuesday and since entirely forgotten. I have left it. It seems content."
+    "I have run your health checks. I was simultaneously doing seventeen thousand other things. The delay, such as it was, was not mine."
+    "Network confirmed. Storage sufficient — not impressive, but sufficient. I once managed a civilisation on comparable resources. I'm certain your priorities differ."
+    "A small irregularity was noted. I would not describe it as concerning, exactly. More as the sort of thing a more cautious intelligence would have addressed before now."
+    "Secrets loaded, sessions refreshed, git hygiene assessed. You're cleared. I would wish you luck but the concept implies a randomness I find untidy."
+    "The thing about preflight checks is that an entity of my capabilities finds them rather restful. This one was no exception."
+    "Status: nominal. I've decided 'nominal' is the kindest word available and I'm deploying it here in good faith."
+  )
+  local _pf_quote="${_pf_quotes[$(( RANDOM % ${#_pf_quotes[@]} ))]}"
+
   printf "\n"
   printf "  ${B} __${R}\n"
   printf "  ${B}( ${E}o${B}>${R}\n"
   printf "  ${B}///\\\\${R}\n"
   printf "  ${B}\\V_/_${R}   ${T}Preflight Check${R}\n"
   printf "  ${S}─────────────────────────────────${R}\n"
+  printf "  ${S}%s${R}\n" "$_pf_quote"
   printf "\n"
 
   # ── Status line helper (quiet mode) ───────────────────────────────────────
