@@ -47,7 +47,7 @@ preflight() {
 
   # Penguin — aligned with owl-theme splash (2-space left margin, art at col 3)
   printf "\n"
-  printf "  ${B}__${R}\n"
+  printf "  ${B} __${R}\n"
   printf "  ${B}( ${E}o${B}>${R}\n"
   printf "  ${B}///\\\\${R}\n"
   printf "  ${B}\\V_/_${R}   ${T}Preflight Check${R}\n"
