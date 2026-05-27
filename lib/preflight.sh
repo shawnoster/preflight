@@ -813,6 +813,65 @@ GITIGNORE
   # ── Summary ──────────────────────────────────────────────────────────────
   unset -f _pf_git_set
 
+  echo "--- AWS Default Profile ---"
+  echo ""
+
+  if ! command -v aws &>/dev/null; then
+    echo "ℹ️  AWS CLI not installed — skipping"
+    echo ""
+  else
+    local current_default="${AWS_PROFILE_DEFAULT:-}"
+    local profiles
+    profiles=$(aws configure list-profiles 2>/dev/null)
+
+    if [[ -z "$profiles" ]]; then
+      echo "ℹ️  No AWS profiles configured in ~/.aws/config — skipping"
+      echo ""
+    elif [[ -n "$current_default" ]]; then
+      echo "✅ AWS_PROFILE_DEFAULT = $current_default (set in config/accounts.sh)"
+      ((kept++))
+      echo ""
+    else
+      echo "⚠️  AWS_PROFILE_DEFAULT not set — preflight won't auto-set AWS_PROFILE"
+      echo ""
+      echo "   Available profiles:"
+      echo "$profiles" | sed 's/^/     /'
+      echo ""
+
+      if [[ "$auto" == true ]]; then
+        local first_profile
+        first_profile=$(echo "$profiles" | head -1)
+        echo "   → Setting AWS_PROFILE_DEFAULT = $first_profile"
+        echo "   Add to ~/.preflight/config/accounts.sh:"
+        echo "     export AWS_PROFILE_DEFAULT=\"$first_profile\""
+        ((applied++))
+      else
+        read -r -p "   Select default profile (or Enter to skip): " chosen_profile
+        echo ""
+        if [[ -n "$chosen_profile" ]]; then
+          if echo "$profiles" | grep -qF "$chosen_profile"; then
+            local accounts_file="${PREFLIGHT_DIR:-$HOME/.preflight}/config/accounts.sh"
+            if grep -q 'AWS_PROFILE_DEFAULT' "$accounts_file" 2>/dev/null; then
+              sed -i "s|.*AWS_PROFILE_DEFAULT.*|export AWS_PROFILE_DEFAULT=\"$chosen_profile\"|" "$accounts_file"
+            else
+              printf '\n# Default AWS profile\nexport AWS_PROFILE_DEFAULT="%s"\n' "$chosen_profile" >> "$accounts_file"
+            fi
+            export AWS_PROFILE_DEFAULT="$chosen_profile"
+            echo "   ✅ Set AWS_PROFILE_DEFAULT = $chosen_profile"
+            ((applied++))
+          else
+            echo "   Profile '$chosen_profile' not found — skipped."
+            ((skipped++))
+          fi
+        else
+          echo "   Skipped."
+          ((skipped++))
+        fi
+      fi
+      echo ""
+    fi
+  fi
+
   printf "  \033[38;2;${OWL_SUB:-120;130;150}m%s\033[0m\n" "$(printf '%0.s-' {1..33})"
   echo "   Applied: $applied   Kept: $kept   Skipped: $skipped"
   if [[ $applied -gt 0 ]]; then
