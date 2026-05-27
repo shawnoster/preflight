@@ -73,7 +73,7 @@ preflight() {
   printf "  ${B} __${R}\n"
   printf "  ${B}( ${E}o${B}>${R}     ${T}Preflight Check${R}\n"
   printf "  ${B}///\\\\${R}\n"
-  printf "  ${B}\\V_/_${R}     ${S}%s${R}\n" "$_pf_quote"
+  printf "  ${B}\\V_/_${R}    ${S}%s${R}\n" "$_pf_quote"
   printf "\n"
 
   # ── Status line helper (quiet mode) ───────────────────────────────────────
@@ -104,6 +104,8 @@ preflight() {
 
   if command -v op &>/dev/null; then
     if [[ "$verbose" == true ]]; then
+      # Print a newline first so op-load-env's password prompt lands on its own line
+      printf "\n"
       if ! op-load-env; then
         issue_msgs+=("1Password sign-in or secret loading failed")
         ((issues++))
@@ -496,7 +498,7 @@ preflight() {
 
   printf "%s\n" "$_pf_rule"
   if [[ $issues -gt 0 ]]; then
-    printf "  ⚠️  ${T}$issues issue(s) found${R}\n"
+    printf "  (!) ${T}$issues issue(s) found${R}\n"
     for msg in "${issue_msgs[@]}"; do
       printf "  ${S}  • %s${R}\n" "$msg"
     done
@@ -509,7 +511,8 @@ preflight() {
     printf "\n"
   fi
   if [[ "$check_updates" == false ]]; then
-    printf "  ${S}Tip: run 'preflight -u' to check for updates${R}\n"
+    printf "\n"
+    printf "  ${S}run 'preflight -u' to check for updates${R}\n"
   fi
   printf "%s\n" "$_pf_rule"
   printf "\n"
