@@ -132,14 +132,14 @@ This sets `gpg.format = ssh`, `user.signingkey`, and `gpg.ssh.program` to 1Passw
 
 **`Too many authentication failures`**
 - You have more than 6 SSH keys in 1Password — OpenSSH servers reject after 6 attempts
-- Fix: add a `~/.ssh/config` entry specifying which key to use per host. Download the
-  public key from the 1Password item, save it to `~/.ssh/your-github-key.pub`, then:
+- Fix: download the public key from your 1Password SSH Key item and save it to `~/.ssh/`
+  (e.g. `~/.ssh/github-key.pub`), then reference it **without** the `.pub` extension in `~/.ssh/config`:
   ```
   Host github.com
-    IdentityFile ~/.ssh/your-github-key
+    IdentityFile ~/.ssh/github-key
     IdentitiesOnly yes
   ```
-  Note: `IdentityFile` points to the key name *without* `.pub` — OpenSSH finds the public key automatically.
+  OpenSSH automatically finds `github-key.pub` alongside `github-key`. The private key stays in 1Password.
 
 **Keys not showing after WSL restart**
 - 1Password may have locked — unlock it on Windows

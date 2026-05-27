@@ -207,10 +207,11 @@ preflight() {
       _ssh_add_exe="/mnt/c/Windows/System32/OpenSSH/ssh-add.exe"
 
     if [[ -n "$_ssh_add_exe" ]]; then
-      local _agent_output _key_count
-      _agent_output=$("$_ssh_add_exe" -l 2>&1)
-      _key_count=$(echo "$_agent_output" | grep -vc "no identities" || true)
-      if echo "$_agent_output" | grep -qi "error\|connect\|refused\|no such file" || [[ -z "$_agent_output" ]]; then
+      local _agent_output _agent_exit _key_count
+      _agent_output=$("$_ssh_add_exe" -l 2>&1); _agent_exit=$?
+      # Count lines that look like key fingerprints (SHA256: prefix)
+      _key_count=$(echo "$_agent_output" | grep -c 'SHA256:' || true)
+      if [[ $_agent_exit -ne 0 && $_key_count -eq 0 ]]; then
         issue_msgs+=("1Password SSH agent unreachable — is 1Password running with SSH Agent enabled?")
         _pf_line "⚠️  1Password SSH agent unreachable"
         ((issues++))
@@ -942,10 +943,10 @@ GITIGNORE
       echo ""
       _prereqs_ok=false
     else
-      local _agent_output _key_count
-      _agent_output=$("$_cfg_ssh_add_exe" -l 2>&1)
-      _key_count=$(echo "$_agent_output" | grep -vc "no identities" || true)
-      if echo "$_agent_output" | grep -qi "error\|connect\|refused\|no such file" || [[ -z "$_agent_output" ]]; then
+      local _agent_output _agent_exit _key_count
+      _agent_output=$("$_cfg_ssh_add_exe" -l 2>&1); _agent_exit=$?
+      _key_count=$(echo "$_agent_output" | grep -c 'SHA256:' || true)
+      if [[ $_agent_exit -ne 0 && $_key_count -eq 0 ]]; then
         echo "⚠️  1Password SSH agent unreachable — is 1Password running with SSH Agent enabled?"
         echo "   See: ${PREFLIGHT_DIR:-$HOME/.preflight}/docs/wsl-ssh-setup.md"
         echo ""
@@ -1057,14 +1058,14 @@ GITIGNORE
         echo "   Adds: Host * IdentityAgent \\\\.\\pipe\\openssh-ssh-agent"
         if [[ "$auto" == true ]]; then
           mkdir -p "$_win_ssh_dir"
-          printf 'Host *\n  IdentityAgent "\\\\.\\pipe\\openssh-ssh-agent"\n' >> "$_win_ssh_conf"
+          printf '\nHost *\n  IdentityAgent "\\\\.\\pipe\\openssh-ssh-agent"\n' >> "$_win_ssh_conf"
           echo "   → Written to $_win_ssh_conf"
           ((applied++))
         else
           read -r -p "   Apply? [Y/n] " reply; echo ""
           if [[ -z "$reply" || "$reply" =~ ^[Yy]$ ]]; then
             mkdir -p "$_win_ssh_dir"
-            printf 'Host *\n  IdentityAgent "\\\\.\\pipe\\openssh-ssh-agent"\n' >> "$_win_ssh_conf"
+            printf '\nHost *\n  IdentityAgent "\\\\.\\pipe\\openssh-ssh-agent"\n' >> "$_win_ssh_conf"
             echo "   ✅ Written to $_win_ssh_conf"
             ((applied++))
           else
