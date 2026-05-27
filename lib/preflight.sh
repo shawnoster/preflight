@@ -72,8 +72,8 @@ preflight() {
   printf "\n"
   printf "  ${B} __${R}\n"
   printf "  ${B}( ${E}o${B}>${R}     ${T}Preflight Check${R}\n"
-  printf "  ${B}///\\\\${R}     ${S}%s${R}\n" "$_pf_quote"
-  printf "  ${B}\\V_/_${R}\n"
+  printf "  ${B}///\\\\${R}\n"
+  printf "  ${B}\\V_/_${R}     ${S}%s${R}\n" "$_pf_quote"
   printf "\n"
 
   # ── Status line helper (quiet mode) ───────────────────────────────────────
