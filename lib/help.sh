@@ -33,8 +33,13 @@ Session Startup:
 ----------------
 
 preflight                # Sign in, load secrets, verify environment
-preflight -u             # Same + check for tool updates
-dev-commands             # List all available commands
+  preflight -v             # Same with verbose output
+  preflight -u             # Same + check for tool updates
+  preflight update         # Pull latest changes from upstream
+  preflight uninstall      # Remove preflight and undo shell profile changes
+  preflight configure      # Apply recommended git/SSH settings interactively
+  preflight configure --yes # Apply all without prompting
+  dev-commands             # List all available commands
 
 Quick Reference:
 ----------------
@@ -66,9 +71,12 @@ Config:   ~/.preflight/config/accounts.sh
 Modules:  ~/.preflight/lib/*.sh
 
 Environment Variables:
-  OP_ACCOUNT    - 1Password account shorthand
-  AWS_PROFILE   - Default AWS profile
-  PROJ_DIRS     - Project directories for 'proj' command
+  OP_ACCOUNT          - 1Password account shorthand
+  AWS_PROFILE_DEFAULT - Default AWS profile (set in config/accounts.sh)
+  AWS_PROFILE         - Active AWS profile (set at runtime by preflight/awsp)
+  PROJ_DIRS           - Project directories for 'proj' command
+  PREFLIGHT_DIR       - Install location (default: ~/.preflight)
+  PREFLIGHT_BRANCH    - Branch used by 'preflight update' (default: main)
   PREFLIGHT_VERBOSE   - Set to "1" for verbose loading messages
 
 Getting Started:
@@ -109,7 +117,7 @@ gclean [main]        Remove merged branches locally
 gco [branch]         Checkout branch
 glog                 Interactive git log with preview
 gpr                  Create pull request via GitHub CLI
-gstash [ref]         Apply a stash
+gstash [ref]         Pop a stash (use --apply to keep in stash list)
 gsync [main]         Sync fork with upstream
 gunwip               Undo last WIP commit
 gwip [msg]           Quick work-in-progress commit
@@ -120,7 +128,12 @@ op-signin [account]  Sign in to 1Password
 op-status            Check 1Password sign-in status
 poet [script]        Run poetry script
 preflight            Session startup: sign in, load secrets, verify env
+preflight -v         Same with verbose section output
 preflight -u         Same + check for tool updates
+preflight update     Pull latest changes from upstream repo
+preflight uninstall  Remove preflight and undo shell profile changes
+preflight configure  Interactively apply recommended git/SSH settings
+preflight configure --yes  Apply all recommended settings without prompting
 proj [directory]     Jump to project directory
 serve [port]         Quick Python HTTP server (default: 8000)
 yak [script]         Run npm script
