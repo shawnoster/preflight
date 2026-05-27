@@ -29,6 +29,8 @@ In the **1Password Windows app**:
 
 ### 2. Disable the competing Windows OpenSSH service (if needed)
 
+> **Skip this step** if 1Password's SSH Agent shows **running** with no conflict warning after step 1.
+
 If 1Password shows a conflict with the built-in OpenSSH Authentication Agent:
 
 1. Press `Win + R`, type `services.msc`, press Enter
@@ -46,7 +48,7 @@ In **1Password**:
 
 ### 4. Check WSL interop is enabled
 
-Confirm `/etc/wsl.conf` has interop enabled (it should be `true` by default):
+Run `cat /etc/wsl.conf` in WSL. If the file doesn't exist, interop is enabled by default — you're good, skip this step. If it exists, confirm `enabled = true` is set under `[interop]`:
 
 ```ini
 [interop]
@@ -88,13 +90,14 @@ preflight configure --yes
 After running `preflight configure` and reloading your shell:
 
 ```bash
-# Should list your 1Password SSH keys
+# Should list your 1Password SSH keys (e.g. "256 SHA256:abc... GitHub SSH Key (ED25519)")
 ssh-add.exe -l
 
-# Should print "Hi <username>! You've successfully authenticated..."
+# Should print "Hi <username>! You've successfully authenticated, but GitHub does not provide shell access."
 ssh.exe -T git@github.com
 
-# Full git workflow through 1Password
+# Full git workflow — should succeed without a password prompt
+# (1Password will ask for Windows Hello / biometric once per session)
 git push
 ```
 
@@ -128,13 +131,14 @@ This sets `gpg.format = ssh`, `user.signingkey`, and `gpg.ssh.program` to 1Passw
 
 **`Too many authentication failures`**
 - You have more than 6 SSH keys in 1Password — OpenSSH servers reject after 6 attempts
-- Fix: add a `~/.ssh/config` entry specifying which key to use per host:
+- Fix: add a `~/.ssh/config` entry specifying which key to use per host. Download the
+  public key from the 1Password item, save it to `~/.ssh/your-github-key.pub`, then:
   ```
   Host github.com
-    IdentityFile ~/.ssh/your-github-key.pub
+    IdentityFile ~/.ssh/your-github-key
     IdentitiesOnly yes
   ```
-  Download the public key from the 1Password item and place it in `~/.ssh/`.
+  Note: `IdentityFile` points to the key name *without* `.pub` — OpenSSH finds the public key automatically.
 
 **Keys not showing after WSL restart**
 - 1Password may have locked — unlock it on Windows
