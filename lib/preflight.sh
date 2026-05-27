@@ -113,10 +113,14 @@ preflight() {
         _pf_line "✅ Secrets loaded"
       fi
     else
+      # Clear status line before op runs — its /dev/tty password prompt can't
+      # be redirected, so give it a clean line. Reprint status afterward.
+      _pf_status_clear
       if ! op-load-env &>/dev/null 2>&1; then
         issue_msgs+=("1Password sign-in or secret loading failed")
         ((issues++))
       fi
+      _pf_status "Secrets: loading..."
     fi
   else
     issue_msgs+=("1Password CLI not installed — skipping secret loading")
