@@ -124,6 +124,15 @@ preflight() {
     ((issues++))
   fi
 
+  # ── AWS Profile ───────────────────────────────────────────────────────────
+
+  if [[ -z "$AWS_PROFILE" ]]; then
+    export AWS_PROFILE="${AWS_PROFILE_DEFAULT:-guild-dev}"
+    _pf_line "✅ AWS_PROFILE set to $AWS_PROFILE (default)"
+  else
+    _pf_line "✅ AWS_PROFILE already set: $AWS_PROFILE"
+  fi
+
   # ── AWS Session ───────────────────────────────────────────────────────────
 
   _pf_section "AWS Session"
@@ -174,14 +183,6 @@ preflight() {
   else
     issue_msgs+=("GITHUB_TOKEN is not set")
     _pf_line "⚠️  GITHUB_TOKEN is not set"
-    ((issues++))
-  fi
-
-  if [[ -n "$AWS_PROFILE" ]]; then
-    _pf_line "✅ AWS_PROFILE is set: $AWS_PROFILE"
-  else
-    issue_msgs+=("AWS_PROFILE is not set")
-    _pf_line "⚠️  AWS_PROFILE is not set"
     ((issues++))
   fi
 
