@@ -30,7 +30,8 @@ aws-login [profile]
 
 Configuration:
 --------------
-Default profile: $AWS_PROFILE (set in config/accounts.sh)
+Default profile: $AWS_PROFILE_DEFAULT (set in config/accounts.sh)
+  preflight sets $AWS_PROFILE from this at session start.
 
 Requirements:
 -------------

@@ -221,7 +221,9 @@ Edit `~/.preflight/config/accounts.sh` to customize:
 
 - `OP_ACCOUNT` - 1Password account shorthand
 - `PROJ_DIRS` - Directories for `proj` command
-- `AWS_PROFILE` - Default AWS profile
+- `AWS_PROFILE_DEFAULT` - Default AWS profile (`preflight` sets `AWS_PROFILE` from this at startup)
+- `PREFLIGHT_DIR` - Install location (default: `~/.preflight`)
+- `PREFLIGHT_BRANCH` - Branch used by `preflight update` (default: `main`)
 
 ## Adding Custom Scripts
 
