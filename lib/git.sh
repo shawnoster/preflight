@@ -138,7 +138,13 @@ gclean() {
     return 1
   fi
   git pull
-  git branch --merged | grep -v "^\*\|$main_branch\|main\|master\|develop" | xargs -r git branch -d
+  git branch --merged \
+    | grep -v '^\*' \
+    | grep -vF "$main_branch" \
+    | grep -vF "main" \
+    | grep -vF "master" \
+    | grep -vF "develop" \
+    | xargs -r git branch -d
   echo "✅ Cleaned merged branches"
 }
 

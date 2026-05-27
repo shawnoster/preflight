@@ -10,7 +10,7 @@ curl -fsSL https://raw.githubusercontent.com/shawnoster/preflight/main/install.s
 
 The installer:
 - Clones the repo to `~/.preflight` (override with `PREFLIGHT_DIR=/your/path`)
-- Adds a source line to your shell rc file (`.bashrc`, `.zshrc`, or `config.fish`)
+- Adds a source line to your shell rc file (`.bashrc` or `.zshrc`), with the correct syntax for your shell
 - Creates `config/accounts.sh` and `lib/1password.sh` from their templates
 
 After installing:
@@ -30,10 +30,10 @@ preflight
 **Options:**
 ```bash
 # Install to a custom location
-PREFLIGHT_DIR=~/.config/preflight curl -fsSL .../install.sh | bash
+PREFLIGHT_DIR=~/.config/preflight curl -fsSL https://raw.githubusercontent.com/shawnoster/preflight/main/install.sh | bash
 
 # Skip shell profile modification (add the source line yourself)
-NO_MODIFY_PROFILE=1 curl -fsSL .../install.sh | bash
+NO_MODIFY_PROFILE=1 curl -fsSL https://raw.githubusercontent.com/shawnoster/preflight/main/install.sh | bash
 ```
 
 ## Updating

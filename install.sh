@@ -31,7 +31,24 @@ _pf_has() { command -v "$1" &>/dev/null; }
 PREFLIGHT_DIR="${PREFLIGHT_DIR:-$HOME/.preflight}"
 PREFLIGHT_REPO="${PREFLIGHT_REPO:-https://github.com/shawnoster/preflight.git}"
 PREFLIGHT_BRANCH="${PREFLIGHT_BRANCH:-main}"
-PREFLIGHT_SOURCE_LINE='[[ -f "$HOME/.preflight/init.sh" ]] && source "$HOME/.preflight/init.sh"'
+
+# Build source line from $PREFLIGHT_DIR so custom install locations work correctly.
+# Uses single-quotes around the condition but double-quotes to expand PREFLIGHT_DIR
+# at install time, so the baked path is always correct.
+_pf_make_source_line() {
+  local dir="$1"
+  local shell_name="$2"
+  case "$shell_name" in
+    fish)
+      # fish syntax: test -f ... && source ...
+      printf 'test -f "%s/init.sh" && source "%s/init.sh"\n' "$dir" "$dir"
+      ;;
+    *)
+      # bash/zsh: [[ -f ... ]] && source ...
+      printf '[[ -f "%s/init.sh" ]] && source "%s/init.sh"\n' "$dir" "$dir"
+      ;;
+  esac
+}
 
 # ── Detect profile file ───────────────────────────────────────────────────────
 
@@ -78,13 +95,19 @@ _pf_profile_has_line() {
 
 _pf_add_to_profile() {
   local profile="$1"
+  local shell_name="$2"
 
   if _pf_profile_has_line "$profile"; then
     _pf_ok "Already present in $profile — skipping"
     return
   fi
 
-  printf '\n# Preflight — developer environment\n%s\n' "$PREFLIGHT_SOURCE_LINE" >> "$profile"
+  # Ensure parent directory exists (e.g. ~/.config/fish/ on a fresh fish install)
+  mkdir -p "$(dirname "$profile")"
+
+  local source_line
+  source_line=$(_pf_make_source_line "$PREFLIGHT_DIR" "$shell_name")
+  printf '\n# Preflight — developer environment\n%s\n' "$source_line" >> "$profile"
   _pf_ok "Added to $profile"
 }
 
@@ -121,15 +144,18 @@ main() {
   fi
 
   # Dotfile modification
+  local shell_name
+  shell_name=$(basename "${SHELL:-bash}")
+
   if [[ "${NO_MODIFY_PROFILE:-0}" == "1" ]]; then
     _pf_warn "NO_MODIFY_PROFILE set — skipping shell profile modification"
     _pf_info "Add manually to your shell rc file:"
-    _pf_info "  $PREFLIGHT_SOURCE_LINE"
+    _pf_info "  $(_pf_make_source_line "$PREFLIGHT_DIR" "$shell_name")"
   else
     local profile
     profile=$(_pf_detect_profile)
     _pf_info "Updating $profile ..."
-    _pf_add_to_profile "$profile"
+    _pf_add_to_profile "$profile" "$shell_name"
   fi
 
   # First-time config setup (init.sh handles this too, but do it now so the
@@ -147,16 +173,20 @@ main() {
   fi
 
   # Done
+  local reload_cmd="source ~/.bashrc"
+  [[ "$shell_name" == "zsh" ]]  && reload_cmd="source ${ZDOTDIR:-~}/.zshrc"
+  [[ "$shell_name" == "fish" ]] && reload_cmd="source ~/.config/fish/config.fish"
+
   echo ""
   _pf_bold "Installation complete!"
   echo ""
   _pf_info "Next steps:"
-  _pf_info "  1. Edit $PREFLIGHT_DIR/config/accounts.sh   — set OP_ACCOUNT, PROJ_DIRS, etc."
-  _pf_info "  2. Edit $PREFLIGHT_DIR/lib/1password.sh     — configure your 1Password secrets"
-  _pf_info "  3. Reload your shell:  source ~/.bashrc  (or open a new terminal)"
+  _pf_info "  1. Edit $PREFLIGHT_DIR/config/accounts.sh  — set OP_ACCOUNT, PROJ_DIRS, etc."
+  _pf_info "  2. Edit $PREFLIGHT_DIR/lib/1password.sh    — configure your 1Password secrets"
+  _pf_info "  3. Reload your shell:  $reload_cmd  (or open a new terminal)"
   _pf_info "  4. Run: preflight"
   echo ""
-  _pf_info "To add custom shell functions, create ~/.preflight/lib/local.sh"
+  _pf_info "To add custom shell functions, create $PREFLIGHT_DIR/lib/local.sh"
   _pf_info "To check for updates later, run: preflight update"
   echo ""
 }

@@ -72,7 +72,11 @@ aws-whoami() {
   fi
 
   local region
-  region=$(aws configure get region ${AWS_PROFILE:+--profile "$AWS_PROFILE"} 2>/dev/null)
+  if [[ -n "$AWS_PROFILE" ]]; then
+    region=$(aws configure get region --profile "$AWS_PROFILE" 2>/dev/null)
+  else
+    region=$(aws configure get region 2>/dev/null)
+  fi
   [[ -n "$region" ]] && echo "🌎 Region:  $region"
 
   aws sts get-caller-identity --output table 2>/dev/null || echo "❌ Not authenticated or no valid credentials"

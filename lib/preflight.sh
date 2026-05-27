@@ -313,7 +313,7 @@ preflight() {
     # ── pull / rebase strategy ─────────────────────────────────────────────
     local pull_rebase
     pull_rebase=$(git config --global pull.rebase 2>/dev/null)
-    if [[ "$pull_rebase" == "true" || "$pull_rebase" == "ff-only" ]]; then
+    if [[ "$pull_rebase" == "true" || "$pull_rebase" == "merges" || "$pull_rebase" == "interactive" ]]; then
       echo "✅ pull.rebase = $pull_rebase"
     else
       echo "⚠️  pull.rebase not set — diverged pulls create accidental merge commits"
@@ -446,14 +446,27 @@ _preflight_update() {
     [[ "$reply" =~ ^[Yy]$ ]] || { echo "Update cancelled."; return 0; }
   fi
 
+  # Resolve branch once — used consistently for rev-parse, pull, and error messages
+  local branch
+  branch=$(git -C "$dir" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "main")
+  # If detached HEAD or on a feature branch, switch to the configured target branch
+  local target_branch="${PREFLIGHT_BRANCH:-main}"
+  if [[ "$branch" != "$target_branch" ]]; then
+    echo "ℹ️  Switching from '$branch' to '$target_branch' for update..."
+    git -C "$dir" checkout "$target_branch" 2>&1 | sed 's/^/  /' || {
+      echo "❌ Could not switch to '$target_branch'. Aborting."
+      return 1
+    }
+    branch="$target_branch"
+  fi
+
   # Fetch and check if there's anything new
   echo "Fetching from origin..."
   git -C "$dir" fetch origin 2>&1 | sed 's/^/  /'
 
   local current_sha upstream_sha
   current_sha=$(git -C "$dir" rev-parse HEAD)
-  upstream_sha=$(git -C "$dir" rev-parse "origin/${PREFLIGHT_BRANCH:-main}" 2>/dev/null \
-                 || git -C "$dir" rev-parse "origin/main")
+  upstream_sha=$(git -C "$dir" rev-parse "origin/$branch")
 
   if [[ "$current_sha" == "$upstream_sha" ]]; then
     echo ""
@@ -468,18 +481,21 @@ _preflight_update() {
   git -C "$dir" log --oneline "${current_sha}..${upstream_sha}" | sed 's/^/  /'
   echo ""
 
-  # Pull
-  if git -C "$dir" pull --ff-only origin "${PREFLIGHT_BRANCH:-main}" 2>&1 | sed 's/^/  /'; then
+  # Pull — capture output separately so git's exit code isn't masked by sed
+  local pull_output
+  if pull_output=$(git -C "$dir" pull --ff-only origin "$branch" 2>&1); then
+    echo "$pull_output" | sed 's/^/  /'
     echo ""
     echo "✅ Updated successfully."
     echo ""
     echo "   Reload your shell to pick up changes:"
     echo "     source ~/.bashrc   (or open a new terminal)"
   else
+    echo "$pull_output" | sed 's/^/  /'
     echo ""
     echo "❌ Pull failed (non-fast-forward). Your local branch has diverged."
-    echo "   To reset to upstream:  git -C $dir reset --hard origin/main"
-    echo "   To inspect:            git -C $dir log --oneline HEAD...origin/main"
+    echo "   To reset to upstream:  git -C $dir reset --hard origin/$branch"
+    echo "   To inspect:            git -C $dir log --oneline HEAD...origin/$branch"
     return 1
   fi
 
@@ -512,20 +528,12 @@ _preflight_uninstall() {
   for profile in "${profiles[@]}"; do
     [[ -f "$profile" ]] || continue
     if grep -qF 'preflight/init.sh' "$profile"; then
-      # Remove the comment line + source line as a pair, plus any blank line before
       local tmp
       tmp=$(mktemp)
-      # Delete the comment, the source line, and a preceding blank line if present
-      sed '/^[[:space:]]*# Preflight.*developer environment/{
-        N
-        /preflight\/init\.sh/d
-      }' "$profile" \
-      | sed '/^$/{ N; /^\n[[:space:]]*# Preflight/d }' \
-      > "$tmp"
-      # Simpler, more robust: remove all lines matching the known patterns
+      # Remove the comment line and source line; clean up any resulting blank lines
       grep -vF 'preflight/init.sh' "$profile" \
         | grep -v '# Preflight — developer environment' \
-        > "$tmp" && mv "$tmp" "$profile"
+        > "$tmp" && mv "$tmp" "$profile" || rm -f "$tmp"
       cleaned+=("$profile")
       echo "✅ Removed source line from $profile"
     fi
