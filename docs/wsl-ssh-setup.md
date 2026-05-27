@@ -71,7 +71,8 @@ This will offer to configure the following automatically:
 
 | What | Where |
 |------|-------|
-| `alias ssh='ssh.exe'` + `alias ssh-add='ssh-add.exe'` | `~/.bashrc` |
+| `alias ssh='/mnt/c/Windows/System32/OpenSSH/ssh.exe'` | `~/.bashrc` |
+| `alias ssh-add='/mnt/c/Windows/System32/OpenSSH/ssh-add.exe'` | `~/.bashrc` |
 | `export SSH_AUTH_SOCK=$HOME/.1password/agent.sock` | `~/.bashrc` |
 | `git config --global core.sshCommand /mnt/c/Windows/System32/OpenSSH/ssh.exe` | `~/.gitconfig` |
 | `Host * IdentityAgent ~/.1password/agent.sock` | `~/.ssh/config` |

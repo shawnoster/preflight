@@ -935,9 +935,15 @@ GITIGNORE
       echo ""
       _prereqs_ok=false
     else
-      local _key_count
-      _key_count=$(/mnt/c/Windows/System32/OpenSSH/ssh-add.exe -l 2>/dev/null | grep -vc "no identities" || true)
-      if [[ "$_key_count" -eq 0 ]]; then
+      local _agent_output _key_count
+      _agent_output=$(/mnt/c/Windows/System32/OpenSSH/ssh-add.exe -l 2>&1)
+      _key_count=$(echo "$_agent_output" | grep -vc "no identities" || true)
+      if echo "$_agent_output" | grep -qi "error\|connect\|refused\|no such file" || [[ -z "$_agent_output" ]]; then
+        echo "⚠️  1Password SSH agent unreachable — is 1Password running with SSH Agent enabled?"
+        echo "   See: ${PREFLIGHT_DIR:-$HOME/.preflight}/docs/wsl-ssh-setup.md"
+        echo ""
+        _prereqs_ok=false
+      elif [[ "$_key_count" -eq 0 ]]; then
         echo "⚠️  1Password SSH agent has no keys loaded"
         echo "   Make sure 1Password is unlocked and SSH Agent is enabled:"
         echo "   See: ${PREFLIGHT_DIR:-$HOME/.preflight}/docs/wsl-ssh-setup.md"
@@ -959,15 +965,17 @@ GITIGNORE
         ((kept++))
       else
         echo "💡 ~/.bashrc missing ssh.exe aliases and SSH_AUTH_SOCK"
-        echo "   Adds: alias ssh='ssh.exe', alias ssh-add='ssh-add.exe', SSH_AUTH_SOCK"
+        echo "   Adds: alias ssh (full path), alias ssh-add (full path), SSH_AUTH_SOCK"
+        local _ssh_full='/mnt/c/Windows/System32/OpenSSH/ssh.exe'
+        local _sshadd_full='/mnt/c/Windows/System32/OpenSSH/ssh-add.exe'
         if [[ "$auto" == true ]]; then
-          printf '\n# 1Password SSH agent via WSL interop\nexport SSH_AUTH_SOCK=$HOME/.1password/agent.sock\nalias ssh='"'"'ssh.exe'"'"'\nalias ssh-add='"'"'ssh-add.exe'"'"'\n' >> "$_bashrc"
+          printf '\n# 1Password SSH agent via WSL interop\nexport SSH_AUTH_SOCK=$HOME/.1password/agent.sock\nalias ssh='"'"'%s'"'"'\nalias ssh-add='"'"'%s'"'"'\n' "$_ssh_full" "$_sshadd_full" >> "$_bashrc"
           echo "   → Added to ~/.bashrc (reload shell to apply: source ~/.bashrc)"
           ((applied++))
         else
           read -r -p "   Apply? [Y/n] " reply; echo ""
           if [[ -z "$reply" || "$reply" =~ ^[Yy]$ ]]; then
-            printf '\n# 1Password SSH agent via WSL interop\nexport SSH_AUTH_SOCK=$HOME/.1password/agent.sock\nalias ssh='"'"'ssh.exe'"'"'\nalias ssh-add='"'"'ssh-add.exe'"'"'\n' >> "$_bashrc"
+            printf '\n# 1Password SSH agent via WSL interop\nexport SSH_AUTH_SOCK=$HOME/.1password/agent.sock\nalias ssh='"'"'%s'"'"'\nalias ssh-add='"'"'%s'"'"'\n' "$_ssh_full" "$_sshadd_full" >> "$_bashrc"
             echo "   ✅ Added to ~/.bashrc (reload shell to apply: source ~/.bashrc)"
             ((applied++))
           else
