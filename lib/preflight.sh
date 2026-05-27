@@ -928,15 +928,22 @@ GITIGNORE
     local _ssh_exe="/mnt/c/Windows/System32/OpenSSH/ssh.exe"
     local _prereqs_ok=true
 
+    # Resolve ssh-add.exe once — use it consistently for both the existence
+    # check and the key-listing call so PATH vs hardcoded path are never mixed
+    local _cfg_ssh_add_exe=""
+    command -v ssh-add.exe &>/dev/null && _cfg_ssh_add_exe=$(command -v ssh-add.exe)
+    [[ -z "$_cfg_ssh_add_exe" && -f "/mnt/c/Windows/System32/OpenSSH/ssh-add.exe" ]] && \
+      _cfg_ssh_add_exe="/mnt/c/Windows/System32/OpenSSH/ssh-add.exe"
+
     # Check 1Password SSH agent is reachable
-    if ! command -v ssh-add.exe &>/dev/null && [[ ! -f "/mnt/c/Windows/System32/OpenSSH/ssh-add.exe" ]]; then
+    if [[ -z "$_cfg_ssh_add_exe" ]]; then
       echo "⚠️  ssh-add.exe not found — Windows OpenSSH or WSL interop may be disabled"
       echo "   See: ${PREFLIGHT_DIR:-$HOME/.preflight}/docs/wsl-ssh-setup.md"
       echo ""
       _prereqs_ok=false
     else
       local _agent_output _key_count
-      _agent_output=$(/mnt/c/Windows/System32/OpenSSH/ssh-add.exe -l 2>&1)
+      _agent_output=$("$_cfg_ssh_add_exe" -l 2>&1)
       _key_count=$(echo "$_agent_output" | grep -vc "no identities" || true)
       if echo "$_agent_output" | grep -qi "error\|connect\|refused\|no such file" || [[ -z "$_agent_output" ]]; then
         echo "⚠️  1Password SSH agent unreachable — is 1Password running with SSH Agent enabled?"
@@ -1013,8 +1020,8 @@ GITIGNORE
 
       # 3. ~/.ssh/config (Linux)
       local _linux_ssh_conf="$HOME/.ssh/config"
-      if grep -q 'IdentityAgent' "$_linux_ssh_conf" 2>/dev/null; then
-        echo "✅ ~/.ssh/config already has IdentityAgent"
+      if grep -qF '/.1password/agent.sock' "$_linux_ssh_conf" 2>/dev/null; then
+        echo "✅ ~/.ssh/config already has 1Password IdentityAgent"
         ((kept++))
       else
         echo "💡 ~/.ssh/config missing IdentityAgent entry"
@@ -1041,7 +1048,7 @@ GITIGNORE
       echo ""
 
       # 4. Windows %USERPROFILE%\.ssh\config
-      if [[ -n "$_win_user" ]] && grep -q 'openssh-ssh-agent' "$_win_ssh_conf" 2>/dev/null; then
+      if [[ -n "$_win_user" ]] && grep -qF 'pipe\openssh-ssh-agent' "$_win_ssh_conf" 2>/dev/null; then
         echo "✅ Windows ~/.ssh/config already has 1Password pipe"
         ((kept++))
       elif [[ -n "$_win_user" ]]; then

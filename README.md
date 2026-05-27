@@ -85,8 +85,8 @@ source ~/.bashrc
 │   ├── help.sh          # Unified help system (dev-help / devhelp)
 │   ├── preflight.sh     # Session startup + environment health check
 │   └── project.sh       # Build tool wrappers
-└── config/
-    └── accounts.sh      # Non-secret configuration
+├── config/
+│   └── accounts.sh      # Non-secret configuration
 └── docs/
     └── wsl-ssh-setup.md # WSL + 1Password SSH setup guide
 ```
