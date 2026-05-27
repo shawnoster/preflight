@@ -2,33 +2,68 @@
 
 A modular collection of shell utilities for development workflows. Drop it in `~/.preflight`, source it from `.bashrc`, and get fuzzy-powered shortcuts for AWS, Docker, Git, 1Password, and project navigation.
 
-## Getting Started
+## Installation
 
 ```bash
-# 1. Clone to home directory
-git clone git@github.com:shawnoster/preflight.git ~/.preflight
-
-# 2. Add to your .bashrc (near the end)
-echo '[[ -f "$HOME/.preflight/init.sh" ]] && source "$HOME/.preflight/init.sh"' >> ~/.bashrc
-
-# 3. Reload your shell
-source ~/.bashrc
-
-# 4. Configure your accounts
-cp ~/.preflight/config/accounts.sh.template ~/.preflight/config/accounts.sh
-cp ~/.preflight/lib/1password.sh.template ~/.preflight/lib/1password.sh
-# Edit both files with your settings
-
-# 5. Run preflight to start your session
-preflight    # Signs in to 1Password, loads secrets, refreshes AWS, checks environment
+curl -fsSL https://raw.githubusercontent.com/shawnoster/preflight/main/install.sh | bash
 ```
 
-Use `dev-commands` to see everything available, or `dev-help` for the full menu.
+The installer:
+- Clones the repo to `~/.preflight` (override with `PREFLIGHT_DIR=/your/path`)
+- Adds a source line to your shell rc file (`.bashrc` or `.zshrc`), with the correct syntax for your shell
+- Creates `config/accounts.sh` and `lib/1password.sh` from their templates
+
+After installing:
+
+```bash
+# 1. Configure your accounts
+vim ~/.preflight/config/accounts.sh   # set OP_ACCOUNT, PROJ_DIRS, etc.
+vim ~/.preflight/lib/1password.sh     # configure your 1Password secrets
+
+# 2. Reload your shell
+source ~/.bashrc   # or open a new terminal
+
+# 3. Run preflight to start your session
+preflight
+```
+
+**Options:**
+```bash
+# Install to a custom location
+PREFLIGHT_DIR=~/.config/preflight curl -fsSL https://raw.githubusercontent.com/shawnoster/preflight/main/install.sh | bash
+
+# Skip shell profile modification (add the source line yourself)
+NO_MODIFY_PROFILE=1 curl -fsSL https://raw.githubusercontent.com/shawnoster/preflight/main/install.sh | bash
+```
+
+## Updating
+
+```bash
+preflight update
+```
+
+Pulls the latest changes from the upstream repo, shows incoming commits, and warns if any tracked files have local modifications. Gitignored files (`config/accounts.sh`, `lib/1password.sh`) are never touched.
+
+After updating, reload your shell:
+
+```bash
+source ~/.bashrc   # or open a new terminal
+```
+
+## Uninstalling
+
+```bash
+preflight uninstall
+```
+
+Removes `~/.preflight` and the source line from your shell profile(s). Prompts for confirmation first.
 
 ## Manual Installation
 
+If you prefer not to pipe to bash:
+
 ```bash
-cp -r preflight ~/.preflight
+git clone https://github.com/shawnoster/preflight.git ~/.preflight
 echo '[[ -f "$HOME/.preflight/init.sh" ]] && source "$HOME/.preflight/init.sh"' >> ~/.bashrc
 source ~/.bashrc
 ```
@@ -62,6 +97,10 @@ source ~/.bashrc
 |---------|-------------|
 | `preflight` | Session startup: sign in to 1Password, load secrets, refresh AWS, run health checks |
 | `preflight -u` | Same + compare installed tools against latest stable versions |
+| `preflight update` | Pull latest changes from upstream repo |
+| `preflight uninstall` | Remove preflight and undo shell profile changes |
+| `preflight configure` | Interactively apply recommended settings (git globals, etc.) |
+| `preflight configure --yes` | Apply all recommended settings without prompting |
 
 ### Help (`lib/help.sh`)
 
@@ -139,7 +178,7 @@ references.
 |---------|-------------|
 | `gco [branch]` | Fuzzy checkout branch |
 | `glog` | Interactive git log with preview |
-| `gstash [ref]` | Fuzzy apply stash |
+| `gstash [ref]` | Fuzzy pop stash (use --apply to keep in stash list) |
 | `gpr` | Create PR via GitHub CLI |
 | `gwip [msg]` | Quick WIP commit |
 | `gunwip` | Undo last WIP commit |
@@ -152,7 +191,7 @@ references.
 
 | Command | Description |
 |---------|-------------|
-| `dex [container] [shell]` | Exec into container (default shell: /bin/sh) |
+| `dex [container] [shell]` | Exec into container (tries bash, falls back to sh) |
 | `dlogs [container]` | Tail container logs |
 | `dstop [container...]` | Stop containers |
 | `drm [container...]` | Remove containers |
