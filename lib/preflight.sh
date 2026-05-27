@@ -25,10 +25,29 @@ preflight() {
   # Optionally erase the previous terminal line (opt-in for Starship users).
   [[ -t 1 && "${PREFLIGHT_ERASE_PREVIOUS_LINE:-}" == "1" ]] && printf '\033[1A\033[2K\r'
 
-  echo "========================================"
-  echo "          Preflight Check               "
-  echo "========================================"
-  echo ""
+  # ── Header ────────────────────────────────────────────────────────────────
+  # Colors: inherit from owl-theme if available, otherwise tasteful defaults
+  local R='\033[0m'
+  local B E T S
+  if [[ -n "${OWL_BODY:-}" ]]; then
+    B="\033[38;2;${OWL_BODY}m"
+    E="\033[38;2;${OWL_EYES}m"
+    T="\033[38;2;${OWL_TEXT}m"
+    S="\033[38;2;${OWL_SUB}m"
+  else
+    B="\033[38;2;100;140;200m"   # slate blue body
+    E="\033[38;2;240;240;255m"   # near-white eyes
+    T="\033[38;2;200;210;230m"   # light text
+    S="\033[38;2;120;130;150m"   # muted subtext
+  fi
+
+  printf "\n"
+  printf "  ${B}    __${R}\n"
+  printf "  ${B}   ( ${E}o${B}>${R}\n"
+  printf "  ${B}   ///\\${R}\n"
+  printf "  ${B}   \\V_/_${R}   ${T}Preflight Check${R}\n"
+  printf "  ${S}  ─────────────────────────────────${R}\n"
+  printf "\n"
 
   local issues=0
   local updates_available=0
@@ -400,19 +419,20 @@ preflight() {
   # ── Summary ───────────────────────────────────────────────────────────────
 
   echo ""
-  echo "========================================"
+  printf "  ${S}─────────────────────────────────${R}\n"
   if [[ $issues -gt 0 ]]; then
-    echo "⚠️  Found $issues issue(s) — see above"
+    printf "  ⚠️  ${T}Found $issues issue(s) — see above${R}\n"
   else
-    echo "✅ All systems go"
+    printf "  ✅ ${T}All systems go${R}\n"
   fi
   if [[ $updates_available -gt 0 ]]; then
-    echo "📦 $updates_available tool update(s) available — see above"
+    printf "  📦 ${T}$updates_available tool update(s) available — see above${R}\n"
   fi
   if [[ "$check_updates" == false ]]; then
-    echo "   Tip: run 'preflight -u' to check for updates"
+    printf "  ${S}Tip: run 'preflight -u' to check for updates${R}\n"
   fi
-  echo "========================================"
+  printf "  ${S}─────────────────────────────────${R}\n"
+  printf "\n"
 }
 
 # ── preflight update ──────────────────────────────────────────────────────────
@@ -420,9 +440,9 @@ preflight() {
 _preflight_update() {
   local dir="${PREFLIGHT_DIR:-$HOME/.preflight}"
 
-  echo "========================================"
-  echo "       Preflight Update                 "
-  echo "========================================"
+  printf "  \\033[38;2;${OWL_SUB:-120;130;150}m─────────────────────────────────\\033[0m\\n"
+  printf "  \\033[1mPreflight Update\\033[0m\\n"
+  printf "  \\033[38;2;${OWL_SUB:-120;130;150}m─────────────────────────────────\\033[0m\\n"
   echo ""
 
   if [[ ! -d "$dir/.git" ]]; then
@@ -471,7 +491,7 @@ _preflight_update() {
   if [[ "$current_sha" == "$upstream_sha" ]]; then
     echo ""
     echo "✅ Already up to date."
-    echo "========================================"
+    printf "  \\033[38;2;${OWL_SUB:-120;130;150}m─────────────────────────────────\\033[0m\\n"
     return 0
   fi
 
@@ -499,7 +519,7 @@ _preflight_update() {
     return 1
   fi
 
-  echo "========================================"
+  printf "  \\033[38;2;${OWL_SUB:-120;130;150}m─────────────────────────────────\\033[0m\\n"
 }
 
 # ── preflight uninstall ───────────────────────────────────────────────────────
@@ -507,9 +527,9 @@ _preflight_update() {
 _preflight_uninstall() {
   local dir="${PREFLIGHT_DIR:-$HOME/.preflight}"
 
-  echo "========================================"
-  echo "       Preflight Uninstall              "
-  echo "========================================"
+  printf "  \\033[38;2;${OWL_SUB:-120;130;150}m─────────────────────────────────\\033[0m\\n"
+  printf "  \\033[1mPreflight Uninstall\\033[0m\\n"
+  printf "  \\033[38;2;${OWL_SUB:-120;130;150}m─────────────────────────────────\\033[0m\\n"
   echo ""
   echo "This will:"
   echo "  • Remove $dir"
@@ -554,7 +574,7 @@ _preflight_uninstall() {
   echo ""
   echo "✅ Preflight uninstalled."
   echo "   Open a new terminal or run 'hash -r' to clear the command cache."
-  echo "========================================"
+  printf "  \\033[38;2;${OWL_SUB:-120;130;150}m─────────────────────────────────\\033[0m\\n"
 
   # Self-destruct: unset all preflight functions from the current shell
   unset -f preflight _preflight_update _preflight_uninstall
@@ -571,9 +591,9 @@ _preflight_configure() {
     return 1
   fi
 
-  echo "========================================"
-  echo "     Preflight: Configure             "
-  echo "========================================"
+  printf "  \\033[38;2;${OWL_SUB:-120;130;150}m─────────────────────────────────\\033[0m\\n"
+  printf "  \\033[1mPreflight: Configure\\033[0m\\n"
+  printf "  \\033[38;2;${OWL_SUB:-120;130;150}m─────────────────────────────────\\033[0m\\n"
   echo ""
 
   local applied=0 skipped=0 kept=0
@@ -709,12 +729,12 @@ GITIGNORE
   # ── Summary ──────────────────────────────────────────────────────────────
   unset -f _pf_git_set
 
-  echo "========================================"
+  printf "  \\033[38;2;${OWL_SUB:-120;130;150}m─────────────────────────────────\\033[0m\\n"
   echo "   Applied: $applied   Kept: $kept   Skipped: $skipped"
   if [[ $applied -gt 0 ]]; then
     echo ""
     echo "   Changes are global and take effect immediately."
     echo "   Review: git config --global --list"
   fi
-  echo "========================================"
+  printf "  \\033[38;2;${OWL_SUB:-120;130;150}m─────────────────────────────────\\033[0m\\n"
 }
