@@ -6,12 +6,15 @@
 #   preflight -u         - same + compare installed tools against latest stable versions
 #   preflight update     - pull latest changes from the upstream repo
 #   preflight uninstall  - remove preflight and undo shell profile changes
+#   preflight configure-git        - interactively apply recommended git globals
+#   preflight configure-git --yes  - apply all without prompting
 
 preflight() {
   # Dispatch subcommands before doing anything else
   case "${1:-}" in
-    update)    _preflight_update;    return ;;
-    uninstall) _preflight_uninstall; return ;;
+    update)         _preflight_update;        return ;;
+    uninstall)      _preflight_uninstall;     return ;;
+    configure-git)  _preflight_configure_git "${@:2}"; return ;;
   esac
 
   local check_updates=false
@@ -519,4 +522,163 @@ _preflight_uninstall() {
 
   # Self-destruct: unset all preflight functions from the current shell
   unset -f preflight _preflight_update _preflight_uninstall
+}
+
+# ── preflight configure-git ───────────────────────────────────────────────────
+
+_preflight_configure_git() {
+  local auto=false
+  [[ "${1:-}" == "--yes" ]] && auto=true
+
+  if ! command -v git &>/dev/null; then
+    echo "❌ git not found"
+    return 1
+  fi
+
+  echo "========================================"
+  echo "     Preflight: Configure Git           "
+  echo "========================================"
+  echo ""
+
+  local applied=0 skipped=0 kept=0
+
+  # Helper: prompt and set a git global
+  # Usage: _pf_git_set KEY VALUE "why it matters" [emoji]
+  _pf_git_set() {
+    local key="$1" value="$2" reason="$3" icon="${4:-⚠️ }"
+    local current
+    current=$(git config --global "$key" 2>/dev/null || true)
+
+    if [[ "$current" == "$value" ]]; then
+      echo "✅ $key = $value (already set)"
+      ((kept++))
+      return
+    fi
+
+    if [[ -n "$current" ]]; then
+      echo "$icon $key = $current"
+      echo "   Recommended: $value"
+      echo "   Reason: $reason"
+    else
+      echo "$icon $key not set"
+      echo "   Recommended: $value"
+      echo "   Reason: $reason"
+    fi
+
+    if [[ "$auto" == true ]]; then
+      git config --global "$key" "$value"
+      echo "   → Set to $value"
+      ((applied++))
+    else
+      read -r -p "   Apply? [Y/n] " reply
+      echo ""
+      if [[ -z "$reply" || "$reply" =~ ^[Yy]$ ]]; then
+        git config --global "$key" "$value"
+        echo "   ✅ Set $key = $value"
+        ((applied++))
+      else
+        echo "   Skipped."
+        ((skipped++))
+      fi
+    fi
+    echo ""
+  }
+
+  echo "--- Fetch / Remote Hygiene ---"
+  echo ""
+  _pf_git_set "fetch.prune"      "true"  "stale remote-tracking refs accumulate without this" "⚠️ "
+  _pf_git_set "fetch.pruneTags"  "true"  "tags deleted on the remote silently persist locally" "💡"
+
+  echo "--- Push Safety ---"
+  echo ""
+  _pf_git_set "push.autoSetupRemote" "true"   "new branches require manual --set-upstream without this" "⚠️ "
+  _pf_git_set "push.followTags"      "true"   "annotated tags pointing to pushed commits are pushed automatically" "💡"
+
+  echo "--- Pull / Rebase Strategy ---"
+  echo ""
+  _pf_git_set "pull.rebase"        "true"  "diverged pulls create accidental merge commits without this" "⚠️ "
+  _pf_git_set "rebase.autoStash"   "true"  "rebase aborts on a dirty working tree without this" "⚠️ "
+  _pf_git_set "rebase.autoSquash"  "true"  "fixup commits require --autosquash manually without this" "💡"
+
+  echo "--- Diff / Log Quality ---"
+  echo ""
+  _pf_git_set "diff.algorithm"    "histogram" "myers (default) produces misleading diffs on reordered code" "💡"
+  _pf_git_set "diff.colorMoved"   "default"   "visually distinguishes moved code from added/deleted lines" "💡"
+  _pf_git_set "branch.sort"       "-committerdate" "sorts branches by recency instead of alphabetically" "💡"
+
+  echo "--- Merge / Conflict Style ---"
+  echo ""
+  _pf_git_set "merge.conflictstyle" "zdiff3" "standard conflict markers hide the common ancestor" "💡"
+
+  echo "--- Global Gitignore ---"
+  echo ""
+  local current_excludes
+  current_excludes=$(git config --global core.excludesFile 2>/dev/null || true)
+  if [[ -n "$current_excludes" && -f "$current_excludes" ]]; then
+    echo "✅ core.excludesFile = $current_excludes (already set)"
+    ((kept++))
+    echo ""
+  else
+    local default_ignore="$HOME/.gitignore"
+    echo "💡 core.excludesFile not set"
+    echo "   Recommended: $default_ignore"
+    echo "   Reason: OS/editor artifacts need per-repo .gitignore entries without this"
+
+    if [[ "$auto" == true ]]; then
+      git config --global core.excludesFile "$default_ignore"
+      echo "   → Set to $default_ignore"
+      ((applied++))
+    else
+      read -r -p "   Apply? [Y/n] " reply
+      echo ""
+      if [[ -z "$reply" || "$reply" =~ ^[Yy]$ ]]; then
+        git config --global core.excludesFile "$default_ignore"
+        echo "   ✅ Set core.excludesFile = $default_ignore"
+        ((applied++))
+        # Create the file if it doesn't exist yet
+        if [[ ! -f "$default_ignore" ]]; then
+          cat > "$default_ignore" <<'GITIGNORE'
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Editor / IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+.env
+
+# Node
+node_modules/
+GITIGNORE
+          echo "   ✅ Created $default_ignore with common entries"
+        fi
+      else
+        echo "   Skipped."
+        ((skipped++))
+      fi
+    fi
+    echo ""
+  fi
+
+  # ── Summary ──────────────────────────────────────────────────────────────
+  unset -f _pf_git_set
+
+  echo "========================================"
+  echo "   Applied: $applied   Kept: $kept   Skipped: $skipped"
+  if [[ $applied -gt 0 ]]; then
+    echo ""
+    echo "   Changes are global and take effect immediately."
+    echo "   Review: git config --global --list"
+  fi
+  echo "========================================"
 }
