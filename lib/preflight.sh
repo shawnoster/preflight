@@ -195,7 +195,21 @@ preflight() {
   _pf_section "SSH"
   _pf_status "SSH: checking agent..."
 
-  if [[ -n "$SSH_AUTH_SOCK" ]]; then
+  # Detect WSL — prefer 1Password via ssh-add.exe, fall back to standard agent
+  local _is_wsl=false
+  grep -qi microsoft /proc/version 2>/dev/null && _is_wsl=true
+
+  if [[ "$_is_wsl" == true ]] && command -v ssh-add.exe &>/dev/null; then
+    local _key_count
+    _key_count=$(ssh-add.exe -l 2>/dev/null | grep -vc "no identities" || true)
+    if [[ "$_key_count" -gt 0 ]]; then
+      _pf_line "✅ 1Password SSH agent active ($_key_count key(s) via ssh-add.exe)"
+    else
+      issue_msgs+=("1Password SSH agent has no keys — check 1Password Developer settings")
+      _pf_line "⚠️  ssh-add.exe found but no keys loaded"
+      ((issues++))
+    fi
+  elif [[ -n "$SSH_AUTH_SOCK" ]]; then
     _pf_line "✅ SSH_AUTH_SOCK is set: $SSH_AUTH_SOCK"
     if ssh-add -l &>/dev/null; then
       _pf_line "✅ SSH agent has keys loaded"
@@ -203,17 +217,20 @@ preflight() {
       _pf_line "⚠️  SSH agent running but no keys loaded"
     fi
   else
-    issue_msgs+=("SSH_AUTH_SOCK not set (ssh-agent not running?)")
-    _pf_line "⚠️  SSH_AUTH_SOCK not set (ssh-agent not running?)"
+    issue_msgs+=("SSH agent not available — on WSL, ensure 1Password SSH agent is running")
+    _pf_line "⚠️  No SSH agent found"
     ((issues++))
   fi
 
-  if [[ -f "$HOME/.ssh/id_ed25519" ]] || [[ -f "$HOME/.ssh/id_rsa" ]]; then
-    _pf_line "✅ SSH keys exist in ~/.ssh/"
-  else
-    issue_msgs+=("No SSH keys found in ~/.ssh/")
-    _pf_line "⚠️  No SSH keys found in ~/.ssh/"
-    ((issues++))
+  # Key files are optional on WSL (keys live in 1Password), so only check on non-WSL
+  if [[ "$_is_wsl" == false ]]; then
+    if [[ -f "$HOME/.ssh/id_ed25519" ]] || [[ -f "$HOME/.ssh/id_rsa" ]]; then
+      _pf_line "✅ SSH keys exist in ~/.ssh/"
+    else
+      issue_msgs+=("No SSH keys found in ~/.ssh/")
+      _pf_line "⚠️  No SSH keys found in ~/.ssh/"
+      ((issues++))
+    fi
   fi
 
   # ── Installed Tools ───────────────────────────────────────────────────────
@@ -875,6 +892,160 @@ GITIGNORE
       echo ""
     fi
   fi
+
+  # ── WSL SSH (1Password) ───────────────────────────────────────────────────
+
+  local _is_wsl=false
+  grep -qi microsoft /proc/version 2>/dev/null && _is_wsl=true
+
+  if [[ "$_is_wsl" == true ]]; then
+    echo "--- WSL SSH (1Password) ---"
+    echo ""
+
+    local _win_user _win_ssh_conf _win_ssh_dir
+    _win_user=$(cmd.exe /c "echo %USERNAME%" 2>/dev/null | tr -d '\r\n')
+    _win_ssh_dir="/mnt/c/Users/${_win_user}/.ssh"
+    _win_ssh_conf="${_win_ssh_dir}/config"
+
+    local _ssh_exe="/mnt/c/Windows/System32/OpenSSH/ssh.exe"
+    local _prereqs_ok=true
+
+    # Check 1Password SSH agent is reachable
+    if ! command -v ssh-add.exe &>/dev/null && [[ ! -f "/mnt/c/Windows/System32/OpenSSH/ssh-add.exe" ]]; then
+      echo "⚠️  ssh-add.exe not found — Windows OpenSSH or WSL interop may be disabled"
+      echo "   See: ${PREFLIGHT_DIR:-~/.preflight}/docs/wsl-ssh-setup.md"
+      echo ""
+      _prereqs_ok=false
+    else
+      local _key_count
+      _key_count=$(/mnt/c/Windows/System32/OpenSSH/ssh-add.exe -l 2>/dev/null | grep -vc "no identities" || true)
+      if [[ "$_key_count" -eq 0 ]]; then
+        echo "⚠️  1Password SSH agent has no keys loaded"
+        echo "   Make sure 1Password is unlocked and SSH Agent is enabled:"
+        echo "   See: ${PREFLIGHT_DIR:-~/.preflight}/docs/wsl-ssh-setup.md"
+        echo ""
+        _prereqs_ok=false
+      else
+        echo "✅ 1Password SSH agent active ($_key_count key(s))"
+        echo ""
+        ((kept++))
+      fi
+    fi
+
+    if [[ "$_prereqs_ok" == true ]]; then
+
+      # 1. ~/.bashrc — ssh/ssh-add aliases + SSH_AUTH_SOCK
+      local _bashrc="$HOME/.bashrc"
+      if grep -q 'alias ssh=' "$_bashrc" 2>/dev/null && grep -q 'SSH_AUTH_SOCK' "$_bashrc" 2>/dev/null; then
+        echo "✅ ~/.bashrc ssh aliases already configured"
+        ((kept++))
+      else
+        echo "💡 ~/.bashrc missing ssh.exe aliases and SSH_AUTH_SOCK"
+        echo "   Adds: alias ssh='ssh.exe', alias ssh-add='ssh-add.exe', SSH_AUTH_SOCK"
+        if [[ "$auto" == true ]]; then
+          printf '\n# 1Password SSH agent via WSL interop\nexport SSH_AUTH_SOCK=$HOME/.1password/agent.sock\nalias ssh='"'"'ssh.exe'"'"'\nalias ssh-add='"'"'ssh-add.exe'"'"'\n' >> "$_bashrc"
+          echo "   → Added to ~/.bashrc"
+          ((applied++))
+        else
+          read -r -p "   Apply? [Y/n] " reply; echo ""
+          if [[ -z "$reply" || "$reply" =~ ^[Yy]$ ]]; then
+            printf '\n# 1Password SSH agent via WSL interop\nexport SSH_AUTH_SOCK=$HOME/.1password/agent.sock\nalias ssh='"'"'ssh.exe'"'"'\nalias ssh-add='"'"'ssh-add.exe'"'"'\n' >> "$_bashrc"
+            echo "   ✅ Added to ~/.bashrc (reload shell to apply)"
+            ((applied++))
+          else
+            echo "   Skipped."; ((skipped++))
+          fi
+        fi
+      fi
+      echo ""
+
+      # 2. git core.sshCommand
+      local _cur_ssh_cmd
+      _cur_ssh_cmd=$(git config --global core.sshCommand 2>/dev/null || true)
+      if [[ "$_cur_ssh_cmd" == *"ssh.exe"* ]]; then
+        echo "✅ git core.sshCommand = $_cur_ssh_cmd"
+        ((kept++))
+      else
+        echo "💡 git core.sshCommand not set to ssh.exe"
+        echo "   Recommended: $_ssh_exe"
+        if [[ "$auto" == true ]]; then
+          git config --global core.sshCommand "$_ssh_exe"
+          echo "   → Set git core.sshCommand"
+          ((applied++))
+        else
+          read -r -p "   Apply? [Y/n] " reply; echo ""
+          if [[ -z "$reply" || "$reply" =~ ^[Yy]$ ]]; then
+            git config --global core.sshCommand "$_ssh_exe"
+            echo "   ✅ Set git core.sshCommand = $_ssh_exe"
+            ((applied++))
+          else
+            echo "   Skipped."; ((skipped++))
+          fi
+        fi
+      fi
+      echo ""
+
+      # 3. ~/.ssh/config (Linux)
+      local _linux_ssh_conf="$HOME/.ssh/config"
+      if grep -q 'IdentityAgent' "$_linux_ssh_conf" 2>/dev/null; then
+        echo "✅ ~/.ssh/config already has IdentityAgent"
+        ((kept++))
+      else
+        echo "💡 ~/.ssh/config missing IdentityAgent entry"
+        echo "   Adds: Host * IdentityAgent ~/.1password/agent.sock"
+        if [[ "$auto" == true ]]; then
+          mkdir -p "$HOME/.ssh" && chmod 700 "$HOME/.ssh"
+          printf '\nHost *\n  IdentityAgent "~/.1password/agent.sock"\n' >> "$_linux_ssh_conf"
+          chmod 600 "$_linux_ssh_conf"
+          echo "   → Written to ~/.ssh/config"
+          ((applied++))
+        else
+          read -r -p "   Apply? [Y/n] " reply; echo ""
+          if [[ -z "$reply" || "$reply" =~ ^[Yy]$ ]]; then
+            mkdir -p "$HOME/.ssh" && chmod 700 "$HOME/.ssh"
+            printf '\nHost *\n  IdentityAgent "~/.1password/agent.sock"\n' >> "$_linux_ssh_conf"
+            chmod 600 "$_linux_ssh_conf"
+            echo "   ✅ Written to ~/.ssh/config"
+            ((applied++))
+          else
+            echo "   Skipped."; ((skipped++))
+          fi
+        fi
+      fi
+      echo ""
+
+      # 4. Windows %USERPROFILE%\.ssh\config
+      if [[ -n "$_win_user" ]] && grep -q 'openssh-ssh-agent' "$_win_ssh_conf" 2>/dev/null; then
+        echo "✅ Windows ~/.ssh/config already has 1Password pipe"
+        ((kept++))
+      elif [[ -n "$_win_user" ]]; then
+        echo "💡 Windows %USERPROFILE%\\.ssh\\config missing 1Password agent pipe"
+        echo "   Path: $_win_ssh_conf"
+        echo "   Adds: Host * IdentityAgent \\\\.\\pipe\\openssh-ssh-agent"
+        if [[ "$auto" == true ]]; then
+          mkdir -p "$_win_ssh_dir"
+          printf 'Host *\n  IdentityAgent "\\\\.\\pipe\\openssh-ssh-agent"\n' >> "$_win_ssh_conf"
+          echo "   → Written to $_win_ssh_conf"
+          ((applied++))
+        else
+          read -r -p "   Apply? [Y/n] " reply; echo ""
+          if [[ -z "$reply" || "$reply" =~ ^[Yy]$ ]]; then
+            mkdir -p "$_win_ssh_dir"
+            printf 'Host *\n  IdentityAgent "\\\\.\\pipe\\openssh-ssh-agent"\n' >> "$_win_ssh_conf"
+            echo "   ✅ Written to $_win_ssh_conf"
+            ((applied++))
+          else
+            echo "   Skipped."; ((skipped++))
+          fi
+        fi
+      else
+        echo "ℹ️  Could not detect Windows username — skipping Windows SSH config"
+        echo "   Run manually: see ${PREFLIGHT_DIR:-~/.preflight}/docs/wsl-ssh-setup.md"
+      fi
+      echo ""
+
+    fi # _prereqs_ok
+  fi # _is_wsl
 
   printf "  \033[38;2;${OWL_SUB:-120;130;150}m%s\033[0m\n" "$(printf '%0.s-' {1..33})"
   echo "   Applied: $applied   Kept: $kept   Skipped: $skipped"
