@@ -6,15 +6,15 @@
 #   preflight -u         - same + compare installed tools against latest stable versions
 #   preflight update     - pull latest changes from the upstream repo
 #   preflight uninstall  - remove preflight and undo shell profile changes
-#   preflight configure-git        - interactively apply recommended git globals
-#   preflight configure-git --yes  - apply all without prompting
+#   preflight configure        - interactively apply recommended settings (git globals, etc.)
+#   preflight configure --yes  - apply all without prompting
 
 preflight() {
   # Dispatch subcommands before doing anything else
   case "${1:-}" in
     update)         _preflight_update;        return ;;
     uninstall)      _preflight_uninstall;     return ;;
-    configure-git)  _preflight_configure_git "${@:2}"; return ;;
+    configure)      _preflight_configure "${@:2}";     return ;;
   esac
 
   local check_updates=false
@@ -524,9 +524,9 @@ _preflight_uninstall() {
   unset -f preflight _preflight_update _preflight_uninstall
 }
 
-# ── preflight configure-git ───────────────────────────────────────────────────
+# ── preflight configure ───────────────────────────────────────────────────────
 
-_preflight_configure_git() {
+_preflight_configure() {
   local auto=false
   [[ "${1:-}" == "--yes" ]] && auto=true
 
@@ -536,7 +536,7 @@ _preflight_configure_git() {
   fi
 
   echo "========================================"
-  echo "     Preflight: Configure Git           "
+  echo "     Preflight: Configure             "
   echo "========================================"
   echo ""
 

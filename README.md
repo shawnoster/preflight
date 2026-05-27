@@ -99,8 +99,8 @@ source ~/.bashrc
 | `preflight -u` | Same + compare installed tools against latest stable versions |
 | `preflight update` | Pull latest changes from upstream repo |
 | `preflight uninstall` | Remove preflight and undo shell profile changes |
-| `preflight configure-git` | Interactively apply recommended git globals |
-| `preflight configure-git --yes` | Apply all recommended git globals without prompting |
+| `preflight configure` | Interactively apply recommended settings (git globals, etc.) |
+| `preflight configure --yes` | Apply all recommended settings without prompting |
 
 ### Help (`lib/help.sh`)
 
