@@ -137,17 +137,45 @@ preflight() {
     echo "--- Installed Tools ---"
   fi
 
-  declare -A _update_hints=(
-    [sam]="pip install --upgrade aws-sam-cli"
-    [docker]="sudo apt-get install --only-upgrade docker-ce"
-    [terraform]="brew upgrade terraform  # or: releases.hashicorp.com/terraform"
-    [gh]="sudo apt update && sudo apt install gh"
-    [jq]="sudo apt install jq  # or: github.com/jqlang/jq/releases (apt may lag)"
-    [fzf]="github.com/junegunn/fzf/releases  # apt version lags — download binary"
-    [tmux]="sudo apt install tmux  # or build from: github.com/tmux/tmux/releases"
-    [claude]="npm install -g @anthropic-ai/claude-code"
-    [uv]="pip install --upgrade uv  # or: curl -LsSf https://astral.sh/uv/install.sh | sh"
-  )
+  # Detect platform for context-appropriate update hints
+  local _os
+  if [[ "$(uname -s)" == "Darwin" ]]; then
+    _os="mac"
+  elif grep -qi microsoft /proc/version 2>/dev/null; then
+    _os="wsl"
+  else
+    _os="linux"
+  fi
+
+  declare -A _update_hints
+  case "$_os" in
+    mac)
+      _update_hints=(
+        [sam]="brew upgrade aws-sam-cli"
+        [docker]="brew upgrade --cask docker"
+        [terraform]="brew upgrade hashicorp/tap/terraform"
+        [gh]="brew upgrade gh"
+        [jq]="brew upgrade jq"
+        [fzf]="brew upgrade fzf"
+        [tmux]="brew upgrade tmux"
+        [claude]="claude update"
+        [uv]="uv self update"
+      )
+      ;;
+    wsl|linux)
+      _update_hints=(
+        [sam]="sudo ./sam-installation/install --update  # re-run native installer with --update"
+        [docker]="sudo apt update && sudo apt install docker-ce docker-ce-cli containerd.io"
+        [terraform]="sudo apt update && sudo apt install terraform  # requires HashiCorp apt repo"
+        [gh]="sudo apt update && sudo apt install gh  # requires GitHub apt repo"
+        [jq]="sudo apt update && sudo apt install jq"
+        [fzf]="github.com/junegunn/fzf/releases  # apt lags — download binary"
+        [tmux]="github.com/tmux/tmux-builds  # apt lags — use static prebuilt binary"
+        [claude]="claude update"
+        [uv]="uv self update"
+      )
+      ;;
+  esac
 
   local tmpdir=""
   if [[ "$check_updates" == true ]] && command -v gh &>/dev/null; then
