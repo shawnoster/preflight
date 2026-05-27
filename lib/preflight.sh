@@ -2,10 +2,18 @@
 # ~/.preflight/lib/preflight.sh - Session startup and environment health check
 #
 # Usage:
-#   preflight       - sign in, load secrets, refresh AWS, run health checks
-#   preflight -u    - same + compare installed tools against latest stable versions
+#   preflight            - sign in, load secrets, refresh AWS, run health checks
+#   preflight -u         - same + compare installed tools against latest stable versions
+#   preflight update     - pull latest changes from the upstream repo
+#   preflight uninstall  - remove preflight and undo shell profile changes
 
 preflight() {
+  # Dispatch subcommands before doing anything else
+  case "${1:-}" in
+    update)    _preflight_update;    return ;;
+    uninstall) _preflight_uninstall; return ;;
+  esac
+
   local check_updates=false
   for arg in "$@"; do
     case "$arg" in -u|--updates) check_updates=true ;; esac
@@ -23,6 +31,9 @@ preflight() {
   local updates_available=0
 
   # ── Secrets ───────────────────────────────────────────────────────────────
+
+  echo "--- Secrets ---"
+  echo ""
 
   if command -v op &>/dev/null; then
     if ! op-load-env; then
@@ -132,6 +143,7 @@ preflight() {
     [fzf]="github.com/junegunn/fzf/releases  # apt version lags — download binary"
     [tmux]="sudo apt install tmux  # or build from: github.com/tmux/tmux/releases"
     [claude]="npm install -g @anthropic-ai/claude-code"
+    [uv]="pip install --upgrade uv  # or: curl -LsSf https://astral.sh/uv/install.sh | sh"
   )
 
   local tmpdir=""
@@ -142,7 +154,7 @@ preflight() {
       gh api repos/aws/aws-sam-cli/releases/latest \
         --jq '.tag_name | ltrimstr("v")' >"$tmpdir/sam" 2>/dev/null &
       gh api repos/moby/moby/releases/latest \
-        --jq '.tag_name | ltrimstr("docker-v")' >"$tmpdir/docker" 2>/dev/null &
+        --jq '.tag_name | ltrimstr("v")' >"$tmpdir/docker" 2>/dev/null &
       gh api repos/hashicorp/terraform/releases/latest \
         --jq '.tag_name | ltrimstr("v")' >"$tmpdir/terraform" 2>/dev/null &
       gh api repos/cli/cli/releases/latest \
@@ -154,6 +166,8 @@ preflight() {
       gh api repos/tmux/tmux/releases/latest \
         --jq '.tag_name' >"$tmpdir/tmux" 2>/dev/null &
       npm view @anthropic-ai/claude-code version >"$tmpdir/claude" 2>/dev/null &
+      gh api repos/astral-sh/uv/releases/latest \
+        --jq '.tag_name | ltrimstr("v")' >"$tmpdir/uv" 2>/dev/null &
       wait
     )
   fi
@@ -187,6 +201,7 @@ preflight() {
     "fzf:fzf:fzf"
     "tmux:tmux:tmux"
     "claude:Claude Code:claude"
+    "uv:uv:uv"
   )
 
   for item in "${tools[@]}"; do
@@ -228,13 +243,91 @@ preflight() {
       echo "✅ Git user.email: $(git config --global user.email)"
     else
       echo "⚠️  Git user.email not set"
+      ((issues++))
     fi
 
     if [[ -n "$(git config --global user.name)" ]]; then
       echo "✅ Git user.name: $(git config --global user.name)"
     else
       echo "⚠️  Git user.name not set"
+      ((issues++))
     fi
+
+    # ── fetch hygiene ──────────────────────────────────────────────────────
+    if [[ "$(git config --global fetch.prune)" == "true" ]]; then
+      echo "✅ fetch.prune = true"
+    else
+      echo "⚠️  fetch.prune not set — stale remote branches accumulate"
+      echo "   Fix: git config --global fetch.prune true"
+      ((issues++))
+    fi
+
+    # ── push safety ────────────────────────────────────────────────────────
+    local push_default
+    push_default=$(git config --global push.default 2>/dev/null)
+    if [[ "$push_default" == "matching" ]]; then
+      echo "⚠️  push.default = matching — can push unintended branches"
+      echo "   Fix: git config --global push.default simple"
+      ((issues++))
+    fi
+
+    if [[ "$(git config --global push.autoSetupRemote)" == "true" ]]; then
+      echo "✅ push.autoSetupRemote = true"
+    else
+      echo "⚠️  push.autoSetupRemote not set — new branches require manual upstream"
+      echo "   Fix: git config --global push.autoSetupRemote true"
+      ((issues++))
+    fi
+
+    # ── pull / rebase strategy ─────────────────────────────────────────────
+    local pull_rebase
+    pull_rebase=$(git config --global pull.rebase 2>/dev/null)
+    if [[ "$pull_rebase" == "true" || "$pull_rebase" == "ff-only" ]]; then
+      echo "✅ pull.rebase = $pull_rebase"
+    else
+      echo "⚠️  pull.rebase not set — diverged pulls create accidental merge commits"
+      echo "   Fix: git config --global pull.rebase true"
+      ((issues++))
+    fi
+
+    if [[ "$(git config --global rebase.autoStash)" == "true" ]]; then
+      echo "✅ rebase.autoStash = true"
+    else
+      echo "⚠️  rebase.autoStash not set — rebase aborts on dirty working tree"
+      echo "   Fix: git config --global rebase.autoStash true"
+      ((issues++))
+    fi
+
+    # ── diff quality ───────────────────────────────────────────────────────
+    local diff_algo
+    diff_algo=$(git config --global diff.algorithm 2>/dev/null)
+    if [[ "$diff_algo" == "histogram" ]]; then
+      echo "✅ diff.algorithm = histogram"
+    else
+      echo "💡 diff.algorithm not set to histogram — diffs on reordered code can be misleading"
+      echo "   Fix: git config --global diff.algorithm histogram"
+    fi
+
+    # ── merge conflict style ───────────────────────────────────────────────
+    local conflict_style
+    conflict_style=$(git config --global merge.conflictstyle 2>/dev/null)
+    if [[ "$conflict_style" == "diff3" || "$conflict_style" == "zdiff3" ]]; then
+      echo "✅ merge.conflictstyle = $conflict_style"
+    else
+      echo "💡 merge.conflictstyle not set — conflict markers hide the common ancestor"
+      echo "   Fix: git config --global merge.conflictstyle zdiff3"
+    fi
+
+    # ── global gitignore ───────────────────────────────────────────────────
+    local excludes_file
+    excludes_file=$(git config --global core.excludesFile 2>/dev/null)
+    if [[ -n "$excludes_file" && -f "$excludes_file" ]]; then
+      echo "✅ core.excludesFile = $excludes_file"
+    else
+      echo "💡 core.excludesFile not set — OS/editor artifacts need per-repo .gitignore entries"
+      echo "   Fix: git config --global core.excludesFile ~/.gitignore"
+    fi
+
   else
     echo "❌ Git not installed"
   fi
@@ -266,6 +359,13 @@ preflight() {
     echo "❌ Python not installed"
   fi
 
+  if command -v uv &>/dev/null; then
+    echo "✅ uv: $(uv --version)"
+  else
+    echo "❌ uv not installed"
+    ((issues++))
+  fi
+
   # ── Summary ───────────────────────────────────────────────────────────────
 
   echo ""
@@ -282,4 +382,141 @@ preflight() {
     echo "   Tip: run 'preflight -u' to check for updates"
   fi
   echo "========================================"
+}
+
+# ── preflight update ──────────────────────────────────────────────────────────
+
+_preflight_update() {
+  local dir="${PREFLIGHT_DIR:-$HOME/.preflight}"
+
+  echo "========================================"
+  echo "       Preflight Update                 "
+  echo "========================================"
+  echo ""
+
+  if [[ ! -d "$dir/.git" ]]; then
+    echo "❌ $dir is not a git repository"
+    echo "   If you installed manually (not via install.sh), updates must be done manually."
+    return 1
+  fi
+
+  # Warn about uncommitted changes to tracked files — gitignored files are safe
+  local dirty
+  dirty=$(git -C "$dir" status --porcelain 2>/dev/null | grep -v '^??' || true)
+  if [[ -n "$dirty" ]]; then
+    echo "⚠️  Uncommitted changes to tracked files detected:"
+    echo "$dirty" | sed 's/^/   /'
+    echo ""
+    echo "   These files may conflict with upstream changes."
+    echo "   Consider moving customizations to lib/local.sh (which is gitignored)."
+    echo ""
+    read -r -p "   Continue with update anyway? [y/N] " reply
+    echo ""
+    [[ "$reply" =~ ^[Yy]$ ]] || { echo "Update cancelled."; return 0; }
+  fi
+
+  # Fetch and check if there's anything new
+  echo "Fetching from origin..."
+  git -C "$dir" fetch origin 2>&1 | sed 's/^/  /'
+
+  local current_sha upstream_sha
+  current_sha=$(git -C "$dir" rev-parse HEAD)
+  upstream_sha=$(git -C "$dir" rev-parse "origin/${PREFLIGHT_BRANCH:-main}" 2>/dev/null \
+                 || git -C "$dir" rev-parse "origin/main")
+
+  if [[ "$current_sha" == "$upstream_sha" ]]; then
+    echo ""
+    echo "✅ Already up to date."
+    echo "========================================"
+    return 0
+  fi
+
+  # Show what's incoming
+  echo ""
+  echo "New commits:"
+  git -C "$dir" log --oneline "${current_sha}..${upstream_sha}" | sed 's/^/  /'
+  echo ""
+
+  # Pull
+  if git -C "$dir" pull --ff-only origin "${PREFLIGHT_BRANCH:-main}" 2>&1 | sed 's/^/  /'; then
+    echo ""
+    echo "✅ Updated successfully."
+    echo ""
+    echo "   Reload your shell to pick up changes:"
+    echo "     source ~/.bashrc   (or open a new terminal)"
+  else
+    echo ""
+    echo "❌ Pull failed (non-fast-forward). Your local branch has diverged."
+    echo "   To reset to upstream:  git -C $dir reset --hard origin/main"
+    echo "   To inspect:            git -C $dir log --oneline HEAD...origin/main"
+    return 1
+  fi
+
+  echo "========================================"
+}
+
+# ── preflight uninstall ───────────────────────────────────────────────────────
+
+_preflight_uninstall() {
+  local dir="${PREFLIGHT_DIR:-$HOME/.preflight}"
+
+  echo "========================================"
+  echo "       Preflight Uninstall              "
+  echo "========================================"
+  echo ""
+  echo "This will:"
+  echo "  • Remove $dir"
+  echo "  • Remove the preflight source line from your shell profile"
+  echo ""
+  read -r -p "Are you sure? [y/N] " reply
+  echo ""
+  [[ "$reply" =~ ^[Yy]$ ]] || { echo "Uninstall cancelled."; return 0; }
+
+  # Remove source line from whichever profile files contain it
+  local profiles=("$HOME/.bashrc" "$HOME/.bash_profile" "$HOME/.zshrc"
+                  "$HOME/.zshenv" "$HOME/.profile"
+                  "${ZDOTDIR:-$HOME}/.zshrc")
+  local cleaned=()
+
+  for profile in "${profiles[@]}"; do
+    [[ -f "$profile" ]] || continue
+    if grep -qF 'preflight/init.sh' "$profile"; then
+      # Remove the comment line + source line as a pair, plus any blank line before
+      local tmp
+      tmp=$(mktemp)
+      # Delete the comment, the source line, and a preceding blank line if present
+      sed '/^[[:space:]]*# Preflight.*developer environment/{
+        N
+        /preflight\/init\.sh/d
+      }' "$profile" \
+      | sed '/^$/{ N; /^\n[[:space:]]*# Preflight/d }' \
+      > "$tmp"
+      # Simpler, more robust: remove all lines matching the known patterns
+      grep -vF 'preflight/init.sh' "$profile" \
+        | grep -v '# Preflight — developer environment' \
+        > "$tmp" && mv "$tmp" "$profile"
+      cleaned+=("$profile")
+      echo "✅ Removed source line from $profile"
+    fi
+  done
+
+  if [[ ${#cleaned[@]} -eq 0 ]]; then
+    echo "ℹ️  No shell profile contained a preflight source line."
+  fi
+
+  # Remove the directory
+  if [[ -d "$dir" ]]; then
+    rm -rf "$dir"
+    echo "✅ Removed $dir"
+  else
+    echo "ℹ️  $dir not found — nothing to remove."
+  fi
+
+  echo ""
+  echo "✅ Preflight uninstalled."
+  echo "   Open a new terminal or run 'hash -r' to clear the command cache."
+  echo "========================================"
+
+  # Self-destruct: unset all preflight functions from the current shell
+  unset -f preflight _preflight_update _preflight_uninstall
 }

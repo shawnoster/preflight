@@ -16,7 +16,7 @@ docker-help
 
 dex [container] [shell]
   Exec into a running container. Pass container name to skip fzf.
-  shell defaults to /bin/sh.
+  shell defaults to bash with fallback to sh.
 
 dlogs [container]
   Tail container logs. Pass container name to skip fzf.
@@ -57,7 +57,6 @@ EOF
 # dex: exec into running container
 dex() {
   local container="${1:-}"
-  local shell="${2:-/bin/sh}"
 
   if [[ -z "$container" ]]; then
     if [[ ! -t 0 ]]; then
@@ -68,10 +67,19 @@ dex() {
   fi
 
   if [[ -n "$container" ]]; then
+    local shell="${2:-}"
     if [[ -t 0 && -t 1 ]]; then
-      docker exec -it "$container" "$shell"
+      if [[ -n "$shell" ]]; then
+        docker exec -it "$container" "$shell"
+      else
+        docker exec -it "$container" bash 2>/dev/null || docker exec -it "$container" sh
+      fi
     else
-      docker exec -i "$container" "$shell"
+      if [[ -n "$shell" ]]; then
+        docker exec -i "$container" "$shell"
+      else
+        docker exec -i "$container" bash 2>/dev/null || docker exec -i "$container" sh
+      fi
     fi
   fi
 }

@@ -21,7 +21,9 @@ glog
   Pretty git log. Interactive with fzf preview in a terminal, plain log otherwise.
 
 gstash [stash-ref]
-  Fuzzy select and apply a stash. Pass a stash ref (e.g. stash@{0}) to skip fzf.
+  Fuzzy select and pop a stash (applies and removes from stash list).
+  Pass a stash ref (e.g. stash@{0}) to skip fzf.
+  Use --apply to apply without removing from the stash list.
 
 gpr
   Create a pull request using GitHub CLI (opens browser).
@@ -67,7 +69,7 @@ gco() {
       echo "Usage: gco <branch>" >&2
       return 1
     fi
-    branch=$(git branch --all | grep -v HEAD | sed 's/^..//' | sed 's/remotes\/origin\///' | sort -u | fzf --prompt="Checkout branch > ")
+    branch=$(git branch --all | grep -v HEAD | sed 's/^..//' | sed 's|remotes/[^/]*/||' | sort -u | fzf --prompt="Checkout branch > ")
   fi
 
   [[ -n "$branch" ]] && git checkout "$branch"
@@ -82,19 +84,25 @@ glog() {
   git log --oneline --color=always | fzf --ansi --preview 'git show --color=always {1}' --preview-window=right:60%
 }
 
-# gstash: fuzzy select and apply stash
+# gstash: fuzzy select and pop stash (use --apply to keep in stash list)
 gstash() {
   local stash="${1:-}"
+  local action="pop"
+
+  if [[ "$stash" == "--apply" ]]; then
+    action="apply"
+    stash="${2:-}"
+  fi
 
   if [[ -z "$stash" ]]; then
     if [[ ! -t 0 ]]; then
-      echo "Usage: gstash <stash-ref>" >&2
+      echo "Usage: gstash [--apply] [stash-ref]" >&2
       return 1
     fi
     stash=$(git stash list | fzf --prompt="Select stash > " | cut -d: -f1)
   fi
 
-  [[ -n "$stash" ]] && git stash apply "$stash"
+  [[ -n "$stash" ]] && git stash "$action" "$stash"
 }
 
 # gpr: create PR (GitHub CLI)
@@ -130,13 +138,13 @@ gclean() {
     return 1
   fi
   git pull
-  git branch --merged | grep -v "^\*\|main\|master\|develop" | xargs -r git branch -d
+  git branch --merged | grep -v "^\*\|$main_branch\|main\|master\|develop" | xargs -r git branch -d
   echo "✅ Cleaned merged branches"
 }
 
 # gsync: sync fork with upstream
 gsync() {
-  local main_branch="${1:-main}"
+  local main_branch="${1:-${GIT_MAIN_BRANCH:-main}}"
   git fetch upstream
   git checkout "$main_branch"
   git merge upstream/"$main_branch"
