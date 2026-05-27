@@ -67,12 +67,15 @@ preflight() {
   )
   local _pf_quote="${_pf_quotes[$(( RANDOM % ${#_pf_quotes[@]} ))]}"
 
+  local _pf_rule="  ${S}$(printf '%.0s-' {1..33})${R}"
+
   printf "\n"
   printf "  ${B} __${R}\n"
   printf "  ${B}( ${E}o${B}>${R}\n"
   printf "  ${B}///\\\\${R}\n"
-  printf "  ${B}\\V_/_${R}   ${T}Preflight Check${R}\n"
-  printf "  ${S}─────────────────────────────────${R}\n"
+  printf "  ${B}\\V_/_${R}\n"
+  printf "\n"
+  printf "  ${T}Preflight Check${R}\n"
   printf "  ${S}%s${R}\n" "$_pf_quote"
   printf "\n"
 
@@ -103,11 +106,18 @@ preflight() {
   _pf_status "Secrets: loading..."
 
   if command -v op &>/dev/null; then
-    if ! op-load-env; then
-      issue_msgs+=("1Password sign-in or secret loading failed")
-      ((issues++))
+    if [[ "$verbose" == true ]]; then
+      if ! op-load-env; then
+        issue_msgs+=("1Password sign-in or secret loading failed")
+        ((issues++))
+      else
+        _pf_line "✅ Secrets loaded"
+      fi
     else
-      _pf_line "✅ Secrets loaded"
+      if ! op-load-env &>/dev/null 2>&1; then
+        issue_msgs+=("1Password sign-in or secret loading failed")
+        ((issues++))
+      fi
     fi
   else
     issue_msgs+=("1Password CLI not installed — skipping secret loading")
@@ -487,7 +497,7 @@ preflight() {
   _pf_status_clear
   unset -f _pf_status _pf_status_clear _pf_section _pf_line
 
-  printf "  ${S}─────────────────────────────────${R}\n"
+  printf "%s\n" "$_pf_rule"
   if [[ $issues -gt 0 ]]; then
     printf "  ⚠️  ${T}$issues issue(s) found${R}\n"
     for msg in "${issue_msgs[@]}"; do
@@ -504,7 +514,7 @@ preflight() {
   if [[ "$check_updates" == false ]]; then
     printf "  ${S}Tip: run 'preflight -u' to check for updates${R}\n"
   fi
-  printf "  ${S}─────────────────────────────────${R}\n"
+  printf "%s\n" "$_pf_rule"
   printf "\n"
 }
 
@@ -513,9 +523,9 @@ preflight() {
 _preflight_update() {
   local dir="${PREFLIGHT_DIR:-$HOME/.preflight}"
 
-  printf "  \\033[38;2;${OWL_SUB:-120;130;150}m─────────────────────────────────\\033[0m\\n"
+  printf "  \033[38;2;${OWL_SUB:-120;130;150}m%s\033[0m\n" "$(printf '%0.s-' {1..33})"
   printf "  \\033[1mPreflight Update\\033[0m\\n"
-  printf "  \\033[38;2;${OWL_SUB:-120;130;150}m─────────────────────────────────\\033[0m\\n"
+  printf "  \033[38;2;${OWL_SUB:-120;130;150}m%s\033[0m\n" "$(printf '%0.s-' {1..33})"
   echo ""
 
   if [[ ! -d "$dir/.git" ]]; then
@@ -564,7 +574,7 @@ _preflight_update() {
   if [[ "$current_sha" == "$upstream_sha" ]]; then
     echo ""
     echo "✅ Already up to date."
-    printf "  \\033[38;2;${OWL_SUB:-120;130;150}m─────────────────────────────────\\033[0m\\n"
+    printf "  \033[38;2;${OWL_SUB:-120;130;150}m%s\033[0m\n" "$(printf '%0.s-' {1..33})"
     return 0
   fi
 
@@ -592,7 +602,7 @@ _preflight_update() {
     return 1
   fi
 
-  printf "  \\033[38;2;${OWL_SUB:-120;130;150}m─────────────────────────────────\\033[0m\\n"
+  printf "  \033[38;2;${OWL_SUB:-120;130;150}m%s\033[0m\n" "$(printf '%0.s-' {1..33})"
 }
 
 # ── preflight uninstall ───────────────────────────────────────────────────────
@@ -600,9 +610,9 @@ _preflight_update() {
 _preflight_uninstall() {
   local dir="${PREFLIGHT_DIR:-$HOME/.preflight}"
 
-  printf "  \\033[38;2;${OWL_SUB:-120;130;150}m─────────────────────────────────\\033[0m\\n"
+  printf "  \033[38;2;${OWL_SUB:-120;130;150}m%s\033[0m\n" "$(printf '%0.s-' {1..33})"
   printf "  \\033[1mPreflight Uninstall\\033[0m\\n"
-  printf "  \\033[38;2;${OWL_SUB:-120;130;150}m─────────────────────────────────\\033[0m\\n"
+  printf "  \033[38;2;${OWL_SUB:-120;130;150}m%s\033[0m\n" "$(printf '%0.s-' {1..33})"
   echo ""
   echo "This will:"
   echo "  • Remove $dir"
@@ -647,7 +657,7 @@ _preflight_uninstall() {
   echo ""
   echo "✅ Preflight uninstalled."
   echo "   Open a new terminal or run 'hash -r' to clear the command cache."
-  printf "  \\033[38;2;${OWL_SUB:-120;130;150}m─────────────────────────────────\\033[0m\\n"
+  printf "  \033[38;2;${OWL_SUB:-120;130;150}m%s\033[0m\n" "$(printf '%0.s-' {1..33})"
 
   # Self-destruct: unset all preflight functions from the current shell
   unset -f preflight _preflight_update _preflight_uninstall
@@ -664,9 +674,9 @@ _preflight_configure() {
     return 1
   fi
 
-  printf "  \\033[38;2;${OWL_SUB:-120;130;150}m─────────────────────────────────\\033[0m\\n"
+  printf "  \033[38;2;${OWL_SUB:-120;130;150}m%s\033[0m\n" "$(printf '%0.s-' {1..33})"
   printf "  \\033[1mPreflight: Configure\\033[0m\\n"
-  printf "  \\033[38;2;${OWL_SUB:-120;130;150}m─────────────────────────────────\\033[0m\\n"
+  printf "  \033[38;2;${OWL_SUB:-120;130;150}m%s\033[0m\n" "$(printf '%0.s-' {1..33})"
   echo ""
 
   local applied=0 skipped=0 kept=0
@@ -802,12 +812,12 @@ GITIGNORE
   # ── Summary ──────────────────────────────────────────────────────────────
   unset -f _pf_git_set
 
-  printf "  \\033[38;2;${OWL_SUB:-120;130;150}m─────────────────────────────────\\033[0m\\n"
+  printf "  \033[38;2;${OWL_SUB:-120;130;150}m%s\033[0m\n" "$(printf '%0.s-' {1..33})"
   echo "   Applied: $applied   Kept: $kept   Skipped: $skipped"
   if [[ $applied -gt 0 ]]; then
     echo ""
     echo "   Changes are global and take effect immediately."
     echo "   Review: git config --global --list"
   fi
-  printf "  \\033[38;2;${OWL_SUB:-120;130;150}m─────────────────────────────────\\033[0m\\n"
+  printf "  \033[38;2;${OWL_SUB:-120;130;150}m%s\033[0m\n" "$(printf '%0.s-' {1..33})"
 }
