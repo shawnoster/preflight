@@ -18,8 +18,12 @@ preflight() {
   esac
 
   local check_updates=false
+  local verbose=false
   for arg in "$@"; do
-    case "$arg" in -u|--updates) check_updates=true ;; esac
+    case "$arg" in
+      -u|--updates) check_updates=true ;;
+      -v|--verbose) verbose=true ;;
+    esac
   done
 
   # Optionally erase the previous terminal line (opt-in for Starship users).
@@ -27,133 +31,163 @@ preflight() {
 
   # ── Header ────────────────────────────────────────────────────────────────
   # Colors: inherit from owl-theme if available, otherwise tasteful defaults
-  local R='\033[0m'
+  local R=$'\033[0m'
   local B E T S
   if [[ -n "${OWL_BODY:-}" ]]; then
-    B="\033[38;2;${OWL_BODY}m"
-    E="\033[38;2;${OWL_EYES}m"
-    T="\033[38;2;${OWL_TEXT}m"
-    S="\033[38;2;${OWL_SUB}m"
+    B=$'\033[38;2;'"${OWL_BODY}"'m'
+    E=$'\033[38;2;'"${OWL_EYES}"'m'
+    T=$'\033[38;2;'"${OWL_TEXT}"'m'
+    S=$'\033[38;2;'"${OWL_SUB}"'m'
   else
-    B="\033[38;2;100;140;200m"   # slate blue body
-    E="\033[38;2;240;240;255m"   # near-white eyes
-    T="\033[38;2;200;210;230m"   # light text
-    S="\033[38;2;120;130;150m"   # muted subtext
+    B=$'\033[38;2;100;140;200m'
+    E=$'\033[38;2;240;240;255m'
+    T=$'\033[38;2;200;210;230m'
+    S=$'\033[38;2;120;130;150m'
   fi
 
+  # Penguin — aligned with owl-theme splash (2-space left margin, art at col 3)
   printf "\n"
-  printf "  ${B}    __${R}\n"
-  printf "  ${B}   ( ${E}o${B}>${R}\n"
-  printf "  ${B}   ///\\${R}\n"
-  printf "  ${B}   \\V_/_${R}   ${T}Preflight Check${R}\n"
-  printf "  ${S}  ─────────────────────────────────${R}\n"
+  printf "  ${B}__${R}\n"
+  printf "  ${B}( ${E}o${B}>${R}\n"
+  printf "  ${B}///\\\\${R}\n"
+  printf "  ${B}\\V_/_${R}   ${T}Preflight Check${R}\n"
+  printf "  ${S}─────────────────────────────────${R}\n"
   printf "\n"
+
+  # ── Status line helper (quiet mode) ───────────────────────────────────────
+  # _pf_status "message" — overwrites current line; cleared at summary
+  _pf_status() {
+    [[ "$verbose" == false && -t 1 ]] && printf '\r  %-50s' "$1"
+  }
+  _pf_status_clear() {
+    [[ "$verbose" == false && -t 1 ]] && printf '\r%-60s\r' ""
+  }
+  # _pf_section "title" — only prints in verbose mode
+  _pf_section() {
+    [[ "$verbose" == true ]] && { echo ""; echo "--- $1 ---"; echo ""; }
+  }
+  # _pf_line "msg" — only prints in verbose mode
+  _pf_line() {
+    [[ "$verbose" == true ]] && echo "$1"
+  }
 
   local issues=0
   local updates_available=0
+  local issue_msgs=()
 
   # ── Secrets ───────────────────────────────────────────────────────────────
 
-  echo "--- Secrets ---"
-  echo ""
+  _pf_section "Secrets"
+  _pf_status "Secrets: loading..."
 
   if command -v op &>/dev/null; then
     if ! op-load-env; then
-      echo "⚠️  1Password sign-in or secret loading failed"
+      issue_msgs+=("1Password sign-in or secret loading failed")
       ((issues++))
+    else
+      _pf_line "✅ Secrets loaded"
     fi
   else
-    echo "⚠️  1Password CLI not installed — skipping secret loading"
+    issue_msgs+=("1Password CLI not installed — skipping secret loading")
+    _pf_line "⚠️  1Password CLI not installed — skipping secret loading"
     ((issues++))
   fi
 
   # ── AWS Session ───────────────────────────────────────────────────────────
 
-  echo ""
-  echo "--- AWS Session ---"
+  _pf_section "AWS Session"
+  _pf_status "AWS: checking session..."
 
   if command -v aws &>/dev/null; then
     local aws_identity
     aws_identity=$(aws sts get-caller-identity 2>/dev/null)
     if [[ -n "$aws_identity" ]]; then
-      echo "✅ AWS session active ($(echo "$aws_identity" | jq -r '.Account' 2>/dev/null))"
+      _pf_line "✅ AWS session active ($(echo "$aws_identity" | jq -r '.Account' 2>/dev/null))"
     else
-      echo "☁️  Refreshing AWS SSO..."
+      _pf_status "AWS: refreshing SSO..."
+      _pf_line "☁️  Refreshing AWS SSO..."
       if aws-login; then
         aws_identity=$(aws sts get-caller-identity 2>/dev/null)
         if [[ -n "$aws_identity" ]]; then
-          echo "✅ AWS session active ($(echo "$aws_identity" | jq -r '.Account' 2>/dev/null))"
+          _pf_line "✅ AWS session active ($(echo "$aws_identity" | jq -r '.Account' 2>/dev/null))"
         else
-          echo "❌ AWS SSO refresh did not produce an active session"
+          issue_msgs+=("AWS SSO refresh did not produce an active session")
           ((issues++))
         fi
       else
-        echo "❌ AWS SSO refresh failed"
+        issue_msgs+=("AWS SSO refresh failed")
         ((issues++))
       fi
     fi
   else
-    echo "❌ AWS CLI not installed"
+    issue_msgs+=("AWS CLI not installed")
+    _pf_line "❌ AWS CLI not installed"
     ((issues++))
   fi
 
   # ── Environment Variables ─────────────────────────────────────────────────
 
-  echo ""
-  echo "--- Environment Variables ---"
+  _pf_section "Environment Variables"
+  _pf_status "Env: checking tokens..."
 
   if [[ -n "$NPM_TOKEN" ]]; then
-    echo "✅ NPM_TOKEN is set"
+    _pf_line "✅ NPM_TOKEN is set"
   else
-    echo "⚠️  NPM_TOKEN is not set"
+    issue_msgs+=("NPM_TOKEN is not set")
+    _pf_line "⚠️  NPM_TOKEN is not set"
     ((issues++))
   fi
 
   if [[ -n "$GITHUB_TOKEN" ]]; then
-    echo "✅ GITHUB_TOKEN is set"
+    _pf_line "✅ GITHUB_TOKEN is set"
   else
-    echo "⚠️  GITHUB_TOKEN is not set"
+    issue_msgs+=("GITHUB_TOKEN is not set")
+    _pf_line "⚠️  GITHUB_TOKEN is not set"
     ((issues++))
   fi
 
   if [[ -n "$AWS_PROFILE" ]]; then
-    echo "✅ AWS_PROFILE is set: $AWS_PROFILE"
+    _pf_line "✅ AWS_PROFILE is set: $AWS_PROFILE"
   else
-    echo "⚠️  AWS_PROFILE is not set"
+    issue_msgs+=("AWS_PROFILE is not set")
+    _pf_line "⚠️  AWS_PROFILE is not set"
     ((issues++))
   fi
 
   # ── SSH ───────────────────────────────────────────────────────────────────
 
-  echo ""
-  echo "--- SSH ---"
+  _pf_section "SSH"
+  _pf_status "SSH: checking agent..."
 
   if [[ -n "$SSH_AUTH_SOCK" ]]; then
-    echo "✅ SSH_AUTH_SOCK is set: $SSH_AUTH_SOCK"
+    _pf_line "✅ SSH_AUTH_SOCK is set: $SSH_AUTH_SOCK"
     if ssh-add -l &>/dev/null; then
-      echo "✅ SSH agent has keys loaded"
+      _pf_line "✅ SSH agent has keys loaded"
     else
-      echo "⚠️  SSH agent running but no keys loaded"
+      _pf_line "⚠️  SSH agent running but no keys loaded"
     fi
   else
-    echo "⚠️  SSH_AUTH_SOCK not set (ssh-agent not running?)"
+    issue_msgs+=("SSH_AUTH_SOCK not set (ssh-agent not running?)")
+    _pf_line "⚠️  SSH_AUTH_SOCK not set (ssh-agent not running?)"
     ((issues++))
   fi
 
   if [[ -f "$HOME/.ssh/id_ed25519" ]] || [[ -f "$HOME/.ssh/id_rsa" ]]; then
-    echo "✅ SSH keys exist in ~/.ssh/"
+    _pf_line "✅ SSH keys exist in ~/.ssh/"
   else
-    echo "⚠️  No SSH keys found in ~/.ssh/"
+    issue_msgs+=("No SSH keys found in ~/.ssh/")
+    _pf_line "⚠️  No SSH keys found in ~/.ssh/"
     ((issues++))
   fi
 
   # ── Installed Tools ───────────────────────────────────────────────────────
 
-  echo ""
   if [[ "$check_updates" == true ]]; then
-    echo "--- Installed Tools (checking latest versions...) ---"
+    _pf_section "Installed Tools (checking latest versions...)"
+    _pf_status "Tools: fetching latest versions..."
   else
-    echo "--- Installed Tools ---"
+    _pf_section "Installed Tools"
+    _pf_status "Tools: checking..."
   fi
 
   # Detect platform for context-appropriate update hints
@@ -231,12 +265,13 @@ preflight() {
     fi
 
     if [[ -n "$latest" ]] && [[ "$installed" != "$latest" ]]; then
-      echo "⚠️  $name: $installed → $latest available"
       local hint="${_update_hints[$key]:-}"
-      [[ -n "$hint" ]] && echo "    Update: $hint"
+      issue_msgs+=("$name: $installed → $latest available${hint:+  ($hint)}")
+      _pf_line "⚠️  $name: $installed → $latest available"
+      [[ -n "$hint" ]] && _pf_line "    Update: $hint"
       ((updates_available++))
     else
-      echo "✅ $name: $raw"
+      _pf_line "✅ $name: $raw"
     fi
   }
 
@@ -273,7 +308,7 @@ preflight() {
       [[ -z "$installed" ]] && installed="$raw"
       _pf_tool "$name" "$installed" "$raw" "$key"
     else
-      echo "❌ $name not installed"
+      _pf_line "❌ $name not installed"
     fi
   done
 
@@ -283,32 +318,35 @@ preflight() {
 
   # ── Git Configuration ─────────────────────────────────────────────────────
 
-  echo ""
-  echo "--- Git Configuration ---"
+  _pf_section "Git Configuration"
+  _pf_status "Git: checking config..."
 
   if command -v git &>/dev/null; then
-    echo "✅ Git installed: $(git --version)"
+    _pf_line "✅ Git installed: $(git --version)"
 
     if [[ -n "$(git config --global user.email)" ]]; then
-      echo "✅ Git user.email: $(git config --global user.email)"
+      _pf_line "✅ Git user.email: $(git config --global user.email)"
     else
-      echo "⚠️  Git user.email not set"
+      issue_msgs+=("Git user.email not set")
+      _pf_line "⚠️  Git user.email not set"
       ((issues++))
     fi
 
     if [[ -n "$(git config --global user.name)" ]]; then
-      echo "✅ Git user.name: $(git config --global user.name)"
+      _pf_line "✅ Git user.name: $(git config --global user.name)"
     else
-      echo "⚠️  Git user.name not set"
+      issue_msgs+=("Git user.name not set")
+      _pf_line "⚠️  Git user.name not set"
       ((issues++))
     fi
 
     # ── fetch hygiene ──────────────────────────────────────────────────────
     if [[ "$(git config --global fetch.prune)" == "true" ]]; then
-      echo "✅ fetch.prune = true"
+      _pf_line "✅ fetch.prune = true"
     else
-      echo "⚠️  fetch.prune not set — stale remote branches accumulate"
-      echo "   Fix: git config --global fetch.prune true"
+      issue_msgs+=("fetch.prune not set  →  git config --global fetch.prune true")
+      _pf_line "⚠️  fetch.prune not set — stale remote branches accumulate"
+      _pf_line "   Fix: git config --global fetch.prune true"
       ((issues++))
     fi
 
@@ -316,16 +354,18 @@ preflight() {
     local push_default
     push_default=$(git config --global push.default 2>/dev/null)
     if [[ "$push_default" == "matching" ]]; then
-      echo "⚠️  push.default = matching — can push unintended branches"
-      echo "   Fix: git config --global push.default simple"
+      issue_msgs+=("push.default = matching  →  git config --global push.default simple")
+      _pf_line "⚠️  push.default = matching — can push unintended branches"
+      _pf_line "   Fix: git config --global push.default simple"
       ((issues++))
     fi
 
     if [[ "$(git config --global push.autoSetupRemote)" == "true" ]]; then
-      echo "✅ push.autoSetupRemote = true"
+      _pf_line "✅ push.autoSetupRemote = true"
     else
-      echo "⚠️  push.autoSetupRemote not set — new branches require manual upstream"
-      echo "   Fix: git config --global push.autoSetupRemote true"
+      issue_msgs+=("push.autoSetupRemote not set  →  git config --global push.autoSetupRemote true")
+      _pf_line "⚠️  push.autoSetupRemote not set — new branches require manual upstream"
+      _pf_line "   Fix: git config --global push.autoSetupRemote true"
       ((issues++))
     fi
 
@@ -333,18 +373,20 @@ preflight() {
     local pull_rebase
     pull_rebase=$(git config --global pull.rebase 2>/dev/null)
     if [[ "$pull_rebase" == "true" || "$pull_rebase" == "merges" || "$pull_rebase" == "interactive" ]]; then
-      echo "✅ pull.rebase = $pull_rebase"
+      _pf_line "✅ pull.rebase = $pull_rebase"
     else
-      echo "⚠️  pull.rebase not set — diverged pulls create accidental merge commits"
-      echo "   Fix: git config --global pull.rebase true"
+      issue_msgs+=("pull.rebase not set  →  git config --global pull.rebase true")
+      _pf_line "⚠️  pull.rebase not set — diverged pulls create accidental merge commits"
+      _pf_line "   Fix: git config --global pull.rebase true"
       ((issues++))
     fi
 
     if [[ "$(git config --global rebase.autoStash)" == "true" ]]; then
-      echo "✅ rebase.autoStash = true"
+      _pf_line "✅ rebase.autoStash = true"
     else
-      echo "⚠️  rebase.autoStash not set — rebase aborts on dirty working tree"
-      echo "   Fix: git config --global rebase.autoStash true"
+      issue_msgs+=("rebase.autoStash not set  →  git config --global rebase.autoStash true")
+      _pf_line "⚠️  rebase.autoStash not set — rebase aborts on dirty working tree"
+      _pf_line "   Fix: git config --global rebase.autoStash true"
       ((issues++))
     fi
 
@@ -352,81 +394,90 @@ preflight() {
     local diff_algo
     diff_algo=$(git config --global diff.algorithm 2>/dev/null)
     if [[ "$diff_algo" == "histogram" ]]; then
-      echo "✅ diff.algorithm = histogram"
+      _pf_line "✅ diff.algorithm = histogram"
     else
-      echo "💡 diff.algorithm not set to histogram — diffs on reordered code can be misleading"
-      echo "   Fix: git config --global diff.algorithm histogram"
+      _pf_line "💡 diff.algorithm not set to histogram — diffs on reordered code can be misleading"
+      _pf_line "   Fix: git config --global diff.algorithm histogram"
     fi
 
     # ── merge conflict style ───────────────────────────────────────────────
     local conflict_style
     conflict_style=$(git config --global merge.conflictstyle 2>/dev/null)
     if [[ "$conflict_style" == "diff3" || "$conflict_style" == "zdiff3" ]]; then
-      echo "✅ merge.conflictstyle = $conflict_style"
+      _pf_line "✅ merge.conflictstyle = $conflict_style"
     else
-      echo "💡 merge.conflictstyle not set — conflict markers hide the common ancestor"
-      echo "   Fix: git config --global merge.conflictstyle zdiff3"
+      _pf_line "💡 merge.conflictstyle not set — conflict markers hide the common ancestor"
+      _pf_line "   Fix: git config --global merge.conflictstyle zdiff3"
     fi
 
     # ── global gitignore ───────────────────────────────────────────────────
     local excludes_file
     excludes_file=$(git config --global core.excludesFile 2>/dev/null)
     if [[ -n "$excludes_file" && -f "$excludes_file" ]]; then
-      echo "✅ core.excludesFile = $excludes_file"
+      _pf_line "✅ core.excludesFile = $excludes_file"
     else
-      echo "💡 core.excludesFile not set — OS/editor artifacts need per-repo .gitignore entries"
-      echo "   Fix: git config --global core.excludesFile ~/.gitignore"
+      _pf_line "💡 core.excludesFile not set — OS/editor artifacts need per-repo .gitignore entries"
+      _pf_line "   Fix: git config --global core.excludesFile ~/.gitignore"
     fi
 
   else
-    echo "❌ Git not installed"
+    issue_msgs+=("Git not installed")
+    _pf_line "❌ Git not installed"
   fi
 
   # ── Node.js ───────────────────────────────────────────────────────────────
 
-  echo ""
-  echo "--- Node.js ---"
+  _pf_section "Node.js"
+  _pf_status "Node.js: checking..."
 
   if command -v node &>/dev/null; then
-    echo "✅ Node.js: $(node --version)"
+    _pf_line "✅ Node.js: $(node --version)"
     if command -v npm &>/dev/null; then
-      echo "✅ npm: $(npm --version)"
+      _pf_line "✅ npm: $(npm --version)"
     fi
   else
-    echo "❌ Node.js not installed"
+    _pf_line "❌ Node.js not installed"
   fi
 
   # ── Python ────────────────────────────────────────────────────────────────
 
-  echo ""
-  echo "--- Python ---"
+  _pf_section "Python"
+  _pf_status "Python: checking..."
 
   if command -v python3 &>/dev/null; then
-    echo "✅ Python3: $(python3 --version)"
+    _pf_line "✅ Python3: $(python3 --version)"
   elif command -v python &>/dev/null; then
-    echo "✅ Python: $(python --version)"
+    _pf_line "✅ Python: $(python --version)"
   else
-    echo "❌ Python not installed"
+    _pf_line "❌ Python not installed"
   fi
 
   if command -v uv &>/dev/null; then
-    echo "✅ uv: $(uv --version)"
+    _pf_line "✅ uv: $(uv --version)"
   else
-    echo "❌ uv not installed"
+    issue_msgs+=("uv not installed")
+    _pf_line "❌ uv not installed"
     ((issues++))
   fi
 
   # ── Summary ───────────────────────────────────────────────────────────────
 
-  echo ""
+  _pf_status_clear
+  unset -f _pf_status _pf_status_clear _pf_section _pf_line
+
   printf "  ${S}─────────────────────────────────${R}\n"
   if [[ $issues -gt 0 ]]; then
-    printf "  ⚠️  ${T}Found $issues issue(s) — see above${R}\n"
+    printf "  ⚠️  ${T}$issues issue(s) found${R}\n"
+    for msg in "${issue_msgs[@]}"; do
+      printf "  ${S}  • %s${R}\n" "$msg"
+    done
   else
     printf "  ✅ ${T}All systems go${R}\n"
   fi
   if [[ $updates_available -gt 0 ]]; then
-    printf "  📦 ${T}$updates_available tool update(s) available — see above${R}\n"
+    printf "  📦 ${T}$updates_available tool update(s) available${R}"
+    [[ "$verbose" == false ]] && printf " ${S}(run preflight -v to see details)${R}"
+    printf "\n"
   fi
   if [[ "$check_updates" == false ]]; then
     printf "  ${S}Tip: run 'preflight -u' to check for updates${R}\n"
