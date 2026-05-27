@@ -14,9 +14,9 @@ export OP_ACCOUNT="my"
 # Project directories for `proj` command (colon-separated)
 export PROJ_DIRS="$HOME/projects:$HOME/work:$HOME/src"
 
-# Default AWS profile (optional)
-# Examples: "default", "guild-dev", "personal"
-export AWS_PROFILE
+# Default AWS profile — used by preflight at session start if AWS_PROFILE is not already set
+# Override at runtime with: export AWS_PROFILE_DEFAULT=my-other-profile
+export AWS_PROFILE_DEFAULT="${AWS_PROFILE_DEFAULT:-my-dev-profile}"
 
 # Default Git branch names
 export GIT_MAIN_BRANCH="main"
