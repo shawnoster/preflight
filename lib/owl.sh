@@ -335,7 +335,9 @@ _owl_splash() {
   local eye_l="${face:0:1}" eye_r="${face:1:1}"
 
   # Pick a random quote from that mood's pool
-  local -n pool="q_${mood}"
+  # Bash 3.2-compatible indirect expansion (avoids local -n nameref, Bash 4.3+)
+  local pool_var="q_${mood}[@]"
+  local -a pool=("${!pool_var}")
   local quote="${pool[$(( RANDOM % ${#pool[@]} ))]}"
 
   printf "\n"
