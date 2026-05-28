@@ -182,11 +182,15 @@ preflight() {
     ((issues++))
   fi
 
-  if [[ -n "$GITHUB_TOKEN" ]]; then
-    _pf_line "✅ GITHUB_TOKEN is set"
+  if ! command -v gh >/dev/null 2>&1; then
+    issue_msgs+=("gh CLI not installed — install from https://cli.github.com/")
+    _pf_line "⚠️  gh CLI not installed"
+    ((issues++))
+  elif gh auth status --hostname github.com >/dev/null 2>&1; then
+    _pf_line "✅ GitHub auth active (gh CLI)"
   else
-    issue_msgs+=("GITHUB_TOKEN is not set")
-    _pf_line "⚠️  GITHUB_TOKEN is not set"
+    issue_msgs+=("GitHub auth not found — run 'gh auth login'")
+    _pf_line "⚠️  GitHub auth not found (gh CLI not authenticated — run 'gh auth login')"
     ((issues++))
   fi
 
