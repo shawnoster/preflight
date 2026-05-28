@@ -182,11 +182,11 @@ preflight() {
     ((issues++))
   fi
 
-  if [[ -n "$GITHUB_TOKEN" ]]; then
-    _pf_line "✅ GITHUB_TOKEN is set"
+  if gh auth status --hostname github.com >/dev/null 2>&1; then
+    _pf_line "✅ GitHub auth active (gh CLI)"
   else
-    issue_msgs+=("GITHUB_TOKEN is not set")
-    _pf_line "⚠️  GITHUB_TOKEN is not set"
+    issue_msgs+=("GitHub auth not found — run 'gh auth login' or 'op-load-env'")
+    _pf_line "⚠️  GitHub auth not found (gh CLI not authenticated)"
     ((issues++))
   fi
 
