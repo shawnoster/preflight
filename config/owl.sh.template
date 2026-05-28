@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# ~/.preflight/config/owl.sh — OOO Owl configuration
+#
+# Auto-created from config/owl.sh.template by init.sh on first load.
+# Edit this file to customize paths for your machine.
+# config/owl.sh is gitignored — this template is what gets committed.
+# Never edit the template to add machine-specific values; edit the generated copy.
+
+# ── Oh My Posh config ─────────────────────────────────────────────────────────
+# Path to your Oh My Posh JSON config file.
+# owl-theme will patch the palette and prompt icon in this file when you switch themes.
+# Leave empty (or keep commented out) to disable OMP integration — owl-theme will still
+# switch splash colors, it just won't touch your prompt.
+#
+# Uncomment and set to your OMP config path to enable:
+# export OWL_OMP_CONFIG="$HOME/theme-catppuccin.omp.json"
+# export OWL_OMP_CONFIG="$HOME/.config/oh-my-posh/theme.json"
+export OWL_OMP_CONFIG=""
+
+# ── Theme state directory ─────────────────────────────────────────────────────
+# Where the current theme name is persisted (one file: "current").
+# Defaults to $PREFLIGHT_DIR/state/owl — override if you prefer ~/.config/owl.
+#
+# export OWL_THEME_DIR="$HOME/.config/owl"

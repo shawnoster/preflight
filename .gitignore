@@ -1,6 +1,10 @@
 # Local configuration files (use .template versions as starting point)
 config/accounts.sh
+config/owl.sh
 lib/1password.sh
+
+# Runtime state
+state/
 
 # Environment-specific overrides
 .env
