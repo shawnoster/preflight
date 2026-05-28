@@ -163,6 +163,40 @@ except Exception:
 PYEOF
 }
 
+# ── Text wrap helper ─────────────────────────────────────────────────────────
+# _owl_wrap TEXT INDENT_COL [MAX_WIDTH]
+#   Prints TEXT wrapped so continuation lines align at INDENT_COL.
+#   MAX_WIDTH defaults to $COLUMNS (fallback 80).
+#   Output is a single string with embedded newlines — no trailing newline.
+_owl_wrap() {
+  local text="$1"
+  local indent_col="$2"
+  local max_width="${3:-${COLUMNS:-80}}"
+  local available=$(( max_width - indent_col ))
+  # Minimum sane width guard
+  (( available < 20 )) && available=20
+
+  local pad
+  pad=$(printf '%*s' "$indent_col" '')
+
+  local result="" line="" word
+  for word in $text; do
+    if [[ -z "$line" ]]; then
+      line="$word"
+    elif (( ${#line} + 1 + ${#word} <= available )); then
+      line="$line $word"
+    else
+      result="${result}${result:+
+${pad}}${line}"
+      line="$word"
+    fi
+  done
+  # Flush final segment
+  result="${result}${result:+
+${pad}}${line}"
+  printf '%s' "$result"
+}
+
 # ── Export owl colors for preflight.sh and _owl_splash ───────────────────────
 _owl_export_colors() {
   export OWL_BODY="$owl_body" OWL_EYES="$owl_eyes"
@@ -351,9 +385,11 @@ _owl_splash() {
   local -a pool=("${!pool_var}")
   local quote="${pool[$(( RANDOM % ${#pool[@]} ))]}"
 
+  local wrapped_quote; wrapped_quote=$(_owl_wrap "$quote" 12)
+
   printf "\n"
   printf "  ${RUST} ___ ${R}\n"
-  printf "  ${RUST}(${PEACH}${eye_l}${RUST},${PEACH}${eye_r}${RUST})${R}     ${SUB}${quote}${R}\n"
+  printf "  ${RUST}(${PEACH}${eye_l}${RUST},${PEACH}${eye_r}${RUST})${R}     ${SUB}${wrapped_quote}${R}\n"
   printf "  ${RUST}{\`\"'}${R}\n"
   printf "  ${RUST}-\"-\"-${R}     ${TEXT}${date_str}${R} ${SUB}· ↑ ${uptime_str}${R}\n"
   printf "\n"

@@ -66,14 +66,21 @@ preflight() {
     "Status: nominal. I've decided 'nominal' is the kindest word available and I'm deploying it here in good faith."
   )
   local _pf_quote="${_pf_quotes[$(( RANDOM % ${#_pf_quotes[@]} ))]}"
+  # Wrap to terminal width with hanging indent at text column (12)
+  local _pf_quote_wrapped
+  if declare -f _owl_wrap &>/dev/null; then
+    _pf_quote_wrapped=$(_owl_wrap "$_pf_quote" 12)
+  else
+    _pf_quote_wrapped="$_pf_quote"
+  fi
 
   local _pf_rule="  ${S}$(printf '%.0s-' {1..33})${R}"
 
   printf "\n"
   printf "  ${B} __${R}\n"
-  printf "  ${B}( ${E}o${B}>${R}     ${T}Preflight Check${R}\n"
+  printf "  ${B}( ${E}o${B}>${R}      ${T}Preflight Check${R}\n"
   printf "  ${B}///\\\\${R}\n"
-  printf "  ${B}\\V_/_${R}    ${S}%s${R}\n" "$_pf_quote"
+  printf "  ${B}\\V_/_${R}     ${S}${_pf_quote_wrapped}${R}\n"
   printf "\n"
 
   # ── Status line helper (quiet mode) ───────────────────────────────────────
