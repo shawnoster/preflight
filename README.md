@@ -1,6 +1,6 @@
 # Preflight — Developer Environment Scripts
 
-A modular collection of shell utilities for development workflows. Drop it in `~/.preflight`, source it from `.bashrc`, and get fuzzy-powered shortcuts for AWS, Docker, Git, 1Password, and project navigation.
+A modular collection of shell utilities for development workflows. Drop it in `~/.preflight`, source it from `.bashrc`, and get fuzzy-powered shortcuts for AWS, Docker, Git, 1Password, and project navigation — plus an owl-themed MOTD and Oh My Posh color switcher.
 
 ## Installation
 
@@ -42,7 +42,7 @@ NO_MODIFY_PROFILE=1 curl -fsSL https://raw.githubusercontent.com/shawnoster/pref
 preflight update
 ```
 
-Pulls the latest changes from the upstream repo, shows incoming commits, and warns if any tracked files have local modifications. Gitignored files (`config/accounts.sh`, `lib/1password.sh`) are never touched.
+Pulls the latest changes from the upstream repo, shows incoming commits, and warns if any tracked files have local modifications. Gitignored files (`config/accounts.sh`, `config/owl.sh`, `lib/1password.sh`) are never touched.
 
 After updating, reload your shell:
 
@@ -83,10 +83,12 @@ source ~/.bashrc
 │   ├── docker.sh        # Docker utilities
 │   ├── git.sh           # Git shortcuts
 │   ├── help.sh          # Unified help system (dev-help / devhelp)
+│   ├── owl.sh           # OOO theme engine + MOTD splash
 │   ├── preflight.sh     # Session startup + environment health check
 │   └── project.sh       # Build tool wrappers
 ├── config/
-│   └── accounts.sh      # Non-secret configuration
+│   ├── accounts.sh      # Non-secret configuration (gitignored, from template)
+│   └── owl.sh           # Owl/OMP config — OWL_OMP_CONFIG path (gitignored, from template)
 └── docs/
     └── wsl-ssh-setup.md # WSL + 1Password SSH setup guide
 ```
@@ -174,6 +176,28 @@ nanoleaf-streak --direction in --color red  # red converging from ends
 See the `nanoleaf-direct` project notebook for the auth/layout/effects
 references.
 
+### Owl Theme + MOTD (`lib/owl.sh`)
+
+OOO (Obtusely Optimistic Owl) — a shell MOTD that appears once per interactive session, and a theme switcher that patches your Oh My Posh prompt palette.
+
+| Command | Description |
+|---------|-------------|
+| `owl-theme` | List all available themes with a color preview |
+| `owl-theme <name>` | Switch to a named theme — persists across sessions |
+| `owl-theme --current` | Print the active theme name |
+
+**Available themes:** `catppuccin`, `honeypot`, `twilight`, `moonlit`, `autumn`, `rose`, `moss`, `parchment`
+
+**Oh My Posh integration is optional.** Set `OWL_OMP_CONFIG` in `~/.preflight/config/owl.sh` to the path of your OMP JSON config. If unset or the file doesn't exist, `owl-theme` still switches splash colors — it just won't touch your prompt.
+
+```bash
+# After installing, edit config/owl.sh to point at your OMP config:
+vim ~/.preflight/config/owl.sh   # set OWL_OMP_CONFIG="$HOME/your-theme.omp.json"
+
+# Then switch themes live:
+owl-theme moonlit
+```
+
 ### Git (`lib/git.sh`)
 
 | Command | Description |
@@ -224,6 +248,11 @@ Edit `~/.preflight/config/accounts.sh` to customize:
 - `AWS_PROFILE_DEFAULT` - Default AWS profile (`preflight` sets `AWS_PROFILE` from this at startup)
 - `PREFLIGHT_DIR` - Install location (default: `~/.preflight`)
 - `PREFLIGHT_BRANCH` - Branch used by `preflight update` (default: `main`)
+
+Edit `~/.preflight/config/owl.sh` to customize:
+
+- `OWL_OMP_CONFIG` - Path to your Oh My Posh JSON config (leave empty to disable OMP integration)
+- `OWL_THEME_DIR` - Where theme state is persisted (default: `$PREFLIGHT_DIR/state/owl`)
 
 ## Adding Custom Scripts
 

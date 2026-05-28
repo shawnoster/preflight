@@ -32,6 +32,8 @@ if [[ ! -f "$PREFLIGHT_DIR/config/owl.sh" ]] && [[ -f "$PREFLIGHT_DIR/config/owl
   echo "📋 Creating config/owl.sh from template..."
   cp "$PREFLIGHT_DIR/config/owl.sh.template" "$PREFLIGHT_DIR/config/owl.sh"
   echo "✅ Created. Edit config/owl.sh to set your Oh My Posh config path."
+  echo "   If you previously had owl setup in ~/.bashrc, you can remove those lines —"
+  echo "   init.sh now handles _owl_theme_load, _owl_splash, and oh-my-posh init."
 fi
 
 # ── Source all library scripts ────────────────────────────────────────────────

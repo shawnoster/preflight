@@ -9,7 +9,7 @@
 #
 # Configuration (set in config/owl.sh, auto-created from config/owl.sh.template):
 #   OWL_THEME_DIR     — directory where theme state is stored  (default: $PREFLIGHT_DIR/state/owl)
-#   OWL_OMP_CONFIG    — path to your Oh My Posh JSON config    (default: $HOME/theme-catppuccin.omp.json)
+#   OWL_OMP_CONFIG    — path to your Oh My Posh JSON config    (default: empty — set in config/owl.sh)
 #
 # Oh My Posh is OPTIONAL. If OWL_OMP_CONFIG is unset or the file doesn't exist,
 # owl-theme still switches splash colors — it just skips the OMP palette patch
@@ -159,6 +159,9 @@ _owl_export_colors() {
 }
 
 # ── Load current theme at shell start ────────────────────────────────────────
+# Reads $OWL_THEME_DIR/current for the saved theme name.
+# If the file doesn't exist (first run, or state dir not yet created by owl-theme),
+# silently falls back to catppuccin — no error, no mkdir required.
 _owl_theme_load() {
   local theme
   theme=$(cat "$OWL_THEME_DIR/current" 2>/dev/null) || theme="catppuccin"

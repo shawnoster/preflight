@@ -3,7 +3,8 @@
 #
 # Auto-created from config/owl.sh.template by init.sh on first load.
 # Edit this file to customize paths for your machine.
-# This file is gitignored — safe to commit the template, not this file.
+# config/owl.sh is gitignored — this template is what gets committed.
+# Never edit the template to add machine-specific values; edit the generated copy.
 
 # ── Oh My Posh config ─────────────────────────────────────────────────────────
 # Path to your Oh My Posh JSON config file.
