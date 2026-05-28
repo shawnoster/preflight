@@ -164,7 +164,10 @@ _owl_export_colors() {
 # silently falls back to catppuccin — no error, no mkdir required.
 _owl_theme_load() {
   local theme
-  theme=$(cat "$OWL_THEME_DIR/current" 2>/dev/null) || theme="catppuccin"
+  theme=$(cat "$OWL_THEME_DIR/current" 2>/dev/null)
+  # Trim whitespace; fall back to catppuccin if empty or file missing
+  theme="${theme//[[:space:]]/}"
+  [[ -z "$theme" ]] && theme="catppuccin"
   if _owl_theme_def "$theme"; then
     _owl_export_colors
   fi
