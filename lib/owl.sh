@@ -128,7 +128,7 @@ _owl_patch_omp() {
   python3 - "$OWL_OMP_CONFIG" "$icon" \
     "$omp_cat" "$omp_err" "$omp_git" "$omp_node" \
     "$omp_ok" "$omp_path" "$omp_python" "$omp_yarn" << 'PYEOF'
-import json, sys
+import json, os, sys, tempfile
 path, icon = sys.argv[1], sys.argv[2]
 cat, err, git, node, ok, pth, py, yarn = sys.argv[3:11]
 
@@ -140,15 +140,26 @@ cfg["palette"] = {
     "ok": ok, "path": pth, "python": py, "yarn": yarn
 }
 
-# Update icon in the first text segment
-for seg in cfg["blocks"][0]["segments"]:
-    if seg["type"] == "text":
-        seg["template"] = icon + " "
-        break
+# Update icon in the first text segment — defensive traversal
+blocks = cfg.get("blocks", [])
+if blocks and isinstance(blocks, list):
+    segments = blocks[0].get("segments", []) if isinstance(blocks[0], dict) else []
+    for seg in segments:
+        if isinstance(seg, dict) and seg.get("type") == "text":
+            seg["template"] = icon + " "
+            break
 
-with open(path, "w") as f:
-    json.dump(cfg, f, indent=2, ensure_ascii=False)
-    f.write("\n")
+# Atomic write: write to a temp file in the same directory, then rename
+dirpath = os.path.dirname(os.path.abspath(path))
+fd, tmp_path = tempfile.mkstemp(dir=dirpath, suffix=".tmp")
+try:
+    with os.fdopen(fd, "w") as f:
+        json.dump(cfg, f, indent=2, ensure_ascii=False)
+        f.write("\n")
+    os.replace(tmp_path, path)
+except Exception:
+    os.unlink(tmp_path)
+    raise
 PYEOF
 }
 
