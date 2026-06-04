@@ -50,11 +50,15 @@ function Select-FromList {
         if (Get-Command Out-GridView -ErrorAction SilentlyContinue) {
             try {
                 $sel = $all | Out-GridView -Title $Prompt -OutputMode Single
-                if ($sel) { return $sel }
-                # User cancelled the grid view; fall through to other prompts.
-                # Out-GridView returning $null on cancel matches "user said no".
-                return $null
+                # Cancel and "no selection" both return $null. Treat that as
+                # "user said no" — don't fall through to fzf or a numbered
+                # prompt, which would feel like the picker is repeating itself.
+                # Callers that get $null can decide what to do (Set-AwsProfile
+                # prints "No profile selected" and exits, for example).
+                return $sel
             } catch {
+                # Out-GridView itself failed to load (e.g. headless host with
+                # no GUI subsystem). Fall through to the next picker.
                 Write-Verbose "Out-GridView unavailable, trying fzf: $_"
             }
         }
