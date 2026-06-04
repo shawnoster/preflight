@@ -8,7 +8,8 @@
 #   Clear-OpEnv      (alias: op-clear-env)
 #   New-OpItem       (alias: op-new)
 #   Import-OpCsv     (alias: op-import-csv)
-#   Get-PreflightHelp (aliases: op-help, dev-help)
+#
+# Get-PreflightHelp / dev-commands moved to lib/help.ps1 in 0.6.0.
 #
 # Note: these are user-facing CLI helpers — Write-Host is intentional
 # throughout (preserves color, doesn't pollute the pipeline output of
@@ -767,72 +768,10 @@ function Import-OpCsv {
     if ($failed -gt 0) { return }
 }
 
-# ---- Get-PreflightHelp -----------------------------------------------------
-
-function Get-PreflightHelp {
-    <#
-    .SYNOPSIS
-        Show a quick reference for Preflight commands.
-    .DESCRIPTION
-        Prints the public surface of the Preflight module with one-line
-        descriptions, grouped by area. Use Get-Help <name> -Examples for
-        full per-command docs.
-    .EXAMPLE
-        Get-PreflightHelp
-    .EXAMPLE
-        dev-help
-    #>
-    [CmdletBinding()]
-    param()
-
-    Write-Host ""
-    Write-Host "Preflight (PowerShell) — quick reference" -ForegroundColor Cyan
-    Write-Host "Use 'Get-Help <name> -Examples' for full per-command docs." -ForegroundColor DarkGray
-    Write-Host ""
-    Write-Host "Session" -ForegroundColor Yellow
-    Write-Host "  Invoke-Preflight  (preflight)        — Run session startup checks (10 sections; -CheckUpdates for tool drift)"
-    Write-Host ""
-    Write-Host "1Password" -ForegroundColor Yellow
-    Write-Host "  Get-OpStatus      (op-status)        — Check 1Password sign-in state"
-    Write-Host "  Connect-Op        (op-signin)        — Sign in to 1Password"
-    Write-Host "  Import-OpEnv      (op-load-env)      — Load secrets into `$env:* variables"
-    Write-Host "  Clear-OpEnv       (op-clear-env)     — Clear loaded secret env vars"
-    Write-Host "  New-OpItem        (op-new)           — Interactively create a 1Password item"
-    Write-Host "  Import-OpCsv      (op-import-csv)    — Bulk-import a CSV of Login items"
-    Write-Host ""
-    Write-Host "AWS" -ForegroundColor Yellow
-    Write-Host "  Set-AwsProfile    (awsp)             — Switch AWS profile (interactive picker if no arg)"
-    Write-Host "  Get-AwsIdentity   (aws-whoami)       — Show profile, region, and caller identity"
-    Write-Host "  Connect-Aws       (aws-login)        — SSO login (interactive profile pick if needed)"
-    Write-Host ""
-    Write-Host "Project" -ForegroundColor Yellow
-    Write-Host "  Invoke-Make       (bake)             — Run a Makefile target with picker"
-    Write-Host "  Invoke-NpmScript  (yak)              — Run an npm script with picker"
-    Write-Host "  Invoke-PoetryScript (poet)           — Run a poetry script with picker"
-    Write-Host "  Set-LocationProject (proj)           — Jump to a project directory"
-    Write-Host "  Start-LocalServer (serve)            — Quick HTTP server (python -m http.server)"
-    Write-Host ""
-    Write-Host "Git" -ForegroundColor Yellow
-    Write-Host "  Switch-GitBranch  (gco)              — Checkout a branch with picker"
-    Write-Host "  Show-GitLog       (glog)             — Pretty git log with fzf preview when available"
-    Write-Host "  Pop-GitStash      (gstash)           — Pop (or apply, with -Apply) a stash"
-    Write-Host "  New-GitHubPullRequest (gpr)          — gh pr create --web"
-    Write-Host "  Save-GitWip       (gwip)             — Quick WIP commit (skips hooks)"
-    Write-Host "  Undo-GitWip       (gunwip)           — Soft-reset last WIP commit"
-    Write-Host "  Remove-MergedGitBranches (gclean)    — Prune branches merged AND gone from origin"
-    Write-Host "  Sync-GitFork      (gsync)            — Fetch upstream, merge, push origin"
-    Write-Host "  gs / ga / gpl / gd / gds             — Wrappers for git status/add/pull/diff/diff --staged"
-    Write-Host ""
-    Write-Host "Help" -ForegroundColor Yellow
-    Write-Host "  Get-PreflightHelp (op-help, dev-help) — This screen"
-    Write-Host ""
-    Write-Host "Default 1Password account: $(Get-OpAccount)" -ForegroundColor DarkGray
-    Write-Host "Override via `$env:OP_ACCOUNT or pwsh\config\accounts.ps1." -ForegroundColor DarkGray
-    Write-Host ""
-}
-
 # ---- Aliases ---------------------------------------------------------------
 # Mirror the bash kebab names. Aliases are exported via the manifest.
+# Note: op-help / dev-help / dev-commands aliases now live in lib/help.ps1
+# alongside the help functions themselves (since 0.6.0).
 
 Set-Alias -Name 'op-status'     -Value Get-OpStatus      -Force -Scope Script
 Set-Alias -Name 'op-signin'     -Value Connect-Op        -Force -Scope Script
@@ -840,5 +779,3 @@ Set-Alias -Name 'op-load-env'   -Value Import-OpEnv      -Force -Scope Script
 Set-Alias -Name 'op-clear-env'  -Value Clear-OpEnv       -Force -Scope Script
 Set-Alias -Name 'op-new'        -Value New-OpItem        -Force -Scope Script
 Set-Alias -Name 'op-import-csv' -Value Import-OpCsv      -Force -Scope Script
-Set-Alias -Name 'op-help'       -Value Get-PreflightHelp -Force -Scope Script
-Set-Alias -Name 'dev-help'      -Value Get-PreflightHelp -Force -Scope Script
