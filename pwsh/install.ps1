@@ -13,7 +13,8 @@
       3. Back up your current $PROFILE to <profile>.bak.<timestamp>.
       4. Comment out functions in $PROFILE that are superseded by the
          Preflight module (Set-SecureEnv, Switch-AWSProfile,
-         Switch-GitBranch, bake), tagging each with a marker so
+         Switch-GitBranch, Remove-MergedBranches, bake), tagging each
+         with a marker so
          uninstall can reverse the change.
       5. Append an Import-Module line that loads Preflight from
          $HOME\.preflight\pwsh\Preflight.psd1, guarded so reload is
@@ -96,10 +97,11 @@ $script:CommentMarker    = '# preflight:superseded'
 # module supersedes them. The module exports same-named functions/aliases
 # so the user's muscle memory keeps working.
 $script:SupersededFunctions = @(
-    @{ Name = 'Set-SecureEnv';     SupersededBy = 'Import-OpEnv (alias: op-load-env)' }
-    @{ Name = 'Switch-AWSProfile'; SupersededBy = 'Set-AwsProfile (alias: awsp)' }
-    @{ Name = 'Switch-GitBranch';  SupersededBy = 'Switch-Branch (alias: gco) — Phase 2' }
-    @{ Name = 'bake';              SupersededBy = 'Invoke-Make (alias: bake)' }
+    @{ Name = 'Set-SecureEnv';         SupersededBy = 'Import-OpEnv (alias: op-load-env)' }
+    @{ Name = 'Switch-AWSProfile';     SupersededBy = 'Set-AwsProfile (alias: awsp)' }
+    @{ Name = 'Switch-GitBranch';      SupersededBy = 'Switch-GitBranch (alias: gco) — same name, now from Preflight module' }
+    @{ Name = 'Remove-MergedBranches'; SupersededBy = 'Remove-MergedGitBranches (alias: gclean)' }
+    @{ Name = 'bake';                  SupersededBy = 'Invoke-Make (alias: bake)' }
 )
 
 # ---- Helpers ----------------------------------------------------------------

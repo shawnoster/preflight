@@ -37,9 +37,10 @@ Get-OpStatus
 
 ## What's in the box
 
-The 1Password layer, AWS helpers, project utilities, and a session-startup
-orchestrator. Function names follow PowerShell `Verb-Noun` convention;
-kebab/lowercase aliases match the bash side for muscle memory.
+The 1Password layer, AWS helpers, project utilities, git workflow helpers,
+and a session-startup orchestrator. Function names follow PowerShell
+`Verb-Noun` convention; kebab/lowercase aliases match the bash side for
+muscle memory.
 
 | Function | Alias | Bash equivalent |
 |---|---|---|
@@ -58,6 +59,15 @@ kebab/lowercase aliases match the bash side for muscle memory.
 | `Invoke-PoetryScript` | `poet` | `poet` |
 | `Set-LocationProject` | `proj` | `proj` |
 | `Start-LocalServer` | `serve` | `serve` |
+| `Switch-GitBranch` | `gco` | `gco` |
+| `Show-GitLog` | `glog` | `glog` |
+| `Pop-GitStash` | `gstash` | `gstash` |
+| `New-GitHubPullRequest` | `gpr` | `gpr` |
+| `Save-GitWip` | `gwip` | `gwip` |
+| `Undo-GitWip` | `gunwip` | `gunwip` |
+| `Remove-MergedGitBranches` | `gclean` | `gclean` |
+| `Sync-GitFork` | `gsync` | `gsync` |
+| `gs` / `ga` / `gpl` / `gd` / `gds` | — | `gs` / `ga` / `gpl` / `gd` / `gds` |
 | `Get-PreflightHelp` | `op-help`, `dev-help` | `dev-help` |
 
 `Invoke-Preflight` covers secrets, AWS detect-and-warn, and an env sanity
@@ -65,9 +75,21 @@ sweep (NPM_TOKEN + `gh` auth). Future phases will add SSH/1Password agent
 integration, git globals, Node/Volta, Python/uv, and version-drift checks.
 
 Interactive selection uses `Out-GridView` when available (Windows GUI), falling
-back to `fzf` if installed, then a numbered prompt — so commands like `awsp`
-or `bake` with no argument give you a familiar picker no matter what you've
-installed.
+back to `fzf` if installed, then a numbered prompt — so commands like `awsp`,
+`bake`, or `gco` with no argument give you a familiar picker no matter what
+you've installed.
+
+**Two bash aliases are intentionally not ported:** `gc` and `gp` collide with
+PowerShell's built-in aliases for `Get-Content` and `Get-ItemProperty`. Users
+who want them can override with `Set-Alias gc git -Force` in their
+`accounts.ps1` (and accept the loss of the built-ins).
+
+**Note on `gclean`:** the PowerShell version is *more conservative* than bash
+`gclean`. It only deletes a local branch when both (a) it's merged into HEAD
+and (b) it no longer exists on `origin`. This matches the safer behavior of
+the `Remove-MergedBranches` function from the legacy profile, and avoids
+deleting branches that are still active on the remote but happened to be
+merged locally for testing.
 
 Run `Get-Help Invoke-Preflight -Examples` (or any of the above) for usage.
 
