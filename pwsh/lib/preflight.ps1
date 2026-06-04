@@ -385,7 +385,26 @@ function Invoke-Preflight {
         $latestKey = if ($t.Repo) { $t.Repo.Split('/')[-1] } else { $t.Cmd }
         $latestVer = $latest[$latestKey]
 
-        if ($latestVer -and $t.Installed -ne $latestVer) {
+        # Compare versions: prefer parsed [Version] semantics so users on a
+        # dev build NEWER than the latest tagged release don't see a bogus
+        # "X → Y available" downgrade nag. Fall back to string -ne if either
+        # side doesn't parse cleanly (rare — a few tools like jq emit
+        # non-semver, but the regex extractor in $tools normalizes most).
+        $isUpdate = $false
+        if ($latestVer) {
+            $parsedInstalled = $null
+            $parsedLatest    = $null
+            if ([Version]::TryParse($t.Installed, [ref]$parsedInstalled) -and
+                [Version]::TryParse($latestVer,   [ref]$parsedLatest)) {
+                $isUpdate = ($parsedInstalled -lt $parsedLatest)
+            } else {
+                # Couldn't parse one or both; fall back to string inequality.
+                # This is more permissive but still useful as a heads-up.
+                $isUpdate = ($t.Installed -ne $latestVer)
+            }
+        }
+
+        if ($isUpdate) {
             $hint = if ($t.Winget) {
                 "winget upgrade $($t.Winget)"
             } elseif ($t.Choco) {
