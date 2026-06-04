@@ -70,9 +70,12 @@ muscle memory.
 | `gs` / `ga` / `gpl` / `gd` / `gds` | — | `gs` / `ga` / `gpl` / `gd` / `gds` |
 | `Get-PreflightHelp` | `op-help`, `dev-help` | `dev-help` |
 
-`Invoke-Preflight` covers secrets, AWS detect-and-warn, and an env sanity
-sweep (NPM_TOKEN + `gh` auth). Future phases will add SSH/1Password agent
-integration, git globals, Node/Volta, Python/uv, and version-drift checks.
+`Invoke-Preflight` runs 10 session-startup checks: 1Password sign-in and
+secrets, AWS profile and SSO session, env-sanity (NPM_TOKEN + `gh` auth),
+SSH agent reachability, installed-tool versions (with `-CheckUpdates` to
+fetch latest from GitHub releases in parallel and flag drift, with winget
+or choco update hints), git global config audit, and Node.js / Python /
+uv version reports. Quiet by default; `-Verbose` streams every section.
 
 Interactive selection uses `Out-GridView` when available (Windows GUI), falling
 back to `fzf` if installed, then a numbered prompt — so commands like `awsp`,
