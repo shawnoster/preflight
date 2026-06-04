@@ -1,0 +1,36 @@
+# Preflight PowerShell — user configuration (gitignored copy).
+#
+# Copy this file to accounts.ps1 in the same directory (install.ps1 does
+# this automatically) and customize. The Preflight module dot-sources
+# accounts.ps1 at load time, so any $env:* assignments here become defaults
+# for every shell that imports Preflight.
+
+# 1Password account shorthand. Run `op account list` to see yours.
+# This must match the value used by `op` itself in your local profile.
+# Note: WSL and Windows often have different shorthands for the same
+# account (e.g. 'guild_education' vs 'guild-education').
+$env:OP_ACCOUNT = 'guild-education'
+
+# Default AWS profile applied at session start (optional). Leave commented
+# to inherit whatever AWS_PROFILE is already set to.
+# $env:AWS_PROFILE_DEFAULT = 'guild-dev'
+
+# Project directories (used by the future `proj` cmdlet, Phase 2).
+# $env:PROJ_DIRS = "$HOME\dev;$HOME\dev\code"
+
+# ---- Per-user secret map extras --------------------------------------------
+# Import-OpEnv loads a built-in set of secrets (Anthropic, Atlassian, NPM,
+# Sonar, Datadog, Pact). To add personal vars without forking the module,
+# assign $script:OpEnvMapExtra here as a hashtable of VAR=op:// references.
+# These merge into the built-in map at runtime; user keys win on conflict.
+#
+# Example — Jira and Jellyfish creds (skipped from the built-in map because
+# JIRA_API_USER, JIRA_SERVER_URL, JIRA_API_KEY, and JF_API_KEY aren't shared
+# tooling). GITHUB_TOKEN intentionally NOT here: gh CLI manages that itself.
+#
+# $script:OpEnvMapExtra = @{
+#     JF_API_KEY      = 'op://Engineering Tools - Prod/Jellyfish API Token/credential'
+#     JIRA_API_KEY    = 'op://Employee/sa-jinx-cli/credential'
+#     JIRA_API_USER   = 'op://Employee/sa-jinx-cli/username'
+#     JIRA_SERVER_URL = 'op://Employee/sa-jinx-cli/server'
+# }
