@@ -352,11 +352,16 @@ function Get-ProjectDirList {
             (Join-Path $HOME 'projects')
             (Join-Path $HOME 'work')
             (Join-Path $HOME 'src')
-        ) -join ';'
+        ) -join [System.IO.Path]::PathSeparator
     }
 
-    # Accept either separator so users can paste from a bash $PROJ_DIRS.
-    $paths = $raw -split '[;:]' | Where-Object { $_ }
+    # Split on the platform's path separator: ';' on Windows, ':' on POSIX.
+    # Earlier versions used `[;:]` to be permissive about pasting from bash,
+    # but that shreds Windows drive letters (e.g. `C:\foo;D:\bar` would split
+    # at the colons after C and D). PowerShell-on-Windows users who want to
+    # set PROJ_DIRS by hand should use ';' between entries.
+    $paths = $raw -split [regex]::Escape([System.IO.Path]::PathSeparator) |
+        Where-Object { $_ }
 
     $out = New-Object System.Collections.Generic.List[string]
     foreach ($base in $paths) {
