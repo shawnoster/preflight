@@ -805,6 +805,13 @@ function Get-PreflightHelp {
     Write-Host "  Get-AwsIdentity   (aws-whoami)       — Show profile, region, and caller identity"
     Write-Host "  Connect-Aws       (aws-login)        — SSO login (interactive profile pick if needed)"
     Write-Host ""
+    Write-Host "Project" -ForegroundColor Yellow
+    Write-Host "  Invoke-Make       (bake)             — Run a Makefile target with picker"
+    Write-Host "  Invoke-NpmScript  (yak)              — Run an npm script with picker"
+    Write-Host "  Invoke-PoetryScript (poet)           — Run a poetry script with picker"
+    Write-Host "  Set-LocationProject (proj)           — Jump to a project directory"
+    Write-Host "  Start-LocalServer (serve)            — Quick HTTP server (python -m http.server)"
+    Write-Host ""
     Write-Host "Help" -ForegroundColor Yellow
     Write-Host "  Get-PreflightHelp (op-help, dev-help) — This screen"
     Write-Host ""

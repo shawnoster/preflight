@@ -99,7 +99,7 @@ $script:SupersededFunctions = @(
     @{ Name = 'Set-SecureEnv';     SupersededBy = 'Import-OpEnv (alias: op-load-env)' }
     @{ Name = 'Switch-AWSProfile'; SupersededBy = 'Set-AwsProfile (alias: awsp)' }
     @{ Name = 'Switch-GitBranch';  SupersededBy = 'Switch-Branch (alias: gco) — Phase 2' }
-    @{ Name = 'bake';              SupersededBy = 'Invoke-Bake (alias: bake) — Phase 2' }
+    @{ Name = 'bake';              SupersededBy = 'Invoke-Make (alias: bake)' }
 )
 
 # ---- Helpers ----------------------------------------------------------------

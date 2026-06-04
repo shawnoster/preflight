@@ -11,6 +11,49 @@
 )]
 param()
 
+function Find-FileUpward {
+    <#
+    .SYNOPSIS
+        Walk up from $StartDirectory looking for the first ancestor that
+        contains a file named $FileName.
+    .DESCRIPTION
+        Returns the full path to the matching file, or $null if no ancestor
+        has it. Used by Invoke-NpmScript / Invoke-PoetryScript to find the
+        nearest package.json / pyproject.toml when run from a sub-directory
+        of the project root.
+
+        Mirrors the bash _find_up helper in lib/project.sh.
+    .PARAMETER FileName
+        Name of the file to look for (e.g. 'package.json', 'pyproject.toml').
+    .PARAMETER StartDirectory
+        Directory to start searching from. Defaults to $PWD.
+    .EXAMPLE
+        $pkg = Find-FileUpward -FileName package.json
+        if ($pkg) { Set-Location (Split-Path -Parent $pkg) }
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true, Position = 0)]
+        [string]$FileName,
+
+        [string]$StartDirectory = $PWD.Path
+    )
+
+    $dir = (Resolve-Path -LiteralPath $StartDirectory).Path
+    while ($dir) {
+        $candidate = Join-Path $dir $FileName
+        if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+            return $candidate
+        }
+        $parent = Split-Path -Parent $dir
+        # Top of the filesystem: Split-Path returns '' on Linux/macOS roots
+        # and the same drive root (e.g. 'C:\') on Windows.
+        if (-not $parent -or $parent -eq $dir) { break }
+        $dir = $parent
+    }
+    return $null
+}
+
 function Select-FromList {
     <#
     .SYNOPSIS
