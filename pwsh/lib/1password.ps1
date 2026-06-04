@@ -504,7 +504,16 @@ function Import-OpCsv {
         [Parameter(Mandatory = $true, Position = 0)]
         [string]$Path,
 
-        [ValidateSet('Employee', 'Testing Credentials')]
+        # Any string is allowed — the function verifies the vault is visible
+        # at runtime via `op vault get`. ValidateSet would block legitimate
+        # non-interactive paths to vaults outside the common set.
+        # ArgumentCompleter just gives Tab-completion for the most-used names.
+        [ArgumentCompleter({
+            param($cmd, $param, $word, $ast, $bound)
+            @('Employee', 'Testing Credentials') |
+                Where-Object { $_ -like "$word*" } |
+                ForEach-Object { "'$_'" }
+        })]
         [string]$Vault,
 
         [string[]]$Tag = @(),
