@@ -292,7 +292,6 @@ preflight() {
         [gh]="brew upgrade gh"
         [jq]="brew upgrade jq"
         [fzf]="brew upgrade fzf"
-        [tmux]="brew upgrade tmux"
         [claude]="claude update"
         [uv]="uv self update"
       )
@@ -305,7 +304,6 @@ preflight() {
         [gh]="sudo apt update && sudo apt install gh  # requires GitHub apt repo"
         [jq]="sudo apt update && sudo apt install jq"
         [fzf]="github.com/junegunn/fzf/releases  # apt lags — download binary"
-        [tmux]="github.com/tmux/tmux-builds  # apt lags — use static prebuilt binary"
         [claude]="claude update"
         [uv]="uv self update"
       )
@@ -329,8 +327,6 @@ preflight() {
         --jq '.tag_name | ltrimstr("jq-")' >"$tmpdir/jq" 2>/dev/null &
       gh api repos/junegunn/fzf/releases/latest \
         --jq '.tag_name | ltrimstr("v")' >"$tmpdir/fzf" 2>/dev/null &
-      gh api repos/tmux/tmux/releases/latest \
-        --jq '.tag_name' >"$tmpdir/tmux" 2>/dev/null &
       npm view @anthropic-ai/claude-code version >"$tmpdir/claude" 2>/dev/null &
       gh api repos/astral-sh/uv/releases/latest \
         --jq '.tag_name | ltrimstr("v")' >"$tmpdir/uv" 2>/dev/null &
@@ -366,7 +362,6 @@ preflight() {
     "op:1Password CLI:"
     "jq:jq:jq"
     "fzf:fzf:fzf"
-    "tmux:tmux:tmux"
     "claude:Claude Code:claude"
     "uv:uv:uv"
   )
