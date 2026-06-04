@@ -409,10 +409,17 @@ function Start-LocalServer {
         [int]$Port = 8000
     )
 
-    # Find a usable Python. The `py` launcher wins on Windows; otherwise
-    # `python` then `python3`.
+    # Find a usable Python. Order matters:
+    #   1. `py` — the Windows Python launcher. When present, it's the
+    #      authoritative entry point and knows how to find the active
+    #      interpreter regardless of what's on PATH. Skipped on POSIX
+    #      because `py` doesn't exist there.
+    #   2. `python3` — the POSIX-canonical name.
+    #   3. `python` — the Windows-canonical name; also POSIX where Python 3
+    #      is the default.
+    $candidates = if ($IsWindows) { 'py', 'python', 'python3' } else { 'python3', 'python' }
     $pyCmd = $null
-    foreach ($candidate in 'python', 'python3', 'py') {
+    foreach ($candidate in $candidates) {
         if (Get-Command $candidate -ErrorAction SilentlyContinue) {
             $pyCmd = $candidate
             break
