@@ -237,16 +237,109 @@ function Edit-ProfileContent {
     return @{ Content = $Content; Changes = $changes }
 }
 
-function New-ImportGuard {
-    param([string]$ManifestPath)
-    $manifestPathLiteral = $ManifestPath -replace "'", "''"
-    return @"
-$script:GuardBegin
-if (Test-Path -LiteralPath '$manifestPathLiteral') {
-    Import-Module '$manifestPathLiteral' -ErrorAction SilentlyContinue
+function Read-ProfileFile {
+    <#
+    .SYNOPSIS
+        Read a profile file, preserving knowledge of its original encoding.
+    .DESCRIPTION
+        Returns @{ Content = <string>; Encoding = <Text.Encoding>; HasBom = <bool> }.
+        Detects UTF-8 BOM, UTF-16 LE/BE BOM, and UTF-32 LE BOM. Falls back to
+        UTF-8 without BOM for files with no BOM (the most common case for
+        PowerShell profiles authored on modern systems).
+
+        Necessary so install/uninstall can round-trip a profile byte-for-byte
+        regardless of how it was originally encoded.
+    #>
+    param([string]$Path)
+    if (-not (Test-Path -LiteralPath $Path)) {
+        return @{ Content = ''; Encoding = [System.Text.UTF8Encoding]::new($false); HasBom = $false }
+    }
+
+    $bytes = [System.IO.File]::ReadAllBytes($Path)
+    if ($bytes.Length -eq 0) {
+        return @{ Content = ''; Encoding = [System.Text.UTF8Encoding]::new($false); HasBom = $false }
+    }
+
+    # BOM sniff. Order matters: UTF-32 LE BOM is "FF FE 00 00" — check it
+    # before UTF-16 LE ("FF FE") so we don't mis-classify.
+    $encoding = $null
+    $hasBom = $false
+    $skip = 0
+    if ($bytes.Length -ge 4 -and $bytes[0] -eq 0xFF -and $bytes[1] -eq 0xFE -and $bytes[2] -eq 0x00 -and $bytes[3] -eq 0x00) {
+        $encoding = [System.Text.UTF32Encoding]::new($false, $true)  # LE, with BOM
+        $hasBom = $true
+        $skip = 4
+    } elseif ($bytes.Length -ge 4 -and $bytes[0] -eq 0x00 -and $bytes[1] -eq 0x00 -and $bytes[2] -eq 0xFE -and $bytes[3] -eq 0xFF) {
+        $encoding = [System.Text.UTF32Encoding]::new($true, $true)   # BE, with BOM
+        $hasBom = $true
+        $skip = 4
+    } elseif ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) {
+        $encoding = [System.Text.UTF8Encoding]::new($true)            # UTF-8 with BOM
+        $hasBom = $true
+        $skip = 3
+    } elseif ($bytes.Length -ge 2 -and $bytes[0] -eq 0xFF -and $bytes[1] -eq 0xFE) {
+        $encoding = [System.Text.UnicodeEncoding]::new($false, $true) # UTF-16 LE with BOM
+        $hasBom = $true
+        $skip = 2
+    } elseif ($bytes.Length -ge 2 -and $bytes[0] -eq 0xFE -and $bytes[1] -eq 0xFF) {
+        $encoding = [System.Text.UnicodeEncoding]::new($true, $true)  # UTF-16 BE with BOM
+        $hasBom = $true
+        $skip = 2
+    } else {
+        # No BOM — assume UTF-8 without BOM. (We can't reliably distinguish
+        # ANSI/Windows-1252 from UTF-8 without ICU-style heuristics; UTF-8
+        # is the modern default and round-trips ASCII regardless.)
+        $encoding = [System.Text.UTF8Encoding]::new($false)
+        $hasBom = $false
+        $skip = 0
+    }
+
+    $content = $encoding.GetString($bytes, $skip, $bytes.Length - $skip)
+    return @{ Content = $content; Encoding = $encoding; HasBom = $hasBom }
 }
-$script:GuardEnd
-"@
+
+function Write-ProfileFile {
+    <#
+    .SYNOPSIS
+        Write a profile file using the encoding info captured by Read-ProfileFile.
+    .DESCRIPTION
+        Reuses the original encoding (with BOM if it had one) so the file's
+        byte signature matches what was there before. Required for round-trip
+        guarantees on profiles authored as UTF-16LE (legacy Windows
+        PowerShell ISE default) or UTF-8 with BOM.
+    #>
+    param(
+        [string]$Path,
+        [string]$Content,
+        [System.Text.Encoding]$Encoding,
+        [bool]$HasBom
+    )
+    # GetBytes never includes a BOM; we have to prepend it ourselves if the
+    # original had one. (Encoding.GetPreamble() returns the BOM for encodings
+    # constructed with the BOM-emitting flag.)
+    $bodyBytes = $Encoding.GetBytes($Content)
+    if ($HasBom) {
+        $preamble = $Encoding.GetPreamble()
+        $all = New-Object byte[] ($preamble.Length + $bodyBytes.Length)
+        [Array]::Copy($preamble, 0, $all, 0, $preamble.Length)
+        [Array]::Copy($bodyBytes, 0, $all, $preamble.Length, $bodyBytes.Length)
+        [System.IO.File]::WriteAllBytes($Path, $all)
+    } else {
+        [System.IO.File]::WriteAllBytes($Path, $bodyBytes)
+    }
+}
+
+function New-ImportGuard {
+    param([string]$ManifestPath, [string]$Eol = "`r`n")
+    $manifestPathLiteral = $ManifestPath -replace "'", "''"
+    $lines = @(
+        $script:GuardBegin
+        "if (Test-Path -LiteralPath '$manifestPathLiteral') {"
+        "    Import-Module '$manifestPathLiteral' -ErrorAction SilentlyContinue"
+        '}'
+        $script:GuardEnd
+    )
+    return ($lines -join $Eol)
 }
 
 function Test-ImportGuardPresent {
@@ -255,34 +348,63 @@ function Test-ImportGuardPresent {
 }
 
 function Add-ImportGuard {
+    <#
+    .SYNOPSIS
+        Append the Import-Module guard to $Content, preserving line endings
+        and trailing whitespace.
+    .DESCRIPTION
+        The append shape is:
+
+            <original-content><eol><eol><guard-block><eol>
+
+        where <eol> matches the dominant line ending of the existing content.
+        We do NOT strip the user's trailing whitespace — Remove-ImportGuard
+        is responsible for removing exactly what we added so the file
+        round-trips byte-for-byte.
+    #>
     param([string]$Content, [string]$ManifestPath)
     if (Test-ImportGuardPresent -Content $Content) { return $Content }
 
-    # Match the dominant line ending of the existing content.
+    # Match the dominant line ending of the existing content. Default to CRLF
+    # for empty or eol-less files (Windows convention).
     $crlfCount = ([regex]::Matches($Content, "`r`n")).Count
     $lfOnly    = ([regex]::Matches($Content, "(?<!`r)`n")).Count
-    $eol = if ($crlfCount -ge $lfOnly) { "`r`n" } else { "`n" }
+    $eol = if ($crlfCount -ge $lfOnly -and $crlfCount -gt 0) { "`r`n" }
+           elseif ($lfOnly -gt 0)                            { "`n" }
+           else                                              { "`r`n" }
 
-    $guard = New-ImportGuard -ManifestPath $ManifestPath
-    if ($eol -eq "`n") { $guard = $guard -replace "`r`n", "`n" }
+    $guard = New-ImportGuard -ManifestPath $ManifestPath -Eol $eol
 
-    # Strip trailing whitespace, then append a blank line + guard + single newline.
-    $Content = $Content -replace "\s+$", ""
+    # Append a blank line separator, the guard, and a final newline. Don't
+    # touch any pre-existing trailing whitespace — Remove-ImportGuard knows
+    # this exact shape and reverses it.
     return "$Content$eol$eol$guard$eol"
 }
 
 function Remove-ImportGuard {
+    <#
+    .SYNOPSIS
+        Reverse Add-ImportGuard. Removes exactly the bytes Add-ImportGuard
+        appended (separator newline + guard block + trailing newline) without
+        touching unrelated trailing whitespace.
+    .DESCRIPTION
+        Add-ImportGuard appends "<eol><eol><guard><eol>" to the original
+        content. We anchor the regex to the end of the file, capture
+        any line ending preceding GuardBegin, and remove from that
+        leading-eol through the trailing newline that follows GuardEnd.
+        That preserves the original content's trailing characters byte-for-byte.
+    #>
     param([string]$Content)
-    # Match the guard block plus surrounding newlines on both sides, then
-    # collapse to a single newline. This handles every shape the guard
-    # might be in: appended at end-of-file, in the middle, with or without
-    # leading/trailing blank lines.
-    $pattern = "(?ms)(?:\r?\n)*$([regex]::Escape($script:GuardBegin))\r?\n.*?$([regex]::Escape($script:GuardEnd))(?:\r?\n)*"
-    $Content = $Content -replace $pattern, "`r`n"
-    # Strip any trailing whitespace beyond a single newline so the file
-    # round-trips cleanly when paired with Add-ImportGuard.
-    $Content = $Content -replace "\s+$", "`r`n"
-    return $Content
+
+    # Anchored at end-of-string, with the leading separator newline.
+    # The leading (\r\n|\r|\n){1,2} accounts for Add-ImportGuard's "<eol><eol>"
+    # separator, while still matching guards inserted with only one separator
+    # newline in legacy installs.
+    $beginEsc = [regex]::Escape($script:GuardBegin)
+    $endEsc   = [regex]::Escape($script:GuardEnd)
+    $pattern  = "(?s)(\r\n|\r|\n){1,2}$beginEsc(\r\n|\r|\n).*?$endEsc(\r\n|\r|\n)?\z"
+
+    return ($Content -replace $pattern, '')
 }
 
 function Restore-CommentedFunctions {
@@ -311,6 +433,54 @@ function Show-Diff {
         }
     }
     Write-Host "── end diff ──" -ForegroundColor Cyan
+}
+
+function Confirm-ProfileEdit {
+    <#
+    .SYNOPSIS
+        Prompt the user to confirm a destructive change to $PROFILE or the
+        install directory, respecting -Force / -Confirm / -WhatIf semantics.
+    .DESCRIPTION
+        ShouldProcess on its own does NOT prompt unless the caller passes
+        -Confirm explicitly (or ConfirmImpact is High and the
+        $ConfirmPreference is set lower). For an installer that the docstring
+        promises will "prompt before editing $PROFILE", we need a real
+        interactive confirmation by default.
+
+        Behavior:
+          - $Force            -> proceed without prompting
+          - -WhatIf           -> ShouldProcess returns false; we abort
+          - -Confirm          -> ShouldProcess prompts (PowerShell native UX)
+          - default           -> Read-Host yes/no prompt
+          - non-interactive   -> proceed (with a notice), since prompting
+                                  would hang a CI run
+
+        Returns $true if the caller should proceed.
+    #>
+    [CmdletBinding(SupportsShouldProcess = $true)]
+    param(
+        [string]$Target,
+        [string]$Action = 'modify'
+    )
+
+    if ($Force) { return $true }
+
+    # -WhatIf / -Confirm path: ShouldProcess takes over.
+    if ($WhatIfPreference -or ($PSBoundParameters.ContainsKey('Confirm') -or $ConfirmPreference -eq 'Low')) {
+        return $PSCmdlet.ShouldProcess($Target, $Action)
+    }
+
+    # Non-interactive: proceed silently (matches `curl | bash`-style installs).
+    if (-not [Environment]::UserInteractive -or [Console]::IsInputRedirected) {
+        Write-Step "Non-interactive shell — proceeding without prompt (use -Force to silence)" 'info'
+        return $true
+    }
+
+    # Interactive default: explicit Read-Host prompt.
+    Write-Host ''
+    Write-Host "About to $Action $Target (a backup will be made first where applicable)." -ForegroundColor Yellow
+    $answer = Read-Host 'Proceed? [Y/n]'
+    return ($answer -eq '' -or $answer -match '^[Yy]')
 }
 
 # ---- Install / uninstall ----------------------------------------------------
@@ -386,10 +556,19 @@ function Invoke-Install {
     # 4) Update $PROFILE.
     if (-not (Test-Path -LiteralPath $ProfilePath)) {
         Write-Step "No $ProfilePath yet — will create one" 'info'
-        $original = ''
+        $original         = ''
+        $originalEncoding = [System.Text.UTF8Encoding]::new($false)
+        $originalHasBom   = $false
     } else {
-        $original = Get-Content -LiteralPath $ProfilePath -Raw -Encoding UTF8
-        if ($null -eq $original) { $original = '' }
+        # Read with encoding detection so we can write back with the same
+        # encoding (and BOM, if any). Profiles authored in older Windows
+        # PowerShell ISE are commonly UTF-16LE; modern ones tend to be
+        # UTF-8 without BOM. Forcing one or the other on write would
+        # corrupt the file or break the bit-perfect round-trip claim.
+        $profileRead      = Read-ProfileFile -Path $ProfilePath
+        $original         = $profileRead.Content
+        $originalEncoding = $profileRead.Encoding
+        $originalHasBom   = $profileRead.HasBom
     }
 
     $edited = Edit-ProfileContent -Content $original
@@ -404,7 +583,11 @@ function Invoke-Install {
             foreach ($c in $edited.Changes) { Write-Step $c 'dry' }
             Write-Step "Would append Import-Module guard for $manifest" 'dry'
         } else {
-            $confirmed = $Force -or $PSCmdlet.ShouldProcess($ProfilePath, "Apply Preflight changes")
+            # Confirm: -Force skips, -Confirm/-WhatIf go through ShouldProcess,
+            # otherwise we ask interactively via Read-Host. Without this the
+            # bare `install.ps1` invocation modifies $PROFILE silently, which
+            # the docstring promised it wouldn't.
+            $confirmed = Confirm-ProfileEdit -Target $ProfilePath -Action 'apply Preflight changes to'
             if (-not $confirmed) {
                 Write-Step "Skipped profile edits (declined by user)" 'warn'
             } else {
@@ -419,7 +602,8 @@ function Invoke-Install {
                         New-Item -ItemType Directory -Path $profileDir -Force | Out-Null
                     }
                 }
-                Set-Content -LiteralPath $ProfilePath -Value $newContent -Encoding UTF8 -NoNewline
+                Write-ProfileFile -Path $ProfilePath -Content $newContent `
+                    -Encoding $originalEncoding -HasBom $originalHasBom
                 Write-Step "Updated $ProfilePath" 'ok'
                 foreach ($c in $edited.Changes) { Write-Step $c 'ok' }
             }
@@ -439,7 +623,11 @@ function Invoke-Uninstall {
     if (-not (Test-Path -LiteralPath $ProfilePath)) {
         Write-Step "No $ProfilePath to clean up" 'warn'
     } else {
-        $original = Get-Content -LiteralPath $ProfilePath -Raw -Encoding UTF8
+        $profileRead      = Read-ProfileFile -Path $ProfilePath
+        $original         = $profileRead.Content
+        $originalEncoding = $profileRead.Encoding
+        $originalHasBom   = $profileRead.HasBom
+
         $newContent = Restore-CommentedFunctions -Content $original
         $newContent = Remove-ImportGuard         -Content $newContent
 
@@ -448,20 +636,23 @@ function Invoke-Uninstall {
         } else {
             if ($DryRun) {
                 Show-Diff -Old $original -New $newContent -Label $ProfilePath
-            } else {
+            } elseif (Confirm-ProfileEdit -Target $ProfilePath -Action 'restore') {
                 $backup = "$ProfilePath.bak.$(Get-Date -Format 'yyyyMMdd-HHmmss')"
                 Copy-Item -LiteralPath $ProfilePath -Destination $backup
                 Write-Step "Backed up profile -> $backup" 'ok'
-                Set-Content -LiteralPath $ProfilePath -Value $newContent -Encoding UTF8 -NoNewline
+                Write-ProfileFile -Path $ProfilePath -Content $newContent `
+                    -Encoding $originalEncoding -HasBom $originalHasBom
                 Write-Step "Restored $ProfilePath" 'ok'
+            } else {
+                Write-Step "Skipped profile restoration (declined by user)" 'warn'
             }
         }
     }
 
     if (Test-Path -LiteralPath $InstallRoot) {
         if ($DryRun) {
-            Write-Step "Would delete $InstallRoot (use -Force to skip prompt)" 'dry'
-        } elseif ($Force -or $PSCmdlet.ShouldProcess($InstallRoot, 'Remove install directory')) {
+            Write-Step "Would delete $InstallRoot\pwsh (use -Force to skip prompt)" 'dry'
+        } elseif (Confirm-ProfileEdit -Target "$InstallRoot\pwsh" -Action 'remove install directory') {
             # Only remove the pwsh\ subtree we own; leave config alone if user opts out.
             $pwshOnly = Join-Path $InstallRoot 'pwsh'
             if (Test-Path -LiteralPath $pwshOnly) {

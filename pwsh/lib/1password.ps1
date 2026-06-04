@@ -20,6 +20,10 @@
     'PSAvoidUsingWriteHost', '',
     Justification = 'User-facing CLI output; Write-Host is appropriate.'
 )]
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute(
+    'PSReviewUnusedParameter', '',
+    Justification = 'ArgumentCompleter scriptblocks must accept the standard 5-arg signature ($commandName, $parameterName, $wordToComplete, $commandAst, $fakeBoundParameters); analyzer flags those we don''t reference.'
+)]
 param()
 
 # ---- Shared helpers --------------------------------------------------------
