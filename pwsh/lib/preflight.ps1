@@ -6,8 +6,8 @@
 #   3. AWS Session     — detect identity / token expiry; warn (don't auto-refresh)
 #   4. Environment     — sanity-check NPM_TOKEN; verify `gh` auth
 #   5. SSH             — verify 1Password (or built-in) ssh agent is reachable
-#   6. Installed Tools — versions of sam/docker/terraform/gh/jq/fzf/tmux/claude/uv
-#                        with optional -CheckUpdates to compare against latest releases
+#   6. Installed Tools — versions of sam/docker/kubectl/terraform/gh/op/jq/fzf/claude/uv
+#                        with optional -CheckUpdates to compare against latest releases.
 #   7. Git config      — required + recommended global git settings
 #   8. Node.js         — version reports for node + npm (info-only)
 #   9. Python          — version reports for python + uv (uv missing = issue)
@@ -44,9 +44,9 @@ function Invoke-Preflight {
           3. AWS Session — sts get-caller-identity, warn on expiry
           4. Environment Variables — NPM_TOKEN + gh auth
           5. SSH — 1Password / built-in ssh agent has keys loaded
-          6. Installed Tools — versions of sam, docker, terraform, gh, jq,
-             fzf, tmux, claude, uv. With -CheckUpdates, fetches latest from
-             GitHub releases (in parallel) and flags drift.
+          6. Installed Tools — versions of sam, docker, kubectl, terraform,
+             gh, op, jq, fzf, claude, uv. With -CheckUpdates, fetches latest
+             from GitHub releases (in parallel) and flags drift.
           7. Git Configuration — user.email/name, fetch.prune,
              push.default/autoSetupRemote, pull.rebase, rebase.autoStash,
              diff.algorithm, merge.conflictstyle, core.excludesFile
