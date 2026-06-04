@@ -27,11 +27,13 @@ Get-OpStatus
 
 ## Phase 1 — what's in the box
 
-The 1Password layer. Function names follow PowerShell `Verb-Noun` convention;
-kebab aliases match the bash side for muscle memory.
+The 1Password layer plus a session-startup orchestrator. Function names follow
+PowerShell `Verb-Noun` convention; kebab/lowercase aliases match the bash side
+for muscle memory.
 
 | Function | Alias | Bash equivalent |
 |---|---|---|
+| `Invoke-Preflight` | `preflight` | `preflight` |
 | `Get-OpStatus` | `op-status` | `op-status` |
 | `Connect-Op` | `op-signin` | `op-signin` |
 | `Import-OpEnv` | `op-load-env` | `op-load-env` |
@@ -40,7 +42,11 @@ kebab aliases match the bash side for muscle memory.
 | `Import-OpCsv` | `op-import-csv` | `op-import-csv` |
 | `Get-PreflightHelp` | `op-help`, `dev-help` | `dev-help` |
 
-Run `Get-Help Import-OpCsv -Examples` (or any of the above) for usage.
+`Invoke-Preflight` covers Phase 1 sections only: secrets, AWS detect-and-warn,
+and an env sanity sweep (NPM_TOKEN + `gh` auth). Phase 2 will add SSH/1Password
+agent integration, git globals, Node/Volta, Python/uv, and version-drift checks.
+
+Run `Get-Help Invoke-Preflight -Examples` (or any of the above) for usage.
 
 ## Configuration
 

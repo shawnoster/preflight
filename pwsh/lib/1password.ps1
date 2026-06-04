@@ -220,7 +220,10 @@ function Import-OpEnv {
         if (-not (Connect-Op -Account $Account)) { return }
     }
 
-    Write-Host "--- Secrets ---"
+    # Header — skipped when called from Invoke-Preflight, which prints its own.
+    if (-not $env:_PREFLIGHT_NESTED) {
+        Write-Host "--- Secrets ---"
+    }
 
     $envMap = Get-OpEnvMap
 
@@ -772,6 +775,9 @@ function Get-PreflightHelp {
     Write-Host ""
     Write-Host "Preflight (PowerShell) — quick reference" -ForegroundColor Cyan
     Write-Host "Use 'Get-Help <name> -Examples' for full per-command docs." -ForegroundColor DarkGray
+    Write-Host ""
+    Write-Host "Session" -ForegroundColor Yellow
+    Write-Host "  Invoke-Preflight  (preflight)        — Run session startup checks (secrets + AWS + env)"
     Write-Host ""
     Write-Host "1Password" -ForegroundColor Yellow
     Write-Host "  Get-OpStatus      (op-status)        — Check 1Password sign-in state"

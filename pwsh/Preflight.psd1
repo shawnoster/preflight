@@ -21,6 +21,7 @@
         'New-OpItem'
         'Import-OpCsv'
         'Get-PreflightHelp'
+        'Invoke-Preflight'
     )
 
     AliasesToExport   = @(
@@ -32,6 +33,7 @@
         'op-import-csv'
         'op-help'
         'dev-help'
+        'preflight'
     )
 
     CmdletsToExport   = @()
