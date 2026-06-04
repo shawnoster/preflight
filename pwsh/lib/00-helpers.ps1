@@ -80,8 +80,14 @@ function Select-FromList {
             Write-Host ("  {0,3}) {1}" -f ($i + 1), $all[$i])
         }
         $answer = Read-Host "Choose [1-$($all.Count)]"
-        if ([int]::TryParse($answer, [ref]$null)) {
-            $idx = [int]$answer - 1
+        # Capture the parsed integer with a real out variable so we don't
+        # have to parse twice. (`[ref]$null` does work in PS 7+ — it
+        # silently discards the out value — but binding to a real variable
+        # makes the intent obvious and avoids the redundant `[int]$answer`
+        # cast that followed in earlier revisions.)
+        $idx = 0
+        if ([int]::TryParse($answer, [ref]$idx)) {
+            $idx -= 1  # 1-based input → 0-based array index
             if ($idx -ge 0 -and $idx -lt $all.Count) { return $all[$idx] }
         }
         return $null
