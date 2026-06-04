@@ -35,11 +35,11 @@ Get-OpStatus
   [developer.1password.com/docs/cli](https://developer.1password.com/docs/cli/get-started/).
 - **AWS CLI v2** (optional, for the `Invoke-Preflight` AWS section).
 
-## Phase 1 — what's in the box
+## What's in the box
 
-The 1Password layer plus a session-startup orchestrator. Function names follow
-PowerShell `Verb-Noun` convention; kebab/lowercase aliases match the bash side
-for muscle memory.
+The 1Password layer, AWS helpers, and a session-startup orchestrator. Function
+names follow PowerShell `Verb-Noun` convention; kebab/lowercase aliases match
+the bash side for muscle memory.
 
 | Function | Alias | Bash equivalent |
 |---|---|---|
@@ -50,11 +50,18 @@ for muscle memory.
 | `Clear-OpEnv` | `op-clear-env` | `op-clear-env` |
 | `New-OpItem` | `op-new` | `op-new` |
 | `Import-OpCsv` | `op-import-csv` | `op-import-csv` |
+| `Set-AwsProfile` | `awsp`, `switch-aws-profile` | `awsp` |
+| `Get-AwsIdentity` | `aws-whoami` | `aws-whoami` |
+| `Connect-Aws` | `aws-login` | `aws-login` |
 | `Get-PreflightHelp` | `op-help`, `dev-help` | `dev-help` |
 
-`Invoke-Preflight` covers Phase 1 sections only: secrets, AWS detect-and-warn,
-and an env sanity sweep (NPM_TOKEN + `gh` auth). Phase 2 will add SSH/1Password
-agent integration, git globals, Node/Volta, Python/uv, and version-drift checks.
+`Invoke-Preflight` covers secrets, AWS detect-and-warn, and an env sanity
+sweep (NPM_TOKEN + `gh` auth). Future phases will add SSH/1Password agent
+integration, git globals, Node/Volta, Python/uv, and version-drift checks.
+
+Interactive selection uses `Out-GridView` when available (Windows GUI), falling
+back to `fzf` if installed, then a numbered prompt — so `awsp` with no
+argument gives you a familiar picker no matter what you've installed.
 
 Run `Get-Help Invoke-Preflight -Examples` (or any of the above) for usage.
 

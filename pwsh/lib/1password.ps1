@@ -800,6 +800,11 @@ function Get-PreflightHelp {
     Write-Host "  New-OpItem        (op-new)           — Interactively create a 1Password item"
     Write-Host "  Import-OpCsv      (op-import-csv)    — Bulk-import a CSV of Login items"
     Write-Host ""
+    Write-Host "AWS" -ForegroundColor Yellow
+    Write-Host "  Set-AwsProfile    (awsp)             — Switch AWS profile (interactive picker if no arg)"
+    Write-Host "  Get-AwsIdentity   (aws-whoami)       — Show profile, region, and caller identity"
+    Write-Host "  Connect-Aws       (aws-login)        — SSO login (interactive profile pick if needed)"
+    Write-Host ""
     Write-Host "Help" -ForegroundColor Yellow
     Write-Host "  Get-PreflightHelp (op-help, dev-help) — This screen"
     Write-Host ""
