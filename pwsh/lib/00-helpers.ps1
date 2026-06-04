@@ -143,3 +143,78 @@ function Select-FromList {
         return $null
     }
 }
+
+function Format-WrappedText {
+    <#
+    .SYNOPSIS
+        Word-wrap a single string so continuation lines align at $IndentColumn.
+    .DESCRIPTION
+        Mirrors the bash `_owl_wrap` helper. Returns one string with embedded
+        line breaks; no trailing newline. Continuation lines are prefixed
+        with $IndentColumn spaces so the wrapped text aligns under the first
+        word's column when written to a host that's already at column $IndentColumn.
+
+        Used by Show-OwlSplash (and historically the bash preflight banner)
+        to wrap quote text under the owl's right-side body column.
+
+        Note: the wrap counts characters, not graphemes. Embedded ANSI escape
+        sequences would inflate the perceived width; pass plain text.
+    .PARAMETER Text
+        The text to wrap. Whitespace-collapsed before wrapping.
+    .PARAMETER IndentColumn
+        Column where continuation lines should align. Pad width in spaces.
+    .PARAMETER MaxWidth
+        Total terminal width. Defaults to $Host.UI.RawUI.WindowSize.Width
+        when available, else 80.
+    .EXAMPLE
+        Format-WrappedText 'A long sentence that needs to wrap.' 12 60
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true, Position = 0)]
+        [string]$Text,
+
+        [Parameter(Mandatory = $true, Position = 1)]
+        [int]$IndentColumn,
+
+        [int]$MaxWidth = 0
+    )
+
+    if ($MaxWidth -le 0) {
+        # Try the raw host width; fall back to 80 if the host doesn't
+        # expose one (redirected output, headless contexts, etc.).
+        try {
+            $w = $Host.UI.RawUI.WindowSize.Width
+            if ($w -gt 0) { $MaxWidth = $w } else { $MaxWidth = 80 }
+        } catch {
+            $MaxWidth = 80
+        }
+    }
+
+    $available = $MaxWidth - $IndentColumn
+    # Minimum sane width guard — if the indent eats most of the terminal,
+    # wrap at 20 chars rather than producing single-word lines forever.
+    if ($available -lt 20) { $available = 20 }
+
+    $pad = ' ' * $IndentColumn
+    $words = $Text -split '\s+' | Where-Object { $_ }
+
+    $sb = New-Object System.Text.StringBuilder
+    $line = ''
+    foreach ($word in $words) {
+        if (-not $line) {
+            $line = $word
+        } elseif ($line.Length + 1 + $word.Length -le $available) {
+            $line = "$line $word"
+        } else {
+            if ($sb.Length -gt 0) { [void]$sb.Append("`n").Append($pad) }
+            [void]$sb.Append($line)
+            $line = $word
+        }
+    }
+    if ($line) {
+        if ($sb.Length -gt 0) { [void]$sb.Append("`n").Append($pad) }
+        [void]$sb.Append($line)
+    }
+    return $sb.ToString()
+}

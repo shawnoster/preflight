@@ -1,7 +1,7 @@
 ﻿@{
     # Module identity
     RootModule        = 'Preflight.psm1'
-    ModuleVersion     = '0.6.0'
+    ModuleVersion     = '0.7.0'
     GUID              = 'b3a12e1b-332f-4ada-8340-a6ae2f40c86a'
     Author            = 'Shawn Oster'
     CompanyName       = 'shawnoster'
@@ -46,6 +46,8 @@
         'gpl'
         'gd'
         'gds'
+        'Set-OwlTheme'
+        'Show-OwlSplash'
     )
 
     AliasesToExport   = @(
@@ -77,6 +79,7 @@
         'gunwip'
         'gclean'
         'gsync'
+        'owl-theme'
     )
 
     CmdletsToExport   = @()
@@ -88,6 +91,18 @@
             LicenseUri   = 'https://github.com/shawnoster/preflight/blob/main/LICENSE'
             ProjectUri   = 'https://github.com/shawnoster/preflight'
             ReleaseNotes = @'
+0.7.0 — Owl theme engine ported from bash lib/owl.sh:
+  - Set-OwlTheme (alias: owl-theme) — list/switch/query 8 themes
+    (catppuccin / honeypot / twilight / moonlit / autumn / rose /
+    moss / parchment).
+  - Show-OwlSplash — opt-in MOTD with 5 mood pools × 10 quotes each.
+    Add to $PROFILE after Import-Module Preflight if you want it.
+  - Theme state persists at $HOME\.preflight\state\owl\current.
+  - OMP integration uses a USER-OWNED config (refuses to mutate
+    Microsoft's shared $env:POSH_THEMES_PATH directory).
+  - On module load, the saved theme's RGB triplets are exported as
+    $env:OWL_BODY/EYES/TEXT/SUB so other surfaces can pick them up.
+
 0.6.0 — Help refactor:
   - New Get-PreflightCommands (alias: dev-commands) — flat object-stream
     of every exported function with Name/Aliases/Synopsis/Category;
