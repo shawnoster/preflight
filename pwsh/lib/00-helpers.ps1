@@ -39,6 +39,13 @@ function Find-FileUpward {
         [string]$StartDirectory = $PWD.Path
     )
 
+    # If the start directory doesn't exist, return null rather than throw.
+    # The function's contract is "returns the matching path or $null"; callers
+    # rely on that ($null check) instead of a try/catch around the call site.
+    if (-not (Test-Path -LiteralPath $StartDirectory -PathType Container)) {
+        Write-Verbose "Find-FileUpward: start directory does not exist: $StartDirectory"
+        return $null
+    }
     $dir = (Resolve-Path -LiteralPath $StartDirectory).Path
     while ($dir) {
         $candidate = Join-Path $dir $FileName
