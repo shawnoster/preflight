@@ -59,7 +59,9 @@ function Invoke-Preflight {
         Don't poke at AWS. Useful when you're offline or working without SSO.
     .PARAMETER CheckUpdates
         For installed tools, fetch the latest release tag from GitHub and
-        flag drift. Adds ~3–5s latency depending on network.
+        flag drift. Adds a few seconds in the common path; up to 30 seconds
+        if the network is slow or GitHub is rate-limiting (`Wait-Job
+        -Timeout 30` caps the per-batch wait).
     .EXAMPLE
         Invoke-Preflight
     .EXAMPLE
