@@ -97,7 +97,7 @@ $script:CommentMarker    = '# preflight:superseded'
 # so the user's muscle memory keeps working.
 $script:SupersededFunctions = @(
     @{ Name = 'Set-SecureEnv';     SupersededBy = 'Import-OpEnv (alias: op-load-env)' }
-    @{ Name = 'Switch-AWSProfile'; SupersededBy = 'Set-AwsProfile (alias: awsp) — Phase 2' }
+    @{ Name = 'Switch-AWSProfile'; SupersededBy = 'Set-AwsProfile (alias: awsp)' }
     @{ Name = 'Switch-GitBranch';  SupersededBy = 'Switch-Branch (alias: gco) — Phase 2' }
     @{ Name = 'bake';              SupersededBy = 'Invoke-Bake (alias: bake) — Phase 2' }
 )

@@ -1,7 +1,7 @@
 ﻿@{
     # Module identity
     RootModule        = 'Preflight.psm1'
-    ModuleVersion     = '0.1.0'
+    ModuleVersion     = '0.2.0'
     GUID              = 'b3a12e1b-332f-4ada-8340-a6ae2f40c86a'
     Author            = 'Shawn Oster'
     CompanyName       = 'shawnoster'
@@ -24,6 +24,9 @@
         'Import-OpCsv'
         'Get-PreflightHelp'
         'Invoke-Preflight'
+        'Set-AwsProfile'
+        'Get-AwsIdentity'
+        'Connect-Aws'
     )
 
     AliasesToExport   = @(
@@ -36,6 +39,10 @@
         'op-help'
         'dev-help'
         'preflight'
+        'awsp'
+        'switch-aws-profile'
+        'aws-whoami'
+        'aws-login'
     )
 
     CmdletsToExport   = @()
@@ -46,7 +53,13 @@
             Tags         = @('Preflight', '1Password', 'op', 'AWS', 'DevTools', 'Productivity')
             LicenseUri   = 'https://github.com/shawnoster/preflight/blob/main/LICENSE'
             ProjectUri   = 'https://github.com/shawnoster/preflight'
-            ReleaseNotes = 'Phase 1: 1Password helpers ported from bash preflight (Get-OpStatus, Connect-Op, Import-OpEnv, Clear-OpEnv, New-OpItem, Import-OpCsv).'
+            ReleaseNotes = @'
+0.2.0 — AWS layer ported from bash lib/aws.sh:
+  Set-AwsProfile (awsp), Get-AwsIdentity (aws-whoami), Connect-Aws (aws-login).
+
+0.1.0 — Phase 1: 1Password helpers (Get-OpStatus, Connect-Op, Import-OpEnv,
+  Clear-OpEnv, New-OpItem, Import-OpCsv) and the Invoke-Preflight orchestrator.
+'@
         }
     }
 }
