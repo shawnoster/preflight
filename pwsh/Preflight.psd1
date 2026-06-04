@@ -1,7 +1,7 @@
 ﻿@{
     # Module identity
     RootModule        = 'Preflight.psm1'
-    ModuleVersion     = '0.5.0'
+    ModuleVersion     = '0.6.0'
     GUID              = 'b3a12e1b-332f-4ada-8340-a6ae2f40c86a'
     Author            = 'Shawn Oster'
     CompanyName       = 'shawnoster'
@@ -23,6 +23,7 @@
         'New-OpItem'
         'Import-OpCsv'
         'Get-PreflightHelp'
+        'Get-PreflightCommands'
         'Invoke-Preflight'
         'Set-AwsProfile'
         'Get-AwsIdentity'
@@ -56,6 +57,8 @@
         'op-import-csv'
         'op-help'
         'dev-help'
+        'devhelp'
+        'dev-commands'
         'preflight'
         'awsp'
         'switch-aws-profile'
@@ -85,6 +88,16 @@
             LicenseUri   = 'https://github.com/shawnoster/preflight/blob/main/LICENSE'
             ProjectUri   = 'https://github.com/shawnoster/preflight'
             ReleaseNotes = @'
+0.6.0 — Help refactor:
+  - New Get-PreflightCommands (alias: dev-commands) — flat object-stream
+    of every exported function with Name/Aliases/Synopsis/Category;
+    pipeline-friendly for Where-Object / Out-GridView / Group-Object.
+  - Get-PreflightHelp now auto-generates from the live module via AST
+    parsing (function -> lib-file mapping) + Get-Help (synopsis lines)
+    + Get-Command (aliases). No more hand-maintained category table to
+    drift out of sync. New lib files appear automatically.
+  - Both functions moved to lib/help.ps1 alongside their aliases.
+
 0.5.0 — Invoke-Preflight Phase 2: SSH agent check, Installed Tools (with
   -CheckUpdates and winget/choco hints), Git Configuration audit, Node.js,
   Python (uv missing = issue). The orchestrator now mirrors all 10 sections
