@@ -812,6 +812,17 @@ function Get-PreflightHelp {
     Write-Host "  Set-LocationProject (proj)           — Jump to a project directory"
     Write-Host "  Start-LocalServer (serve)            — Quick HTTP server (python -m http.server)"
     Write-Host ""
+    Write-Host "Git" -ForegroundColor Yellow
+    Write-Host "  Switch-GitBranch  (gco)              — Checkout a branch with picker"
+    Write-Host "  Show-GitLog       (glog)             — Pretty git log with fzf preview when available"
+    Write-Host "  Pop-GitStash      (gstash)           — Pop (or apply, with -Apply) a stash"
+    Write-Host "  New-GitHubPullRequest (gpr)          — gh pr create --web"
+    Write-Host "  Save-GitWip       (gwip)             — Quick WIP commit (skips hooks)"
+    Write-Host "  Undo-GitWip       (gunwip)           — Soft-reset last WIP commit"
+    Write-Host "  Remove-MergedGitBranches (gclean)    — Prune branches merged AND gone from origin"
+    Write-Host "  Sync-GitFork      (gsync)            — Fetch upstream, merge, push origin"
+    Write-Host "  gs / ga / gpl / gd / gds             — Wrappers for git status/add/pull/diff/diff --staged"
+    Write-Host ""
     Write-Host "Help" -ForegroundColor Yellow
     Write-Host "  Get-PreflightHelp (op-help, dev-help) — This screen"
     Write-Host ""

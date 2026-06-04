@@ -1,7 +1,7 @@
 ﻿@{
     # Module identity
     RootModule        = 'Preflight.psm1'
-    ModuleVersion     = '0.3.0'
+    ModuleVersion     = '0.4.0'
     GUID              = 'b3a12e1b-332f-4ada-8340-a6ae2f40c86a'
     Author            = 'Shawn Oster'
     CompanyName       = 'shawnoster'
@@ -32,6 +32,19 @@
         'Invoke-PoetryScript'
         'Set-LocationProject'
         'Start-LocalServer'
+        'Switch-GitBranch'
+        'Show-GitLog'
+        'Pop-GitStash'
+        'New-GitHubPullRequest'
+        'Save-GitWip'
+        'Undo-GitWip'
+        'Remove-MergedGitBranches'
+        'Sync-GitFork'
+        'gs'
+        'ga'
+        'gpl'
+        'gd'
+        'gds'
     )
 
     AliasesToExport   = @(
@@ -53,6 +66,14 @@
         'poet'
         'proj'
         'serve'
+        'gco'
+        'glog'
+        'gstash'
+        'gpr'
+        'gwip'
+        'gunwip'
+        'gclean'
+        'gsync'
     )
 
     CmdletsToExport   = @()
@@ -64,6 +85,13 @@
             LicenseUri   = 'https://github.com/shawnoster/preflight/blob/main/LICENSE'
             ProjectUri   = 'https://github.com/shawnoster/preflight'
             ReleaseNotes = @'
+0.4.0 — Git layer ported from bash lib/git.sh:
+  Switch-GitBranch (gco), Show-GitLog (glog), Pop-GitStash (gstash),
+  New-GitHubPullRequest (gpr), Save-GitWip (gwip), Undo-GitWip (gunwip),
+  Remove-MergedGitBranches (gclean), Sync-GitFork (gsync), plus
+  gs/ga/gpl/gd/gds aliases. gclean adopts the safer "remote-gone"
+  check from the user's existing Remove-MergedBranches profile function.
+
 0.3.0 — Project layer ported from bash lib/project.sh:
   Invoke-Make (bake), Invoke-NpmScript (yak), Invoke-PoetryScript (poet),
   Set-LocationProject (proj), Start-LocalServer (serve).
