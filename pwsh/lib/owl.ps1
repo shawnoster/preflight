@@ -254,9 +254,18 @@ function Get-OwlOmpConfigPath {
         try {
             $configFull = (Resolve-Path -LiteralPath $env:OWL_OMP_CONFIG -ErrorAction SilentlyContinue).Path
             $themesFull = (Resolve-Path -LiteralPath $themesRoot -ErrorAction SilentlyContinue).Path
-            if ($configFull -and $themesFull -and $configFull.StartsWith($themesFull, [StringComparison]::OrdinalIgnoreCase)) {
-                Write-Verbose "OWL_OMP_CONFIG points inside POSH_THEMES_PATH — skipping OMP patching to avoid mutating shared themes."
-                return $null
+            if ($configFull -and $themesFull) {
+                # Boundary the prefix with a path separator so sibling dirs
+                # like 'C:\Themes-Backup' don't falsely match a 'C:\Themes'
+                # root. Use the platform separator so this works on POSIX
+                # too (where '/' delimits) without special-casing.
+                $sep = [System.IO.Path]::DirectorySeparatorChar
+                $themesPrefix = $themesFull.TrimEnd($sep) + $sep
+                if ($configFull.Equals($themesFull, [StringComparison]::OrdinalIgnoreCase) -or
+                    $configFull.StartsWith($themesPrefix, [StringComparison]::OrdinalIgnoreCase)) {
+                    Write-Verbose "OWL_OMP_CONFIG points inside POSH_THEMES_PATH — skipping OMP patching to avoid mutating shared themes."
+                    return $null
+                }
             }
         } catch {
             # Path resolution failed (one or both paths invalid). Fall
