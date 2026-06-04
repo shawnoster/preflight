@@ -334,7 +334,8 @@ function Remove-MergedGitBranches {
         user's existing Remove-MergedBranches: a branch is only deleted
         when BOTH conditions hold:
 
-          1. It has been merged into the current HEAD (or `-MainBranch`).
+          1. It has been merged into `-MainBranch` (defaults to
+             `$env:GIT_MAIN_BRANCH` then 'main').
           2. It no longer exists on the `origin` remote.
 
         That second check guards against deleting branches that are still
@@ -343,14 +344,19 @@ function Remove-MergedGitBranches {
         more aggressive; this implementation prefers conservatism.
 
         Always preserves: main, master, develop, the current branch, and
-        the branch passed via -MainBranch (or `$env:GIT_MAIN_BRANCH`,
-        defaulting to 'main').
+        the branch passed via -MainBranch.
+
+        Requires an `origin` remote — without it the "remote-gone" check
+        would treat every merged branch as orphaned, which would defeat
+        the whole conservative posture. Bails with an actionable error if
+        origin is missing.
 
         -WhatIf shows what would be deleted without acting; -Confirm
         prompts per branch.
     .PARAMETER MainBranch
-        The mainline branch to compare against. Defaults to
-        `$env:GIT_MAIN_BRANCH` then 'main'. Will be excluded from deletion.
+        The branch to compare against. Affects both the merge-target
+        comparison (`git branch --merged <main>`) and the protected list.
+        Defaults to `$env:GIT_MAIN_BRANCH` then 'main'.
     .EXAMPLE
         gclean              # delete merged-and-remote-gone branches
     .EXAMPLE
@@ -374,16 +380,31 @@ function Remove-MergedGitBranches {
         $MainBranch = if ($env:GIT_MAIN_BRANCH) { $env:GIT_MAIN_BRANCH } else { 'main' }
     }
 
+    # The "remote-gone" safety check assumes an `origin` remote exists. Bail
+    # early if it doesn't — without origin we'd treat every merged branch as
+    # orphaned and become *more* aggressive than bash gclean, defeating the
+    # whole point of this implementation's conservative posture.
+    $remotes = & git remote 2>$null
+    if ($LASTEXITCODE -ne 0 -or 'origin' -notin @($remotes)) {
+        Write-Error "No 'origin' remote configured. gclean's safety check requires origin to detect deleted branches. Add one with: git remote add origin <url>"
+        return
+    }
+
     Write-Host '📡 git fetch --prune'
     & git fetch --prune
 
     $current = & git rev-parse --abbrev-ref HEAD
     if ($LASTEXITCODE -ne 0) { return }
 
-    # Local branches that have been merged into HEAD. Strip the leading "  "
-    # marker and the "* " marker on the current branch.
-    $merged = & git branch --merged --format='%(refname:short)' 2>$null
-    if ($LASTEXITCODE -ne 0) { return }
+    # Merged branches: pass $MainBranch as the merge target so users on a
+    # feature branch can clean what's already merged into main without
+    # checking out main first. With no argument, --merged defaults to HEAD,
+    # which would only catch branches merged into wherever you happen to be.
+    $merged = & git branch --merged $MainBranch --format='%(refname:short)' 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "Could not list branches merged into '$MainBranch'. Does that ref exist locally?"
+        return
+    }
 
     # Branches still present on origin (without the `origin/` prefix). We
     # only delete locally if the branch is gone from origin too — same
