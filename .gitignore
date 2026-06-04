@@ -2,6 +2,7 @@
 config/accounts.sh
 config/owl.sh
 lib/1password.sh
+pwsh/config/accounts.ps1
 
 # Runtime state
 state/

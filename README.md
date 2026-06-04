@@ -2,6 +2,8 @@
 
 A modular collection of shell utilities for development workflows. Drop it in `~/.preflight`, source it from `.bashrc`, and get fuzzy-powered shortcuts for AWS, Docker, Git, 1Password, and project navigation — plus an owl-themed MOTD and Oh My Posh color switcher.
 
+> **PowerShell users**: a Windows-native sibling lives in [`pwsh/`](pwsh/README.md) and is installed separately via `pwsh/install.ps1`. Phase 1 ships the 1Password layer (`Get-OpStatus`, `Connect-Op`, `Import-OpEnv`, `Clear-OpEnv`, `New-OpItem`, `Import-OpCsv`); more layers follow.
+
 ## Installation
 
 ```bash
@@ -89,6 +91,12 @@ source ~/.bashrc
 ├── config/
 │   ├── accounts.sh      # Non-secret configuration (gitignored, from template)
 │   └── owl.sh           # Owl/OMP config — OWL_OMP_CONFIG path (gitignored, from template)
+├── pwsh/                # PowerShell sibling — see pwsh/README.md
+│   ├── Preflight.psd1   # Module manifest
+│   ├── Preflight.psm1   # Entry — dot-sources lib/*.ps1
+│   ├── install.ps1      # Windows installer (mirrors install.sh)
+│   ├── lib/             # PowerShell helpers (1password.ps1, …)
+│   └── config/          # accounts.ps1 (gitignored, from template)
 └── docs/
     └── wsl-ssh-setup.md # WSL + 1Password SSH setup guide
 ```
