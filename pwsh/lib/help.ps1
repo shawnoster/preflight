@@ -286,6 +286,11 @@ function Get-PreflightCommands {
 
         # Find any command whose synopsis mentions AWS.
     .EXAMPLE
+        Get-PreflightCommands | Where-Object { 'gco' -in $_.Aliases }
+
+        # Find the command behind a kebab alias. Aliases is a string[]
+        # so -in / -contains work without splitting a joined string.
+    .EXAMPLE
         Get-PreflightCommands | Out-GridView -Title 'Preflight commands'
 
         # Searchable GUI grid (Windows only).
@@ -301,10 +306,12 @@ function Get-PreflightCommands {
     $catalog = Get-PreflightCommandCatalog
     foreach ($cmd in $catalog | Sort-Object CategoryOrder, Category, Name) {
         # Re-emit a clean projection — drop the internal CategoryOrder field
-        # so users don't see implementation detail.
+        # so users don't see implementation detail. Aliases stays as a
+        # string[] so callers can do `Where-Object { $_.Aliases -contains 'gco' }`
+        # without parsing a comma-joined string.
         [PSCustomObject]@{
             Name     = $cmd.Name
-            Aliases  = ($cmd.Aliases -join ', ')
+            Aliases  = [string[]]@($cmd.Aliases)
             Synopsis = $cmd.Synopsis
             Category = $cmd.Category
         }
