@@ -457,8 +457,11 @@ function Set-OwlTheme {
     # --- mode: switch ---
     $theme = $script:OwlThemes[$Name]
     if (-not $theme) {
-        Write-Host "  Unknown theme: $Name"
-        Write-Host ('  Available: ' + ($script:OwlThemes.Keys -join ', '))
+        # Use Write-Error (not Write-Host) so scripts and `try/catch`
+        # blocks can detect the failure. The message itself is
+        # user-friendly enough to also serve as the human-readable error.
+        $available = $script:OwlThemes.Keys -join ', '
+        Write-Error "Unknown owl theme: '$Name'. Available: $available"
         return
     }
 
