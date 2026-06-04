@@ -143,7 +143,11 @@ function Get-PreflightCommandCatalog {
             $body = "$($fn.Definition)".Trim()
             # Strip wrapping braces/whitespace and look for a bare invocation
             # like `& git status @args` — capture everything between the
-            # ampersand and the @args/$args sentinel.
+            # ampersand and the trailing `@args` splat. We match the splat
+            # form specifically (not bare `$args`) because that's what the
+            # wrappers in lib/git.ps1 use, and forwarding via the splat is
+            # the only correct pattern for passing both positional and
+            # named parameters through to an external command.
             if ($body -match '^\s*&\s+(\S+(?:\s+[^&|;\r\n]*?)?)\s+@args\s*$') {
                 $synopsis = "Wrapper for ``$($matches[1].Trim())``."
             }
