@@ -22,7 +22,7 @@ if (-not $env:OP_ACCOUNT) {
     # Default 1Password account shorthand. Override in config/accounts.ps1.
     # Note: the Windows `op` CLI uses `guild-education` (dash); the WSL/Linux
     # CLI typically uses `guild_education` (underscore). Defaulting to the
-    # Windows form here because this module ships for Windows PowerShell.
+    # Windows form because this module is intended for Windows PowerShell 7+.
     $env:OP_ACCOUNT = 'guild-education'
 }
 

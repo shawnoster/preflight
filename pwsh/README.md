@@ -25,6 +25,16 @@ After install, reload your shell:
 Get-OpStatus
 ```
 
+## Requirements
+
+- **PowerShell 7.0+** (`pwsh`). Windows PowerShell 5.1 is not supported — the
+  module uses `$IsWindows`, `[Diagnostics.Process].ArgumentList`, and other
+  PS-Core-only features. Install from
+  [aka.ms/powershell](https://aka.ms/powershell).
+- **1Password CLI** (`op`). Install from
+  [developer.1password.com/docs/cli](https://developer.1password.com/docs/cli/get-started/).
+- **AWS CLI v2** (optional, for the `Invoke-Preflight` AWS section).
+
 ## Phase 1 — what's in the box
 
 The 1Password layer plus a session-startup orchestrator. Function names follow

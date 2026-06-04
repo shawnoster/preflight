@@ -8,9 +8,11 @@
     Copyright         = '(c) Shawn Oster. MIT License.'
     Description       = 'Developer environment helpers for PowerShell — the PowerShell sibling of github.com/shawnoster/preflight. 1Password, AWS, Git, and project utilities.'
 
-    # Compatibility — works in Windows PowerShell 5.1 and PowerShell 7+.
-    PowerShellVersion = '5.1'
-    CompatiblePSEditions = @('Desktop', 'Core')
+    # Compatibility — requires PowerShell 7.0+. Windows PowerShell 5.1 is
+    # not supported (uses $IsWindows automatic variable, ArgumentList on
+    # ProcessStartInfo, and other PS Core-only features).
+    PowerShellVersion = '7.0'
+    CompatiblePSEditions = @('Core')
 
     # Public surface — additions go here as new lib files are ported.
     FunctionsToExport = @(
