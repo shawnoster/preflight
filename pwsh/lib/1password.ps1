@@ -790,7 +790,7 @@ function Get-PreflightHelp {
     Write-Host "Use 'Get-Help <name> -Examples' for full per-command docs." -ForegroundColor DarkGray
     Write-Host ""
     Write-Host "Session" -ForegroundColor Yellow
-    Write-Host "  Invoke-Preflight  (preflight)        — Run session startup checks (secrets + AWS + env)"
+    Write-Host "  Invoke-Preflight  (preflight)        — Run session startup checks (10 sections; -CheckUpdates for tool drift)"
     Write-Host ""
     Write-Host "1Password" -ForegroundColor Yellow
     Write-Host "  Get-OpStatus      (op-status)        — Check 1Password sign-in state"
