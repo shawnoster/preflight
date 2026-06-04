@@ -221,12 +221,20 @@ function Get-PreflightHelp {
     Write-Host ''
 
     # Compute column widths so the table lines up regardless of which
-    # functions/aliases happen to be loaded.
-    $longestName  = ($catalog | Measure-Object -Property { $_.Name.Length } -Maximum).Maximum
-    $longestAlias = ($catalog | Measure-Object -Property {
-        $aliasCount = @($_.Aliases).Count
-        if ($aliasCount -gt 0) { ("({0})" -f ($_.Aliases -join ', ')).Length } else { 0 }
-    } -Maximum).Maximum
+    # functions/aliases happen to be loaded. Compute the lengths first then
+    # measure — passing a script block as `-Property` happens to work in
+    # PowerShell 7+ but is undocumented and surprises readers; explicit
+    # compute-then-measure is unambiguous.
+    $nameLengths = $catalog | ForEach-Object { $_.Name.Length }
+    $aliasLengths = $catalog | ForEach-Object {
+        if (@($_.Aliases).Count -gt 0) {
+            ("({0})" -f ($_.Aliases -join ', ')).Length
+        } else {
+            0
+        }
+    }
+    $longestName  = ($nameLengths  | Measure-Object -Maximum).Maximum
+    $longestAlias = ($aliasLengths | Measure-Object -Maximum).Maximum
 
     $groups = $catalog |
         Group-Object Category |
