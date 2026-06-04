@@ -1,7 +1,7 @@
 ﻿@{
     # Module identity
     RootModule        = 'Preflight.psm1'
-    ModuleVersion     = '0.2.0'
+    ModuleVersion     = '0.3.0'
     GUID              = 'b3a12e1b-332f-4ada-8340-a6ae2f40c86a'
     Author            = 'Shawn Oster'
     CompanyName       = 'shawnoster'
@@ -27,6 +27,11 @@
         'Set-AwsProfile'
         'Get-AwsIdentity'
         'Connect-Aws'
+        'Invoke-Make'
+        'Invoke-NpmScript'
+        'Invoke-PoetryScript'
+        'Set-LocationProject'
+        'Start-LocalServer'
     )
 
     AliasesToExport   = @(
@@ -43,6 +48,11 @@
         'switch-aws-profile'
         'aws-whoami'
         'aws-login'
+        'bake'
+        'yak'
+        'poet'
+        'proj'
+        'serve'
     )
 
     CmdletsToExport   = @()
@@ -54,6 +64,10 @@
             LicenseUri   = 'https://github.com/shawnoster/preflight/blob/main/LICENSE'
             ProjectUri   = 'https://github.com/shawnoster/preflight'
             ReleaseNotes = @'
+0.3.0 — Project layer ported from bash lib/project.sh:
+  Invoke-Make (bake), Invoke-NpmScript (yak), Invoke-PoetryScript (poet),
+  Set-LocationProject (proj), Start-LocalServer (serve).
+
 0.2.0 — AWS layer ported from bash lib/aws.sh:
   Set-AwsProfile (awsp), Get-AwsIdentity (aws-whoami), Connect-Aws (aws-login).
 
