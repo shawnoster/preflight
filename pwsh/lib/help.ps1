@@ -77,6 +77,7 @@ function Get-PreflightCommandCatalog {
         'aws'        = 'AWS'
         'git'        = 'Git'
         'help'       = 'Help'
+        'owl'        = 'Theme'
         'preflight'  = 'Session'
         'project'    = 'Project'
     }
@@ -89,6 +90,7 @@ function Get-PreflightCommandCatalog {
         'AWS'       = 3
         'Project'   = 4
         'Git'       = 5
+        'Theme'     = 50   # cosmetic, late in the panel
         'Help'      = 99   # always last
     }
 
