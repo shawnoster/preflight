@@ -50,10 +50,10 @@ op-status      # reports the resolved binary and account
 op-load-env    # first read prompts a desktop unlock, then loads all secrets
 ```
 
-A successful run prints `✅ <VAR>` for each secret. A one-off read to sanity-check a single reference:
+A successful run prints `✅ <VAR>` for each secret. A one-off read to sanity-check a single reference — use `$OP_BIN` (set by `op-signin`) so it goes through the same binary the helpers resolved, not a bare `op` that would pick the native Linux CLI and skip desktop integration:
 
 ```bash
-op-signin && op read --account "$OP_ACCOUNT" "op://<Vault>/<Item>/<field>"
+op-signin && "$OP_BIN" read --account "$OP_ACCOUNT" "op://<Vault>/<Item>/<field>"
 ```
 
 ## Notes and gotchas
