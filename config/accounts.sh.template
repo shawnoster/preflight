@@ -7,9 +7,13 @@
 # SETUP: Copy this to accounts.sh and customize for your environment
 #   cp config/accounts.sh.template config/accounts.sh
 
-# 1Password account shorthand
-# Examples: "my", "personal", "work", "guild_education"
-export OP_ACCOUNT="my"
+# 1Password account reference (see lib/1password.sh for the auth model).
+#   • WSL + Windows desktop op.exe → use the sign-in ADDRESS (the desktop-fed
+#     op.exe does not carry a manual `op account add` shorthand).
+#     Examples: "my.1password.com", "my-team.1password.com"
+#   • Native op (Linux/macOS) → use the shorthand from `op account add`.
+#     Examples: "my", "personal", "work"
+export OP_ACCOUNT="my.1password.com"
 
 # Project directories for `proj` command (colon-separated)
 export PROJ_DIRS="$HOME/projects:$HOME/work:$HOME/src"
