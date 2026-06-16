@@ -132,9 +132,17 @@ source ~/.bashrc
 
 **Secrets loaded by `op-load-env`:** `ANTHROPIC_API_KEY`, `ATLASSIAN_API_TOKEN`, `GITHUB_TOKEN`, `NPM_TOKEN`, `DATADOG_API_KEY`, `SONAR_TOKEN`, and more.
 
+**Auth model:** the helpers resolve an `op` binary and **prefer the Windows `op.exe` under WSL**, so secret reads are authorized by the Windows 1Password desktop app (Windows Hello / desktop unlock) — no password typed in WSL. On native Linux/macOS they fall back to the platform `op` and the manual session-token sign-in. See [docs/wsl-1password-cli.md](./docs/wsl-1password-cli.md) for the full WSL setup.
+
 **Initial setup:**
 ```bash
-op account add --shorthand guild_education
+# WSL + Windows desktop app (recommended): enable the desktop app's
+# Settings → Developer → "Integrate with 1Password CLI", install op.exe
+# (winget install AgileBits.1Password.CLI), and set OP_ACCOUNT to your
+# sign-in address (e.g. my-team.1password.com) in config/accounts.sh.
+
+# Native Linux/macOS: add the account by shorthand instead.
+op account add --shorthand my-team
 ```
 
 ### AWS (`lib/aws.sh`)
@@ -251,7 +259,7 @@ Commands that require interactive selection will exit with a usage message when 
 
 Edit `~/.preflight/config/accounts.sh` to customize:
 
-- `OP_ACCOUNT` - 1Password account shorthand
+- `OP_ACCOUNT` - 1Password account reference: sign-in address (e.g. `my-team.1password.com`) for WSL desktop integration, or the `op account add` shorthand for native `op`
 - `PROJ_DIRS` - Directories for `proj` command
 - `AWS_PROFILE_DEFAULT` - Default AWS profile (`preflight` sets `AWS_PROFILE` from this at startup)
 - `PREFLIGHT_DIR` - Install location (default: `~/.preflight`)
@@ -270,6 +278,6 @@ Files in `~/.preflight/lib/` are automatically sourced. Create `~/.preflight/lib
 
 - **fzf** - Fuzzy finder (required for interactive selection)
 - **jq** - JSON processor (for npm/package.json parsing and AWS output)
-- **op** - 1Password CLI
+- **op** - 1Password CLI (on WSL, the Windows `op.exe` is preferred — see [docs/wsl-1password-cli.md](./docs/wsl-1password-cli.md))
 - **aws** - AWS CLI v2
 - **gh** - GitHub CLI (optional, for `gpr` and `preflight -u`)
