@@ -134,6 +134,15 @@ source ~/.bashrc
 
 **Auth model:** the helpers resolve an `op` binary and **prefer the Windows `op.exe` under WSL**, so secret reads are authorized by the Windows 1Password desktop app (Windows Hello / desktop unlock) — no password typed in WSL. On native Linux/macOS they fall back to the platform `op` and the manual session-token sign-in. See [docs/wsl-1password-cli.md](./docs/wsl-1password-cli.md) for the full WSL setup.
 
+**GitHub auth:** owned by the `gh` CLI, which stores its own token in `~/.config/gh/hosts.yml`. That stored token is what `gh` (and tools that shell out to it) use — independent of whether `op-load-env` also exports a `GITHUB_TOKEN` for other tooling. Claude Code's `github` MCP server (`api.githubcopilot.com/mcp`) can't do OAuth, so it carries the `gh` token in an `Authorization` header baked into `~/.claude.json`. When the `gh` token rotates (`gh auth login`/`refresh`), re-stamp that header:
+
+```bash
+claude mcp remove github -s local
+claude mcp add --transport http github \
+  https://api.githubcopilot.com/mcp \
+  --header "Authorization: Bearer $(gh auth token)"
+```
+
 **Initial setup:**
 ```bash
 # WSL + Windows desktop app (recommended): enable the desktop app's
