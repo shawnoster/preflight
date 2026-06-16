@@ -13,7 +13,15 @@ There are two copies of this code on disk, and they serve different roles. Know 
 - **The template (source) repo** — wherever you cloned it (e.g. `~/dev/code/preflight`; the source checkout location is arbitrary — only the working install path is fixed by default). This is the git working tree people clone and install from. Tracked files live here: `lib/*.sh`, the `*.template` files (`lib/1password.sh.template`, `config/accounts.sh.template`, `config/owl.sh.template`), `init.sh`, `install.sh`, docs, and this `AGENTS.md`. Everything here must stay **generic** — no personal secrets, no Guild/work-specific account references, no machine-specific paths. **All tracked changes (and all PRs) are made here.**
 - **`~/.preflight` — the working install (`PREFLIGHT_DIR`).** This is what `init.sh` actually sources at shell startup. On first load it copies the committed `*.template` files into their **live, gitignored** counterparts (`lib/1password.sh`, `config/accounts.sh`, `config/owl.sh`). Those live files are where the user's **Guild/work-specific** bits live: real `op://` secret references, the `OP_ACCOUNT` sign-in address, AWS profile defaults, etc. They are git-ignored precisely so personal config never lands in the template.
 
-`~/.preflight` is itself a clone of the same repo, so its *tracked* files can be edited and committed — but doing so risks drift between the two checkouts and accidentally committing local config. **Default to editing tracked files in the source checkout and opening a PR;** treat `~/.preflight` as a runtime install whose only intentional local edits are the gitignored live files. Note that `init.sh` only copies a `*.template` into its live counterpart when that live file **does not yet exist** (the copy is gated on `[[ ! -f <live file> ]]`); it never overwrites an existing one. So a template change does not retroactively rewrite an already-generated live file — the user hand-merges the new template content into their live file (or deletes the live file to regenerate it from scratch).
+`~/.preflight` is itself a clone of the same repo, so its *tracked* files can be edited and committed — but doing so risks drift between the two checkouts and accidentally committing local config. **Default to editing tracked files in the source checkout and opening a PR;** treat `~/.preflight` as a runtime install whose only intentional local edits are the gitignored live files. Note that both `init.sh` (on every shell load) and `install.sh` (at install time) only copy a `*.template` into its live counterpart when the live file is **missing** *and* the template exists — e.g. for 1Password:
+
+```bash
+if [[ ! -f "$PREFLIGHT_DIR/lib/1password.sh" ]] && [[ -f "$PREFLIGHT_DIR/lib/1password.sh.template" ]]; then
+  cp "$PREFLIGHT_DIR/lib/1password.sh.template" "$PREFLIGHT_DIR/lib/1password.sh"
+fi
+```
+
+Neither ever overwrites an existing live file. So a template change does not retroactively rewrite an already-generated live file — the user hand-merges the new template content into their live file (or deletes the live file to regenerate it from scratch).
 
 ## Domains Covered
 
