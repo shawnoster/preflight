@@ -147,49 +147,16 @@ function Connect-Op {
 }
 
 # ---- Import-OpEnv ----------------------------------------------------------
-
-# Mapping of env var names to op:// references. Keep this in sync with
-# bash lib/1password.sh `op-load-env`. Each $env:VAR will be set to the
-# resolved secret after Import-OpEnv runs.
-#
-# Per-user additions: drop a hashtable into your config/accounts.ps1 and
-# Import-OpEnv will merge it in. See accounts.ps1.template for an example.
-#   $env:OP_ENV_EXTRA = @{ MY_VAR = 'op://Vault/Item/field' }
-$script:OpEnvMap = [ordered]@{
-    ANTHROPIC_API_KEY      = 'op://Employee/Anthropic - API Key/credential'
-    ATLASSIAN_API_TOKEN    = 'op://Employee/Atlassian - VSCode/credential'
-    ATLASSIAN_EMAIL        = 'op://Employee/Atlassian - VSCode/username'
-    ATLASSIAN_SERVER_URL   = 'op://Employee/Atlassian - VSCode/hostname'
-    DATADOG_API_KEY        = 'op://Employee/Datadog - API Key - Self-Serve Workflow/credential'
-    DATADOG_APP_KEY        = 'op://Employee/Datadog - Local - Shawn/credential'
-    NPM_TOKEN              = 'op://Employee/npm - token - Local Development/credential'
-    PACT_READONLY_PASSWORD = 'op://Engineering Tools - Dev/Pact Broker - Readonly/password'
-    SONAR_TOKEN            = 'op://Employee/SonarQube - Docker/token'
-}
+# $script:OpEnvMap (env var → op:// path) is defined entirely in
+# config/accounts.ps1, which is loaded by Preflight.psm1 before this file.
+# Edit that file to add, remove, or change secret mappings.
 
 function Get-OpEnvMap {
     <#
     .SYNOPSIS
-        Return the resolved env-var map (built-in + user extras).
-    .DESCRIPTION
-        Merges $script:OpEnvMap (the module's built-in defaults) with the
-        $script:OpEnvMapExtra hashtable, which a user can populate from
-        config/accounts.ps1 by assigning to $script:OpEnvMapExtra after
-        the module loads. User entries win on key conflicts so people
-        can override built-in op:// paths.
+        Return the op:// secret map defined in config/accounts.ps1.
     #>
-    $merged = [ordered]@{}
-    foreach ($k in $script:OpEnvMap.Keys) { $merged[$k] = $script:OpEnvMap[$k] }
-    # Strict-mode-safe lookup: Get-Variable with -ErrorAction SilentlyContinue
-    # avoids the "variable not set" error when accounts.ps1 didn't define
-    # $OpEnvMapExtra at all.
-    $extraVar = Get-Variable -Name 'OpEnvMapExtra' -Scope Script -ErrorAction SilentlyContinue
-    if ($extraVar -and $extraVar.Value) {
-        foreach ($k in $extraVar.Value.Keys) {
-            $merged[$k] = $extraVar.Value[$k]
-        }
-    }
-    return $merged
+    return $script:OpEnvMap
 }
 
 function Import-OpEnv {
@@ -219,6 +186,12 @@ function Import-OpEnv {
         [string]$Account = (Get-OpAccount)
     )
 
+    $envMap = Get-OpEnvMap
+    if ($envMap.Count -eq 0) {
+        Write-Verbose "Import-OpEnv: secret map is empty — nothing to load (check config/accounts.ps1)."
+        return
+    }
+
     if (-not (Test-OpCli)) { return }
 
     if (-not (Get-OpStatus -Account $Account -Quiet)) {
@@ -229,8 +202,6 @@ function Import-OpEnv {
     if (-not $env:_PREFLIGHT_NESTED) {
         Write-Host "--- Secrets ---"
     }
-
-    $envMap = Get-OpEnvMap
 
     # Strategy A: `op run --env-file` resolves every op:// reference in one
     # authenticated round-trip (matches the bash implementation).

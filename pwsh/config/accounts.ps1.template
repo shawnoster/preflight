@@ -1,36 +1,33 @@
-# Preflight PowerShell — user configuration (gitignored copy).
+# Preflight PowerShell — user configuration template.
 #
-# Copy this file to accounts.ps1 in the same directory (install.ps1 does
-# this automatically) and customize. The Preflight module dot-sources
-# accounts.ps1 at load time, so any $env:* assignments here become defaults
-# for every shell that imports Preflight.
+# install.ps1 copies this to accounts.ps1 (gitignored) on first install.
+# Edit accounts.ps1, not this file.
+#
+# This is the single source of truth for all op:// secret mappings.
+# Edit paths to match your 1Password vault item names.
+# Run `op item list` or `op item get <name>` to find yours.
 
 # 1Password account shorthand. Run `op account list` to see yours.
-# This must match the value used by `op` itself in your local profile.
-# Note: WSL and Windows often have different shorthands for the same
-# account (e.g. 'guild_education' vs 'guild-education').
+# WSL and Windows often differ (e.g. 'guild_education' vs 'guild-education').
 $env:OP_ACCOUNT = 'guild-education'
 
-# Default AWS profile applied at session start (optional). Leave commented
-# to inherit whatever AWS_PROFILE is already set to.
+# Default AWS profile applied at session start (optional).
 # $env:AWS_PROFILE_DEFAULT = 'guild-dev'
 
-# Project directories (used by the future `proj` cmdlet, Phase 2).
-# $env:PROJ_DIRS = "$HOME\dev;$HOME\dev\code"
+# ---- Secret map: env var → 1Password op:// reference -----------------------
+# Import-OpEnv resolves every entry here into $env:* variables.
+# Add, remove, or change paths freely — this file is gitignored.
 
-# ---- Per-user secret map extras --------------------------------------------
-# Import-OpEnv loads a built-in set of secrets (Anthropic, Atlassian, NPM,
-# Sonar, Datadog, Pact). To add personal vars without forking the module,
-# assign $script:OpEnvMapExtra here as a hashtable of VAR=op:// references.
-# These merge into the built-in map at runtime; user keys win on conflict.
-#
-# Example — Jira and Jellyfish creds (skipped from the built-in map because
-# JIRA_API_USER, JIRA_SERVER_URL, JIRA_API_KEY, and JF_API_KEY aren't shared
-# tooling). GITHUB_TOKEN intentionally NOT here: gh CLI manages that itself.
-#
-# $script:OpEnvMapExtra = @{
-#     JF_API_KEY      = 'op://Engineering Tools - Prod/Jellyfish API Token/credential'
-#     JIRA_API_KEY    = 'op://Employee/sa-jinx-cli/credential'
-#     JIRA_API_USER   = 'op://Employee/sa-jinx-cli/username'
-#     JIRA_SERVER_URL = 'op://Employee/sa-jinx-cli/server'
-# }
+$script:OpEnvMap = [ordered]@{
+    # ---- Shared tooling (same item name across the team) --------------------
+    ANTHROPIC_API_KEY      = 'op://Employee/Anthropic - API Key/credential'
+    DATADOG_API_KEY        = 'op://Employee/Datadog - API Key - Self-Serve Workflow/credential'
+    NPM_TOKEN              = 'op://Employee/npm - token - Local Development/credential'
+    PACT_READONLY_PASSWORD = 'op://Engineering Tools - Dev/Pact Broker - Readonly/password'
+
+    # ---- Personal (vault item names vary — update these to match yours) -----
+    # ATLASSIAN_API_TOKEN    = 'op://Employee/Atlassian - VSCode/credential'
+    # ATLASSIAN_EMAIL        = 'op://Employee/Atlassian - VSCode/username'
+    # ATLASSIAN_SERVER_URL   = 'op://Employee/Atlassian - VSCode/hostname'
+    # DATADOG_APP_KEY        = 'op://Employee/Datadog - Local - <YourName>/credential'
+}
