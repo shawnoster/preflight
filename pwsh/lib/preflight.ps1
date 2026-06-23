@@ -623,7 +623,7 @@ function Update-Preflight {
         [switch]$DryRun
     )
 
-    $installRoot = $script:PreflightRoot   # ~/.preflight/pwsh
+    $installRoot = $script:PreflightRoot   # wherever the module was imported from
     $repoUrl     = 'https://github.com/shawnoster/preflight.git'
 
     Write-Host ''
