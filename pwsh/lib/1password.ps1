@@ -186,6 +186,12 @@ function Import-OpEnv {
         [string]$Account = (Get-OpAccount)
     )
 
+    $envMap = Get-OpEnvMap
+    if ($envMap.Count -eq 0) {
+        Write-Verbose "Import-OpEnv: secret map is empty — nothing to load (check config/accounts.ps1)."
+        return
+    }
+
     if (-not (Test-OpCli)) { return }
 
     if (-not (Get-OpStatus -Account $Account -Quiet)) {
@@ -196,8 +202,6 @@ function Import-OpEnv {
     if (-not $env:_PREFLIGHT_NESTED) {
         Write-Host "--- Secrets ---"
     }
-
-    $envMap = Get-OpEnvMap
 
     # Strategy A: `op run --env-file` resolves every op:// reference in one
     # authenticated round-trip (matches the bash implementation).
