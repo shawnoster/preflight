@@ -597,7 +597,125 @@ function Invoke-Preflight {
     Write-Host ''
 }
 
+function Update-Preflight {
+    <#
+    .SYNOPSIS
+        Update the Preflight module to the latest version from GitHub.
+    .DESCRIPTION
+        Clones shawnoster/preflight into a temp directory, copies the updated
+        lib/*.ps1, Preflight.psd1, and Preflight.psm1 into the install root
+        (~/.preflight/pwsh/), then reloads the module.
+
+        Files that must survive updates untouched:
+          - config/accounts.ps1  (gitignored user config — NEVER overwritten)
+
+        The update uses git (preferred) or falls back to the GitHub API if git
+        is not in PATH.
+    .PARAMETER DryRun
+        Show what would be copied without writing anything.
+    .EXAMPLE
+        Update-Preflight
+    .EXAMPLE
+        Update-Preflight -DryRun
+    #>
+    [CmdletBinding()]
+    param(
+        [switch]$DryRun
+    )
+
+    $installRoot = $script:PreflightRoot   # ~/.preflight/pwsh
+    $repoUrl     = 'https://github.com/shawnoster/preflight.git'
+
+    Write-Host ''
+    Write-Host '  ── preflight update ──' -ForegroundColor Cyan
+    Write-Host ''
+
+    if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
+        Write-Error "git not found in PATH — cannot update Preflight."
+        return
+    }
+
+    # Clone into a temp directory.
+    $tmpBase = [System.IO.Path]::GetTempPath()
+    $tmpDir  = Join-Path $tmpBase "preflight-update-$([guid]::NewGuid())"
+
+    Write-Host "  Cloning $repoUrl ..." -ForegroundColor DarkGray
+    $cloneOut = & git clone --depth 1 --quiet $repoUrl $tmpDir 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "git clone failed: $cloneOut"
+        return
+    }
+
+    $srcPwsh = Join-Path $tmpDir 'pwsh'
+    if (-not (Test-Path -LiteralPath $srcPwsh)) {
+        Write-Error "Cloned repo missing expected pwsh/ directory — aborting."
+        Remove-Item -Recurse -Force $tmpDir -ErrorAction SilentlyContinue
+        return
+    }
+
+    try {
+        # Collect files to copy: lib/*.ps1, Preflight.psd1, Preflight.psm1.
+        # config/accounts.ps1 is intentionally excluded — it is the gitignored
+        # user config file and must never be overwritten by an update.
+        $srcFiles = @(
+            Get-ChildItem -LiteralPath (Join-Path $srcPwsh 'lib') -Filter '*.ps1' -File |
+                ForEach-Object { @{ Src = $_.FullName; Rel = "lib\$($_.Name)" } }
+            @{ Src = Join-Path $srcPwsh 'Preflight.psd1'; Rel = 'Preflight.psd1' }
+            @{ Src = Join-Path $srcPwsh 'Preflight.psm1'; Rel = 'Preflight.psm1' }
+        )
+
+        $copied = 0
+        $skipped = 0
+        foreach ($f in $srcFiles) {
+            $dest = Join-Path $installRoot $f.Rel
+            if (-not (Test-Path -LiteralPath $f.Src)) { continue }
+
+            $srcHash  = (Get-FileHash -LiteralPath $f.Src  -Algorithm SHA256).Hash
+            $destHash = if (Test-Path -LiteralPath $dest) {
+                (Get-FileHash -LiteralPath $dest -Algorithm SHA256).Hash
+            } else { '' }
+
+            if ($srcHash -eq $destHash) {
+                $skipped++
+                Write-Verbose "  unchanged: $($f.Rel)"
+                continue
+            }
+
+            if ($DryRun) {
+                Write-Host "  would update: $($f.Rel)" -ForegroundColor Yellow
+            } else {
+                $destDir = Split-Path -Parent $dest
+                if (-not (Test-Path -LiteralPath $destDir)) {
+                    New-Item -ItemType Directory -Path $destDir -Force | Out-Null
+                }
+                Copy-Item -LiteralPath $f.Src -Destination $dest -Force
+                Write-Host "  updated: $($f.Rel)" -ForegroundColor Green
+            }
+            $copied++
+        }
+
+        Write-Host ''
+        if ($DryRun) {
+            Write-Host ("  (dry run) {0} file(s) would be updated, {1} unchanged" -f $copied, $skipped) -ForegroundColor Yellow
+        } else {
+            Write-Host ("  {0} file(s) updated, {1} unchanged" -f $copied, $skipped) -ForegroundColor Green
+
+            if ($copied -gt 0) {
+                Write-Host '  Reloading module...' -ForegroundColor DarkGray
+                $manifest = Join-Path $installRoot 'Preflight.psd1'
+                Remove-Module Preflight -Force -ErrorAction SilentlyContinue
+                Import-Module $manifest -Force -Global
+                Write-Host '  ✅ Preflight reloaded' -ForegroundColor Green
+            }
+        }
+        Write-Host ''
+    } finally {
+        Remove-Item -Recurse -Force $tmpDir -ErrorAction SilentlyContinue
+    }
+}
+
 # ---- Aliases ---------------------------------------------------------------
 # The single defining match for muscle memory: bare `preflight` runs the
 # orchestrator. Lowercase to match bash exactly.
-Set-Alias -Name 'preflight' -Value Invoke-Preflight -Force -Scope Script
+Set-Alias -Name 'preflight'        -Value Invoke-Preflight  -Force -Scope Script
+Set-Alias -Name 'preflight-update' -Value Update-Preflight  -Force -Scope Script
