@@ -603,14 +603,14 @@ function Update-Preflight {
         Update the Preflight module to the latest version from GitHub.
     .DESCRIPTION
         Clones shawnoster/preflight into a temp directory, copies the updated
-        lib/*.ps1, Preflight.psd1, and Preflight.psm1 into the install root
-        (~/.preflight/pwsh/), then reloads the module.
+        lib/*.ps1, Preflight.psd1, and Preflight.psm1 into the module root
+        ($script:PreflightRoot — wherever the module was imported from), then
+        reloads the module.
 
         Files that must survive updates untouched:
           - config/accounts.ps1  (gitignored user config — NEVER overwritten)
 
-        The update uses git (preferred) or falls back to the GitHub API if git
-        is not in PATH.
+        Requires git in PATH.
     .PARAMETER DryRun
         Show what would be copied without writing anything.
     .EXAMPLE
@@ -635,25 +635,24 @@ function Update-Preflight {
         return
     }
 
-    # Clone into a temp directory.
+    # Clone into a temp directory. The try/finally guarantees cleanup even if
+    # git clone fails partway through and leaves a partially-populated dir.
     $tmpBase = [System.IO.Path]::GetTempPath()
     $tmpDir  = Join-Path $tmpBase "preflight-update-$([guid]::NewGuid())"
 
-    Write-Host "  Cloning $repoUrl ..." -ForegroundColor DarkGray
-    $cloneOut = & git clone --depth 1 --quiet $repoUrl $tmpDir 2>&1
-    if ($LASTEXITCODE -ne 0) {
-        Write-Error "git clone failed: $cloneOut"
-        return
-    }
-
-    $srcPwsh = Join-Path $tmpDir 'pwsh'
-    if (-not (Test-Path -LiteralPath $srcPwsh)) {
-        Write-Error "Cloned repo missing expected pwsh/ directory — aborting."
-        Remove-Item -Recurse -Force $tmpDir -ErrorAction SilentlyContinue
-        return
-    }
-
     try {
+        Write-Host "  Cloning $repoUrl ..." -ForegroundColor DarkGray
+        $cloneOut = & git clone --depth 1 --quiet $repoUrl $tmpDir 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            Write-Error "git clone failed: $cloneOut"
+            return
+        }
+
+        $srcPwsh = Join-Path $tmpDir 'pwsh'
+        if (-not (Test-Path -LiteralPath $srcPwsh)) {
+            Write-Error "Cloned repo missing expected pwsh/ directory — aborting."
+            return
+        }
         # Collect files to copy: lib/*.ps1, Preflight.psd1, Preflight.psm1.
         # config/accounts.ps1 is intentionally excluded — it is the gitignored
         # user config file and must never be overwritten by an update.
