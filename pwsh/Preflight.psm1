@@ -19,11 +19,11 @@ $script:PreflightRoot = $PSScriptRoot
 # from accounts.ps1.template by install.ps1). Defaults here are safe to ship.
 
 if (-not $env:OP_ACCOUNT) {
-    # Default 1Password account shorthand. Override in config/accounts.ps1.
-    # Note: the Windows `op` CLI uses `guild-education` (dash); the WSL/Linux
-    # CLI typically uses `guild_education` (underscore). Defaulting to the
-    # Windows form because this module is intended for Windows PowerShell 7+.
-    $env:OP_ACCOUNT = 'guild-education'
+    # Default 1Password account reference. Override in config/accounts.ps1.
+    # For Windows desktop-app integration use the sign-in address
+    # (e.g. guild-education.1password.com). For manual `op account add`
+    # setups, shorthand values still work.
+    $env:OP_ACCOUNT = 'guild-education.1password.com'
 }
 
 # ---- Load user config (if present) ------------------------------------------
