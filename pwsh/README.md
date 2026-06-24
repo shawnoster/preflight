@@ -102,6 +102,15 @@ Edit `$HOME\.preflight\pwsh\config\accounts.ps1` (gitignored, copied from
 `accounts.ps1.template` by the installer) to override defaults like
 `$env:OP_ACCOUNT`.
 
+For Windows desktop-app integration (Settings → Developer → "Integrate with
+1Password CLI"), set `OP_ACCOUNT` to your sign-in address
+(for example `my-team.1password.com`). If you manually added an account with
+`op account add --shorthand`, shorthand values still work.
+
+WSL shell setup is documented separately in
+[`docs/wsl-1password-cli.md`](../docs/wsl-1password-cli.md); PowerShell is
+Windows-native, so it talks to the local desktop app directly.
+
 ## Uninstall
 
 ```powershell

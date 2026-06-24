@@ -7,8 +7,11 @@
 # Edit paths to match your 1Password vault item names.
 # Run `op item list` or `op item get <name>` to find yours.
 
-# 1Password account shorthand. Run `op account list` to see yours.
-# Examples: "my", "my-team", "my.1password.com"
+# 1Password account reference used by `op --account`.
+# Desktop integration (recommended) uses your sign-in address from
+# `op account list`, e.g. "my-team.1password.com".
+# Manually added accounts (`op account add --shorthand`) can still use
+# shorthand values like "my-team".
 $env:OP_ACCOUNT = 'change-me'
 
 # Default AWS profile applied at session start (optional).

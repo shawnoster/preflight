@@ -66,3 +66,4 @@ op-signin && "$OP_BIN" read --account "$OP_ACCOUNT" "op://<Vault>/<Item>/<field>
 ## Related
 
 - [WSL SSH Setup with 1Password](./wsl-ssh-setup.md) — the SSH-agent counterpart (Git/SSH auth via the Windows 1Password SSH agent).
+- [PowerShell sibling (`pwsh/`)](../pwsh/README.md) — Windows-native module notes. Unlike WSL bash, PowerShell already runs on Windows and uses local desktop-app integration directly.
