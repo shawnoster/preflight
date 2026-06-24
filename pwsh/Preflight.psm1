@@ -27,6 +27,10 @@ if (-not $env:OP_ACCOUNT) {
 }
 
 # ---- Load user config (if present) ------------------------------------------
+# accounts.ps1 defines $script:OpEnvMap (the op:// secret map). Initialize
+# it to an empty map first so lib files can reference it safely even when
+# accounts.ps1 is absent.
+$script:OpEnvMap = [ordered]@{}
 $configFile = Join-Path $PSScriptRoot 'config/accounts.ps1'
 if (Test-Path -LiteralPath $configFile) {
     . $configFile
