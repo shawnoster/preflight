@@ -69,7 +69,7 @@ gco() {
       echo "Usage: gco <branch>" >&2
       return 1
     fi
-    branch=$(git branch --all | grep -v HEAD | sed 's/^..//' | sed 's|remotes/[^/]*/||' | sort -u | fzf --prompt="Checkout branch > ")
+    branch=$(git branch --format='%(refname:short)' | fzf --prompt="Checkout branch > ")
   fi
 
   [[ -n "$branch" ]] && git checkout "$branch"

@@ -168,11 +168,22 @@ dprune-all() {
   fi
 }
 
-# Aliases
-alias dps='docker ps'
-alias dpsa='docker ps -a'
-alias di='docker images'
-alias dcp='docker compose'
-alias dcup='docker compose up -d'
-alias dcdown='docker compose down'
-alias dclogs='docker compose logs -f'
+# Lazy-loaded docker aliases — only resolve docker on first use
+_docker_load_aliases() {
+  unset -f dps dpsa di dcp dcup dcdown dclogs
+  alias dps='docker ps'
+  alias dpsa='docker ps -a'
+  alias di='docker images'
+  alias dcp='docker compose'
+  alias dcup='docker compose up -d'
+  alias dcdown='docker compose down'
+  alias dclogs='docker compose logs -f'
+}
+
+dps()    { _docker_load_aliases; dps "$@"; }
+dpsa()   { _docker_load_aliases; dpsa "$@"; }
+di()     { _docker_load_aliases; di "$@"; }
+dcp()    { _docker_load_aliases; dcp "$@"; }
+dcup()   { _docker_load_aliases; dcup "$@"; }
+dcdown() { _docker_load_aliases; dcdown "$@"; }
+dclogs() { _docker_load_aliases; dclogs "$@"; }

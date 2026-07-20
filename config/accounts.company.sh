@@ -1,46 +1,30 @@
 #!/usr/bin/env bash
-# ~/.preflight/config/accounts.sh — Per-install configuration (gitignored)
+# ~/.preflight/config/accounts.company.sh — Company development profile
 #
-# This file contains all user-configurable values. It is created from a profile
-# template the first time you source init.sh (or by install.sh).
-#
-# Available profile templates:
-#   config/accounts.general.sh   — Individual dev: Gitea, GitHub, minimal tools
-#   config/accounts.company.sh   — Company/team dev: AWS, NPM, full toolchain
-#
-# Any file matching config/accounts.*.sh (except .template and accounts.sh itself)
-# will be offered as a choice on first setup. Drop your own profile alongside the
-# built-in ones.
-#
-# See https://github.com/shawnoster/preflight for full documentation.
+# Intended for team/company environments: AWS, NPM, SAM, full toolchain.
+# Selected on first-time setup, or copy manually:
+#   cp config/accounts.company.sh config/accounts.sh
+# Then edit accounts.sh with your real op:// references and values.
 
 # ── 1Password account reference ──────────────────────────────────────────────
-#   • WSL + Windows desktop op.exe → use the sign-in ADDRESS (the desktop-fed
-#     op.exe does not carry a manual `op account add` shorthand).
-#     Examples: "my.1password.com", "my-team.1password.com"
-#   • Native op (Linux/macOS) → use the shorthand from `op account add`.
-#     Examples: "my", "personal", "work"
+# See lib/1password.sh for the auth model. Examples: "my.1password.com", "work".
 export OP_ACCOUNT="my.1password.com"
 
 # ── 1Password secrets (override lib/1password.sh.template default) ───────────
-# Format: VAR_NAME<TAB>op://vault/item/field
-# Add as many lines as you need. This replaces the default OP_SECRETS array
-# from the template, so include all secrets you want loaded.
+# Format: VAR_NAME<TAB>op://vault/item/field. op-load-env and op-clear-env both
+# iterate this array, so listing a secret here registers it for load and clear.
 OP_SECRETS=(
-  $'GITHUB_TOKEN\top://Private/GitHub - PAT - Personal Development/credential'
+  $'GITHUB_TOKEN\top://Private/GitHub - PAT/credential'
+  $'NPM_TOKEN\top://Private/npmjs/credential'
 )
 
 # ── Optional env var warnings in preflight ───────────────────────────────────
 # Space-separated list of variable names. Preflight warns if any are unset.
-# Leave empty to skip. Example:
-#   _OPTIONAL_ENV_VARS="NPM_TOKEN MY_APP_API_KEY"
-_OPTIONAL_ENV_VARS=""
+_OPTIONAL_ENV_VARS="NPM_TOKEN"
 
 # ── Gitea credential helper ──────────────────────────────────────────────────
-# When GITEA_TOKEN is loaded by op-load-env and both values below are set,
-# preflight writes https://USERNAME:TOKEN@HOST to ~/.git-credentials and enables
-# the `store` helper scoped to that host (a global credential.helper is left
-# untouched). Leave either blank to skip.
+# When GITEA_TOKEN is loaded, preflight writes https://USERNAME:TOKEN@HOST
+# to ~/.git-credentials.
 export GITEA_USERNAME=""
 export GITEA_HOST=""
 
@@ -52,13 +36,11 @@ _CHECK_SSH=1
 _CHECK_GIT_CONFIG=1
 
 # ── Project directories for `proj` command ───────────────────────────────────
-# Colon-separated list of base directories to search for projects.
 export PROJ_DIRS="$HOME/projects:$HOME/work:$HOME/src"
 
 # ── Default AWS profile ──────────────────────────────────────────────────────
 # Used by preflight at session start if AWS_PROFILE is not already set.
-# Override at runtime with: export AWS_PROFILE_DEFAULT=my-other-profile
-export AWS_PROFILE_DEFAULT="${AWS_PROFILE_DEFAULT:-}"
+export AWS_PROFILE_DEFAULT="${AWS_PROFILE_DEFAULT:-my-dev-profile}"
 
 # ── Git defaults ─────────────────────────────────────────────────────────────
 export GIT_MAIN_BRANCH="main"

@@ -33,7 +33,7 @@ import subprocess
 import sys
 import time
 
-ENTITY = "light.light_panels"
+ENTITY = os.environ.get("LIGHT_ENTITY", "light.light_panels")
 
 TONES = {
     # HA whole-array tones — apply via light.turn_on

@@ -29,7 +29,7 @@ import sys
 import urllib.error
 import urllib.request
 
-CTRL_HOST = "192.168.50.31"
+CTRL_HOST = os.environ.get("NANOLEAF_HOST", "")
 CTRL_PORT = 16021
 CFG_DIR = pathlib.Path.home() / ".config/nanoleaf-direct"
 LAYOUT_CACHE = CFG_DIR / "layout.json"
