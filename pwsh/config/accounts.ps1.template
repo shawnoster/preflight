@@ -8,11 +8,11 @@
 # Run `op item list` or `op item get <name>` to find yours.
 
 # 1Password account shorthand. Run `op account list` to see yours.
-# WSL and Windows often differ (e.g. 'guild_education' vs 'guild-education').
-$env:OP_ACCOUNT = 'guild-education'
+# Examples: "my", "my-team", "my.1password.com"
+$env:OP_ACCOUNT = 'change-me'
 
 # Default AWS profile applied at session start (optional).
-# $env:AWS_PROFILE_DEFAULT = 'guild-dev'
+# $env:AWS_PROFILE_DEFAULT = 'my-dev-profile'
 
 # ---- Secret map: env var → 1Password op:// reference -----------------------
 # Import-OpEnv resolves every entry here into $env:* variables.

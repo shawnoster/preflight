@@ -13,3 +13,4 @@ state/
 
 # Claude Code local settings
 .claude/settings.local.json
+bin/__pycache__/

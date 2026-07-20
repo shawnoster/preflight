@@ -138,7 +138,7 @@ preflight() {
   # ── AWS Profile ───────────────────────────────────────────────────────────
 
   if [[ -z "$AWS_PROFILE" ]]; then
-    export AWS_PROFILE="${AWS_PROFILE_DEFAULT:-guild-dev}"
+    export AWS_PROFILE="${AWS_PROFILE_DEFAULT:-}"
     _pf_line "✅ AWS_PROFILE set to $AWS_PROFILE (default)"
   else
     _pf_line "✅ AWS_PROFILE already set: $AWS_PROFILE"

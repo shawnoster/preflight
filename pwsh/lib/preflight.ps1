@@ -163,7 +163,7 @@ function Invoke-Preflight {
         & $writeStatus 'AWS: setting profile...'
 
         if (-not $env:AWS_PROFILE) {
-            $default = if ($env:AWS_PROFILE_DEFAULT) { $env:AWS_PROFILE_DEFAULT } else { 'guild-dev' }
+            $default = if ($env:AWS_PROFILE_DEFAULT) { $env:AWS_PROFILE_DEFAULT } else { 'my-dev-profile' }
             $env:AWS_PROFILE = $default
             & $writeLine "✅ AWS_PROFILE set to $default (default)"
         } else {

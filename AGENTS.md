@@ -70,7 +70,7 @@ Read this repo when working on:
 
 ## Upstream / Downstream
 
-- **Used by**: Individual Guild engineers who install it in their local shell environment
+- **Used by**: Developers who install it in their local shell environment
 - **Depends on**: fzf, aws CLI, gh CLI, op (1Password CLI), docker, git — all must be installed locally
 
 ## Ownership

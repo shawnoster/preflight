@@ -17,7 +17,7 @@ aws-help
 awsp [profile]
   Switch AWS profile. Pass a profile name directly or pick interactively with fzf.
   Sets the AWS_PROFILE environment variable without logging in.
-  Example: awsp guild-prod-readonly
+  Example: awsp my-prod-readonly
 
 aws-whoami
   Show current AWS profile, region, and caller identity.
@@ -26,7 +26,7 @@ aws-login [profile]
   SSO login. Uses the given profile, falls back to $AWS_PROFILE,
   or offers fuzzy selection if neither is set.
   Also sets AWS_PROFILE to the resolved profile.
-  Example: aws-login guild-dev
+  Example: aws-login my-dev-profile
 
 Configuration:
 --------------

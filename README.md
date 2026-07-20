@@ -258,7 +258,7 @@ All fuzzy-finder commands accept direct arguments, making them safe to call from
 
 ```bash
 gco main          # checkout directly, no fzf
-awsp guild-dev    # switch profile directly
+awsp my-dev-profile    # switch profile directly
 bake test         # run make target directly
 ```
 
