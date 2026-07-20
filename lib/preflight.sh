@@ -19,10 +19,12 @@ preflight() {
 
   local check_updates=false
   local verbose=false
+  local no_login=false
   for arg in "$@"; do
     case "$arg" in
       -u|--updates) check_updates=true ;;
       -v|--verbose) verbose=true ;;
+      --no-login)   no_login=true ;;
     esac
   done
 
@@ -109,7 +111,7 @@ preflight() {
   _pf_section "Secrets"
   _pf_status "Secrets: loading..."
 
-  if command -v op &>/dev/null; then
+  if _op_resolve_bin; then
     if [[ "$verbose" == true ]]; then
       # Print a newline first so op-load-env's password prompt lands on its own line
       printf "\n"
@@ -137,43 +139,50 @@ preflight() {
 
   # ── AWS Profile ───────────────────────────────────────────────────────────
 
-  if [[ -z "$AWS_PROFILE" ]]; then
-    export AWS_PROFILE="${AWS_PROFILE_DEFAULT:-}"
-    _pf_line "✅ AWS_PROFILE set to $AWS_PROFILE (default)"
-  else
-    _pf_line "✅ AWS_PROFILE already set: $AWS_PROFILE"
+  if [[ "${_CHECK_AWS:-1}" == "1" ]]; then
+    if [[ -z "$AWS_PROFILE" ]]; then
+      export AWS_PROFILE="${AWS_PROFILE_DEFAULT:-}"
+      _pf_line "✅ AWS_PROFILE set to $AWS_PROFILE (default)"
+    else
+      _pf_line "✅ AWS_PROFILE already set: $AWS_PROFILE"
+    fi
   fi
 
   # ── AWS Session ───────────────────────────────────────────────────────────
 
-  _pf_section "AWS Session"
-  _pf_status "AWS: checking session..."
+  if [[ "${_CHECK_AWS:-1}" == "1" ]]; then
+    _pf_section "AWS Session"
+    _pf_status "AWS: checking session..."
 
-  if command -v aws &>/dev/null; then
-    local aws_identity
-    aws_identity=$(aws sts get-caller-identity 2>/dev/null)
-    if [[ -n "$aws_identity" ]]; then
-      _pf_line "✅ AWS session active ($(echo "$aws_identity" | jq -r '.Account' 2>/dev/null))"
-    else
-      _pf_status "AWS: refreshing SSO..."
-      _pf_line "☁️  Refreshing AWS SSO..."
-      if aws-login; then
-        aws_identity=$(aws sts get-caller-identity 2>/dev/null)
-        if [[ -n "$aws_identity" ]]; then
-          _pf_line "✅ AWS session active ($(echo "$aws_identity" | jq -r '.Account' 2>/dev/null))"
+    if command -v aws &>/dev/null; then
+      local aws_identity
+      aws_identity=$(aws sts get-caller-identity 2>/dev/null)
+      if [[ -n "$aws_identity" ]]; then
+        _pf_line "✅ AWS session active ($(echo "$aws_identity" | jq -r '.Account' 2>/dev/null))"
+      elif [[ "$no_login" == true ]]; then
+        _pf_line "⚠️  AWS session expired (--no-login: skipping SSO refresh)"
+        ((issues++))
+      else
+        _pf_status "AWS: refreshing SSO..."
+        _pf_line "☁️  Refreshing AWS SSO..."
+        if aws-login; then
+          aws_identity=$(aws sts get-caller-identity 2>/dev/null)
+          if [[ -n "$aws_identity" ]]; then
+            _pf_line "✅ AWS session active ($(echo "$aws_identity" | jq -r '.Account' 2>/dev/null))"
+          else
+            issue_msgs+=("AWS SSO refresh did not produce an active session")
+            ((issues++))
+          fi
         else
-          issue_msgs+=("AWS SSO refresh did not produce an active session")
+          issue_msgs+=("AWS SSO refresh failed")
           ((issues++))
         fi
-      else
-        issue_msgs+=("AWS SSO refresh failed")
-        ((issues++))
       fi
+    else
+      issue_msgs+=("AWS CLI not installed")
+      _pf_line "❌ AWS CLI not installed"
+      ((issues++))
     fi
-  else
-    issue_msgs+=("AWS CLI not installed")
-    _pf_line "❌ AWS CLI not installed"
-    ((issues++))
   fi
 
   # ── Environment Variables ─────────────────────────────────────────────────
@@ -181,84 +190,93 @@ preflight() {
   _pf_section "Environment Variables"
   _pf_status "Env: checking tokens..."
 
-  if [[ -n "$NPM_TOKEN" ]]; then
-    _pf_line "✅ NPM_TOKEN is set"
-  else
-    issue_msgs+=("NPM_TOKEN is not set")
-    _pf_line "⚠️  NPM_TOKEN is not set"
-    ((issues++))
+  if [[ -n "${_OPTIONAL_ENV_VARS:-}" ]]; then
+    local _env_var
+    for _env_var in $_OPTIONAL_ENV_VARS; do
+      if [[ -n "${!_env_var:-}" ]]; then
+        _pf_line "✅ $_env_var is set"
+      else
+        issue_msgs+=("$_env_var is not set")
+        _pf_line "⚠️  $_env_var is not set"
+        ((issues++))
+      fi
+    done
   fi
 
-  if ! command -v gh >/dev/null 2>&1; then
-    issue_msgs+=("gh CLI not installed — install from https://cli.github.com/")
-    _pf_line "⚠️  gh CLI not installed"
-    ((issues++))
-  elif gh auth status --hostname github.com >/dev/null 2>&1; then
-    _pf_line "✅ GitHub auth active (gh CLI)"
-  else
-    issue_msgs+=("GitHub auth not found — run 'gh auth login'")
-    _pf_line "⚠️  GitHub auth not found (gh CLI not authenticated — run 'gh auth login')"
-    ((issues++))
+  if [[ "${_CHECK_GH:-1}" == "1" ]]; then
+    if ! command -v gh >/dev/null 2>&1; then
+      issue_msgs+=("gh CLI not installed — install from https://cli.github.com/")
+      _pf_line "⚠️  gh CLI not installed"
+      ((issues++))
+    elif gh auth status --hostname github.com >/dev/null 2>&1; then
+      _pf_line "✅ GitHub auth active (gh CLI)"
+    else
+      issue_msgs+=("GitHub auth not found — run 'gh auth login'")
+      _pf_line "⚠️  GitHub auth not found (gh CLI not authenticated — run 'gh auth login')"
+      ((issues++))
+    fi
   fi
 
   # ── SSH ───────────────────────────────────────────────────────────────────
 
-  _pf_section "SSH"
-  _pf_status "SSH: checking agent..."
+  if [[ "${_CHECK_SSH:-1}" == "1" ]]; then
+    _pf_section "SSH"
+    _pf_status "SSH: checking agent..."
 
-  # Detect WSL — prefer 1Password via ssh-add.exe, fall back to standard agent
-  local _is_wsl=false
-  grep -qi microsoft /proc/version 2>/dev/null && _is_wsl=true
+    # Detect WSL — prefer 1Password via ssh-add.exe, fall back to standard agent
+    local _is_wsl=false
+    grep -qi microsoft /proc/version 2>/dev/null && _is_wsl=true
 
-  if [[ "$_is_wsl" == true ]]; then
-    # Resolve ssh-add.exe: try PATH first, fall back to canonical Windows path
-    local _ssh_add_exe=""
-    command -v ssh-add.exe &>/dev/null && _ssh_add_exe="ssh-add.exe"
-    [[ -z "$_ssh_add_exe" && -f "/mnt/c/Windows/System32/OpenSSH/ssh-add.exe" ]] && \
-      _ssh_add_exe="/mnt/c/Windows/System32/OpenSSH/ssh-add.exe"
+    if [[ "$_is_wsl" == true ]]; then
+      # Resolve ssh-add.exe: try PATH first, fall back to canonical Windows path
+      local _ssh_add_exe=""
+      command -v ssh-add.exe &>/dev/null && _ssh_add_exe="ssh-add.exe"
+      [[ -z "$_ssh_add_exe" && -f "/mnt/c/Windows/System32/OpenSSH/ssh-add.exe" ]] && \
+        _ssh_add_exe="/mnt/c/Windows/System32/OpenSSH/ssh-add.exe"
 
-    if [[ -n "$_ssh_add_exe" ]]; then
-      local _agent_output _agent_exit _key_count
-      _agent_output=$("$_ssh_add_exe" -l 2>&1); _agent_exit=$?
-      # Count lines that look like key fingerprints (SHA256: prefix)
-      _key_count=$(echo "$_agent_output" | grep -c 'SHA256:' || true)
-      if [[ $_agent_exit -ne 0 && $_key_count -eq 0 ]]; then
-        issue_msgs+=("1Password SSH agent unreachable — is 1Password running with SSH Agent enabled?")
-        _pf_line "⚠️  1Password SSH agent unreachable"
-        ((issues++))
-      elif [[ "$_key_count" -gt 0 ]]; then
-        _pf_line "✅ 1Password SSH agent active ($_key_count key(s) via ssh-add.exe)"
+      if [[ -n "$_ssh_add_exe" ]]; then
+        local _agent_output _agent_exit _key_count
+        _agent_output=$("$_ssh_add_exe" -l 2>&1); _agent_exit=$?
+        # Count lines that look like key fingerprints (SHA256: prefix)
+        _key_count=$(echo "$_agent_output" | grep -c 'SHA256:' || true)
+        if [[ $_agent_exit -ne 0 && $_key_count -eq 0 ]]; then
+          issue_msgs+=("1Password SSH agent unreachable — is 1Password running with SSH Agent enabled?")
+          _pf_line "⚠️  1Password SSH agent unreachable"
+          ((issues++))
+        elif [[ "$_key_count" -gt 0 ]]; then
+          _pf_line "✅ 1Password SSH agent active ($_key_count key(s) via ssh-add.exe)"
+        else
+          issue_msgs+=("1Password SSH agent has no keys — check 1Password Developer settings")
+          _pf_line "⚠️  ssh-add.exe found but no keys loaded"
+          ((issues++))
+        fi
       else
-        issue_msgs+=("1Password SSH agent has no keys — check 1Password Developer settings")
-        _pf_line "⚠️  ssh-add.exe found but no keys loaded"
+        issue_msgs+=("ssh-add.exe not found — Windows OpenSSH or WSL interop may be disabled")
+        _pf_line "⚠️  ssh-add.exe not found (see docs/wsl-ssh-setup.md)"
         ((issues++))
       fi
+    elif [[ -n "$SSH_AUTH_SOCK" ]]; then
+      _pf_line "✅ SSH_AUTH_SOCK is set: $SSH_AUTH_SOCK"
+      if ssh-add -l &>/dev/null; then
+        _pf_line "✅ SSH agent has keys loaded"
+      else
+        _pf_line "⚠️  SSH agent running but no keys loaded"
+      fi
     else
-      issue_msgs+=("ssh-add.exe not found — Windows OpenSSH or WSL interop may be disabled")
-      _pf_line "⚠️  ssh-add.exe not found (see docs/wsl-ssh-setup.md)"
+      issue_msgs+=("SSH agent not available — on WSL, ensure 1Password SSH agent is running")
+      _pf_line "⚠️  No SSH agent found"
       ((issues++))
     fi
-  elif [[ -n "$SSH_AUTH_SOCK" ]]; then
-    _pf_line "✅ SSH_AUTH_SOCK is set: $SSH_AUTH_SOCK"
-    if ssh-add -l &>/dev/null; then
-      _pf_line "✅ SSH agent has keys loaded"
-    else
-      _pf_line "⚠️  SSH agent running but no keys loaded"
-    fi
-  else
-    issue_msgs+=("SSH agent not available — on WSL, ensure 1Password SSH agent is running")
-    _pf_line "⚠️  No SSH agent found"
-    ((issues++))
-  fi
 
-  # Key files are optional on WSL (keys live in 1Password), so only check on non-WSL
-  if [[ "$_is_wsl" == false ]]; then
-    if [[ -f "$HOME/.ssh/id_ed25519" ]] || [[ -f "$HOME/.ssh/id_rsa" ]]; then
-      _pf_line "✅ SSH keys exist in ~/.ssh/"
-    else
-      issue_msgs+=("No SSH keys found in ~/.ssh/")
-      _pf_line "⚠️  No SSH keys found in ~/.ssh/"
-      ((issues++))
+    # Key files are optional on WSL (keys live in 1Password), so only check on non-WSL
+    if [[ "$_is_wsl" == false ]]; then
+      if [[ -f "$HOME/.ssh/id_ed25519" ]] || [[ -f "$HOME/.ssh/id_rsa" ]]; then
+        _pf_line "✅ SSH keys exist in ~/.ssh/"
+      else
+        issue_msgs+=("No SSH keys found in ~/.ssh/")
+        _pf_line "⚠️  No SSH keys found in ~/.ssh/"
+        ((issues++))
+      fi
     fi
   fi
 
@@ -364,6 +382,9 @@ preflight() {
     "fzf:fzf:fzf"
     "claude:Claude Code:claude"
     "uv:uv:uv"
+    "oh-my-posh:Oh My Posh:oh-my-posh"
+    "delta:delta:delta"
+    "bun:bun:bun"
   )
 
   for item in "${tools[@]}"; do
@@ -395,111 +416,113 @@ preflight() {
 
   # ── Git Configuration ─────────────────────────────────────────────────────
 
-  _pf_section "Git Configuration"
-  _pf_status "Git: checking config..."
+  if [[ "${_CHECK_GIT_CONFIG:-1}" == "1" ]]; then
+    _pf_section "Git Configuration"
+    _pf_status "Git: checking config..."
 
-  if command -v git &>/dev/null; then
-    _pf_line "✅ Git installed: $(git --version)"
+    if command -v git &>/dev/null; then
+      _pf_line "✅ Git installed: $(git --version)"
 
-    if [[ -n "$(git config --global user.email)" ]]; then
-      _pf_line "✅ Git user.email: $(git config --global user.email)"
+      if [[ -n "$(git config --global user.email)" ]]; then
+        _pf_line "✅ Git user.email: $(git config --global user.email)"
+      else
+        issue_msgs+=("Git user.email not set")
+        _pf_line "⚠️  Git user.email not set"
+        ((issues++))
+      fi
+
+      if [[ -n "$(git config --global user.name)" ]]; then
+        _pf_line "✅ Git user.name: $(git config --global user.name)"
+      else
+        issue_msgs+=("Git user.name not set")
+        _pf_line "⚠️  Git user.name not set"
+        ((issues++))
+      fi
+
+      # ── fetch hygiene ──────────────────────────────────────────────────────
+      if [[ "$(git config --global fetch.prune)" == "true" ]]; then
+        _pf_line "✅ fetch.prune = true"
+      else
+        issue_msgs+=("fetch.prune not set  →  git config --global fetch.prune true")
+        _pf_line "⚠️  fetch.prune not set — stale remote branches accumulate"
+        _pf_line "   Fix: git config --global fetch.prune true"
+        ((issues++))
+      fi
+
+      # ── push safety ────────────────────────────────────────────────────────
+      local push_default
+      push_default=$(git config --global push.default 2>/dev/null)
+      if [[ "$push_default" == "matching" ]]; then
+        issue_msgs+=("push.default = matching  →  git config --global push.default simple")
+        _pf_line "⚠️  push.default = matching — can push unintended branches"
+        _pf_line "   Fix: git config --global push.default simple"
+        ((issues++))
+      fi
+
+      if [[ "$(git config --global push.autoSetupRemote)" == "true" ]]; then
+        _pf_line "✅ push.autoSetupRemote = true"
+      else
+        issue_msgs+=("push.autoSetupRemote not set  →  git config --global push.autoSetupRemote true")
+        _pf_line "⚠️  push.autoSetupRemote not set — new branches require manual upstream"
+        _pf_line "   Fix: git config --global push.autoSetupRemote true"
+        ((issues++))
+      fi
+
+      # ── pull / rebase strategy ─────────────────────────────────────────────
+      local pull_rebase
+      pull_rebase=$(git config --global pull.rebase 2>/dev/null)
+      if [[ "$pull_rebase" == "true" || "$pull_rebase" == "merges" || "$pull_rebase" == "interactive" ]]; then
+        _pf_line "✅ pull.rebase = $pull_rebase"
+      else
+        issue_msgs+=("pull.rebase not set  →  git config --global pull.rebase true")
+        _pf_line "⚠️  pull.rebase not set — diverged pulls create accidental merge commits"
+        _pf_line "   Fix: git config --global pull.rebase true"
+        ((issues++))
+      fi
+
+      if [[ "$(git config --global rebase.autoStash)" == "true" ]]; then
+        _pf_line "✅ rebase.autoStash = true"
+      else
+        issue_msgs+=("rebase.autoStash not set  →  git config --global rebase.autoStash true")
+        _pf_line "⚠️  rebase.autoStash not set — rebase aborts on dirty working tree"
+        _pf_line "   Fix: git config --global rebase.autoStash true"
+        ((issues++))
+      fi
+
+      # ── diff quality ───────────────────────────────────────────────────────
+      local diff_algo
+      diff_algo=$(git config --global diff.algorithm 2>/dev/null)
+      if [[ "$diff_algo" == "histogram" ]]; then
+        _pf_line "✅ diff.algorithm = histogram"
+      else
+        _pf_line "💡 diff.algorithm not set to histogram — diffs on reordered code can be misleading"
+        _pf_line "   Fix: git config --global diff.algorithm histogram"
+      fi
+
+      # ── merge conflict style ───────────────────────────────────────────────
+      local conflict_style
+      conflict_style=$(git config --global merge.conflictstyle 2>/dev/null)
+      if [[ "$conflict_style" == "diff3" || "$conflict_style" == "zdiff3" ]]; then
+        _pf_line "✅ merge.conflictstyle = $conflict_style"
+      else
+        _pf_line "💡 merge.conflictstyle not set — conflict markers hide the common ancestor"
+        _pf_line "   Fix: git config --global merge.conflictstyle zdiff3"
+      fi
+
+      # ── global gitignore ───────────────────────────────────────────────────
+      local excludes_file
+      excludes_file=$(git config --global core.excludesFile 2>/dev/null)
+      if [[ -n "$excludes_file" && -f "$excludes_file" ]]; then
+        _pf_line "✅ core.excludesFile = $excludes_file"
+      else
+        _pf_line "💡 core.excludesFile not set — OS/editor artifacts need per-repo .gitignore entries"
+        _pf_line "   Fix: git config --global core.excludesFile ~/.gitignore"
+      fi
+
     else
-      issue_msgs+=("Git user.email not set")
-      _pf_line "⚠️  Git user.email not set"
-      ((issues++))
+      issue_msgs+=("Git not installed")
+      _pf_line "❌ Git not installed"
     fi
-
-    if [[ -n "$(git config --global user.name)" ]]; then
-      _pf_line "✅ Git user.name: $(git config --global user.name)"
-    else
-      issue_msgs+=("Git user.name not set")
-      _pf_line "⚠️  Git user.name not set"
-      ((issues++))
-    fi
-
-    # ── fetch hygiene ──────────────────────────────────────────────────────
-    if [[ "$(git config --global fetch.prune)" == "true" ]]; then
-      _pf_line "✅ fetch.prune = true"
-    else
-      issue_msgs+=("fetch.prune not set  →  git config --global fetch.prune true")
-      _pf_line "⚠️  fetch.prune not set — stale remote branches accumulate"
-      _pf_line "   Fix: git config --global fetch.prune true"
-      ((issues++))
-    fi
-
-    # ── push safety ────────────────────────────────────────────────────────
-    local push_default
-    push_default=$(git config --global push.default 2>/dev/null)
-    if [[ "$push_default" == "matching" ]]; then
-      issue_msgs+=("push.default = matching  →  git config --global push.default simple")
-      _pf_line "⚠️  push.default = matching — can push unintended branches"
-      _pf_line "   Fix: git config --global push.default simple"
-      ((issues++))
-    fi
-
-    if [[ "$(git config --global push.autoSetupRemote)" == "true" ]]; then
-      _pf_line "✅ push.autoSetupRemote = true"
-    else
-      issue_msgs+=("push.autoSetupRemote not set  →  git config --global push.autoSetupRemote true")
-      _pf_line "⚠️  push.autoSetupRemote not set — new branches require manual upstream"
-      _pf_line "   Fix: git config --global push.autoSetupRemote true"
-      ((issues++))
-    fi
-
-    # ── pull / rebase strategy ─────────────────────────────────────────────
-    local pull_rebase
-    pull_rebase=$(git config --global pull.rebase 2>/dev/null)
-    if [[ "$pull_rebase" == "true" || "$pull_rebase" == "merges" || "$pull_rebase" == "interactive" ]]; then
-      _pf_line "✅ pull.rebase = $pull_rebase"
-    else
-      issue_msgs+=("pull.rebase not set  →  git config --global pull.rebase true")
-      _pf_line "⚠️  pull.rebase not set — diverged pulls create accidental merge commits"
-      _pf_line "   Fix: git config --global pull.rebase true"
-      ((issues++))
-    fi
-
-    if [[ "$(git config --global rebase.autoStash)" == "true" ]]; then
-      _pf_line "✅ rebase.autoStash = true"
-    else
-      issue_msgs+=("rebase.autoStash not set  →  git config --global rebase.autoStash true")
-      _pf_line "⚠️  rebase.autoStash not set — rebase aborts on dirty working tree"
-      _pf_line "   Fix: git config --global rebase.autoStash true"
-      ((issues++))
-    fi
-
-    # ── diff quality ───────────────────────────────────────────────────────
-    local diff_algo
-    diff_algo=$(git config --global diff.algorithm 2>/dev/null)
-    if [[ "$diff_algo" == "histogram" ]]; then
-      _pf_line "✅ diff.algorithm = histogram"
-    else
-      _pf_line "💡 diff.algorithm not set to histogram — diffs on reordered code can be misleading"
-      _pf_line "   Fix: git config --global diff.algorithm histogram"
-    fi
-
-    # ── merge conflict style ───────────────────────────────────────────────
-    local conflict_style
-    conflict_style=$(git config --global merge.conflictstyle 2>/dev/null)
-    if [[ "$conflict_style" == "diff3" || "$conflict_style" == "zdiff3" ]]; then
-      _pf_line "✅ merge.conflictstyle = $conflict_style"
-    else
-      _pf_line "💡 merge.conflictstyle not set — conflict markers hide the common ancestor"
-      _pf_line "   Fix: git config --global merge.conflictstyle zdiff3"
-    fi
-
-    # ── global gitignore ───────────────────────────────────────────────────
-    local excludes_file
-    excludes_file=$(git config --global core.excludesFile 2>/dev/null)
-    if [[ -n "$excludes_file" && -f "$excludes_file" ]]; then
-      _pf_line "✅ core.excludesFile = $excludes_file"
-    else
-      _pf_line "💡 core.excludesFile not set — OS/editor artifacts need per-repo .gitignore entries"
-      _pf_line "   Fix: git config --global core.excludesFile ~/.gitignore"
-    fi
-
-  else
-    issue_msgs+=("Git not installed")
-    _pf_line "❌ Git not installed"
   fi
 
   # ── Node.js ───────────────────────────────────────────────────────────────
@@ -569,9 +592,9 @@ preflight() {
 _preflight_update() {
   local dir="${PREFLIGHT_DIR:-$HOME/.preflight}"
 
-  printf "  \033[38;2;${OWL_SUB:-120;130;150}m%s\033[0m\n" "$(printf '%0.s-' {1..33})"
-  printf "  \\033[1mPreflight Update\\033[0m\\n"
-  printf "  \033[38;2;${OWL_SUB:-120;130;150}m%s\033[0m\n" "$(printf '%0.s-' {1..33})"
+  printf '  \033[38;2;%sm%s\033[0m\n' "${OWL_SUB:-120;130;150}" "$(printf '%0.s-' {1..33})"
+  printf '  \033[1mPreflight Update\033[0m\n'
+  printf '  \033[38;2;%sm%s\033[0m\n' "${OWL_SUB:-120;130;150}" "$(printf '%0.s-' {1..33})"
   echo ""
 
   if [[ ! -d "$dir/.git" ]]; then
@@ -656,9 +679,9 @@ _preflight_update() {
 _preflight_uninstall() {
   local dir="${PREFLIGHT_DIR:-$HOME/.preflight}"
 
-  printf "  \033[38;2;${OWL_SUB:-120;130;150}m%s\033[0m\n" "$(printf '%0.s-' {1..33})"
-  printf "  \\033[1mPreflight Uninstall\\033[0m\\n"
-  printf "  \033[38;2;${OWL_SUB:-120;130;150}m%s\033[0m\n" "$(printf '%0.s-' {1..33})"
+  printf '  \033[38;2;%sm%s\033[0m\n' "${OWL_SUB:-120;130;150}" "$(printf '%0.s-' {1..33})"
+  printf '  \033[1mPreflight Uninstall\033[0m\n'
+  printf '  \033[38;2;%sm%s\033[0m\n' "${OWL_SUB:-120;130;150}" "$(printf '%0.s-' {1..33})"
   echo ""
   echo "This will:"
   echo "  • Remove $dir"
@@ -720,9 +743,9 @@ _preflight_configure() {
     return 1
   fi
 
-  printf "  \033[38;2;${OWL_SUB:-120;130;150}m%s\033[0m\n" "$(printf '%0.s-' {1..33})"
-  printf "  \\033[1mPreflight: Configure\\033[0m\\n"
-  printf "  \033[38;2;${OWL_SUB:-120;130;150}m%s\033[0m\n" "$(printf '%0.s-' {1..33})"
+  printf '  \033[38;2;%sm%s\033[0m\n' "${OWL_SUB:-120;130;150}" "$(printf '%0.s-' {1..33})"
+  printf '  \033[1mPreflight: Configure\033[0m\n'
+  printf '  \033[38;2;%sm%s\033[0m\n' "${OWL_SUB:-120;130;150}" "$(printf '%0.s-' {1..33})"
   echo ""
 
   local applied=0 skipped=0 kept=0
@@ -791,9 +814,22 @@ _preflight_configure() {
   _pf_git_set "diff.colorMoved"   "default"   "visually distinguishes moved code from added/deleted lines" "💡"
   _pf_git_set "branch.sort"       "-committerdate" "sorts branches by recency instead of alphabetically" "💡"
 
-  echo "--- Merge / Conflict Style ---"
-  echo ""
-  _pf_git_set "merge.conflictstyle" "zdiff3" "standard conflict markers hide the common ancestor" "💡"
+  # ── Git pager (delta) ────────────────────────────────────────────────────
+  if command -v delta &>/dev/null; then
+    echo ""
+    echo "--- Git Pager (delta) ---"
+    echo ""
+    _pf_git_set "core.pager"        "delta"   "delta provides syntax-highlighted diffs and side-by-side view" "💡"
+    _pf_git_set "interactive.diffFilter" "delta --color-only" "colorizes diff output in interactive add/patch" "💡"
+    _pf_git_set "delta.navigate"    "true"    "enable j/k navigation in delta diff view" "💡"
+    _pf_git_set "delta.line-numbers" "true"   "show line numbers in delta side-by-side view" "💡"
+    _pf_git_set "delta.side-by-side" "false"  "start in inline mode (toggle with S key)" "💡"
+    _pf_git_set "merge.conflictstyle" "zdiff3" "standard conflict markers hide the common ancestor" "💡"
+  else
+    echo "--- Merge / Conflict Style ---"
+    echo ""
+    _pf_git_set "merge.conflictstyle" "zdiff3" "standard conflict markers hide the common ancestor" "💡"
+  fi
 
   echo "--- Global Gitignore ---"
   echo ""

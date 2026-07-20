@@ -14,12 +14,47 @@ case ":$PATH:" in
   *) PATH="$PREFLIGHT_DIR/bin:$PATH" ;;
 esac
 
-# ── First-time setup: copy templates if config files don't exist ──────────────
+# ── First-time setup: pick a profile if config doesn't exist ────────────────
 
-if [[ ! -f "$PREFLIGHT_DIR/config/accounts.sh" ]] && [[ -f "$PREFLIGHT_DIR/config/accounts.sh.template" ]]; then
-  echo "📋 Creating config/accounts.sh from template..."
-  cp "$PREFLIGHT_DIR/config/accounts.sh.template" "$PREFLIGHT_DIR/config/accounts.sh"
-  echo "✅ Created. Edit config/accounts.sh to customize your settings."
+if [[ ! -f "$PREFLIGHT_DIR/config/accounts.sh" ]]; then
+  # Collect available profiles (files matching accounts.*.sh, excluding .template and itself)
+  local _pf_profiles=()
+  local _pf_file
+  for _pf_file in "$PREFLIGHT_DIR/config/accounts."*.sh; do
+    [[ -f "$_pf_file" ]] || continue
+    local _pf_base
+    _pf_base=$(basename "$_pf_file")
+    [[ "$_pf_base" == "accounts.sh" || "$_pf_base" == "accounts.sh.template" ]] && continue
+    _pf_profiles+=("$_pf_file")
+  done
+
+  if [[ ${#_pf_profiles[@]} -gt 0 ]]; then
+    echo "🔧 First-time setup — pick a config profile:"
+    local _pf_idx
+    for _pf_idx in "${!_pf_profiles[@]}"; do
+      local _pf_label
+      _pf_label=$(basename "${_pf_profiles[$_pf_idx]}" | sed 's/accounts\.\(.*\)\.sh/\1/')
+      printf "  %d) %s\n" "$((_pf_idx + 1))" "$_pf_label"
+    done
+    printf "  Choice [1-%d]: " "${#_pf_profiles[@]}"
+    local _pf_choice
+    read -r _pf_choice
+    _pf_choice=$((_pf_choice - 1))
+    if [[ $_pf_choice -ge 0 && $_pf_choice -lt ${#_pf_profiles[@]} ]]; then
+      cp "${_pf_profiles[$_pf_choice]}" "$PREFLIGHT_DIR/config/accounts.sh"
+      local _pf_label
+      _pf_label=$(basename "${_pf_profiles[$_pf_choice]}" | sed 's/accounts\.\(.*\)\.sh/\1/')
+      echo "📋 Created config/accounts.sh from $_pf_label profile."
+      echo "   Edit it to customize your settings."
+    else
+      cp "$PREFLIGHT_DIR/config/accounts.sh.template" "$PREFLIGHT_DIR/config/accounts.sh"
+      echo "📋 Created config/accounts.sh from template (invalid choice)."
+    fi
+  elif [[ -f "$PREFLIGHT_DIR/config/accounts.sh.template" ]]; then
+    cp "$PREFLIGHT_DIR/config/accounts.sh.template" "$PREFLIGHT_DIR/config/accounts.sh"
+    echo "📋 Creating config/accounts.sh from template..."
+    echo "✅ Created. Edit config/accounts.sh to customize your settings."
+  fi
 fi
 
 if [[ ! -f "$PREFLIGHT_DIR/lib/1password.sh" ]] && [[ -f "$PREFLIGHT_DIR/lib/1password.sh.template" ]]; then
@@ -39,7 +74,13 @@ fi
 # ── Source all library scripts ────────────────────────────────────────────────
 
 for lib in "$PREFLIGHT_DIR/lib"/*.sh; do
-  [[ -f "$lib" ]] && source "$lib"
+  if [[ -f "$lib" ]]; then
+    if ! source "$lib" 2>/tmp/_preflight_lib_err; then
+      echo "⚠️  preflight: failed to load $(basename "$lib")"
+      cat /tmp/_preflight_lib_err 2>/dev/null | head -5 | sed 's/^/   /'
+      rm -f /tmp/_preflight_lib_err
+    fi
+  fi
 done
 
 # ── Source config (non-secret environment setup) ──────────────────────────────

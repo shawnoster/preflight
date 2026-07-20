@@ -1,13 +1,20 @@
 #!/usr/bin/env bash
-# ~/.preflight/config/accounts.sh - Non-secret configuration
+# ~/.preflight/config/accounts.sh — Per-install configuration (gitignored)
 #
-# This file contains account identifiers and configuration.
-# Do NOT put secrets here - use 1Password for those.
+# This file contains all user-configurable values. It is created from a profile
+# template the first time you source init.sh (or by install.sh).
 #
-# SETUP: Copy this to accounts.sh and customize for your environment
-#   cp config/accounts.sh.template config/accounts.sh
+# Available profile templates:
+#   config/accounts.general.sh   — Individual dev: Gitea, GitHub, minimal tools
+#   config/accounts.company.sh   — Company/team dev: AWS, NPM, full toolchain
+#
+# Any file matching config/accounts.*.sh (except .template and accounts.sh itself)
+# will be offered as a choice on first setup. Drop your own profile alongside the
+# built-in ones.
+#
+# See https://github.com/shawnoster/preflight for full documentation.
 
-# 1Password account reference (see lib/1password.sh for the auth model).
+# ── 1Password account reference ──────────────────────────────────────────────
 #   • WSL + Windows desktop op.exe → use the sign-in ADDRESS (the desktop-fed
 #     op.exe does not carry a manual `op account add` shorthand).
 #     Examples: "my.1password.com", "my-team.1password.com"
@@ -15,16 +22,45 @@
 #     Examples: "my", "personal", "work"
 export OP_ACCOUNT="my.1password.com"
 
-# Project directories for `proj` command (colon-separated)
+# ── 1Password secrets (override lib/1password.sh.template default) ───────────
+# Format: VAR_NAME<TAB>op://vault/item/field
+# Add as many lines as you need. This replaces the default OP_SECRETS array
+# from the template, so include all secrets you want loaded.
+OP_SECRETS=(
+  $'GITHUB_TOKEN\top://Private/GitHub - PAT - Personal Development/credential'
+)
+
+# ── Optional env var warnings in preflight ───────────────────────────────────
+# Space-separated list of variable names. Preflight warns if any are unset.
+# Leave empty to skip. Example:
+#   _OPTIONAL_ENV_VARS="NPM_TOKEN MY_APP_API_KEY"
+_OPTIONAL_ENV_VARS=""
+
+# ── Gitea credential helper ──────────────────────────────────────────────────
+# When GITEA_TOKEN is loaded by op-load-env, preflight writes
+# https://USERNAME:TOKEN@HOST to ~/.git-credentials.
+export GITEA_USERNAME=""
+export GITEA_HOST=""
+
+# ── Preflight check toggles ──────────────────────────────────────────────────
+# Set to 0 to skip a check section entirely. Default is 1 (checked).
+_CHECK_AWS=1
+_CHECK_GH=1
+_CHECK_SSH=1
+_CHECK_GIT_CONFIG=1
+
+# ── Project directories for `proj` command ───────────────────────────────────
+# Colon-separated list of base directories to search for projects.
 export PROJ_DIRS="$HOME/projects:$HOME/work:$HOME/src"
 
-# Default AWS profile — used by preflight at session start if AWS_PROFILE is not already set
+# ── Default AWS profile ──────────────────────────────────────────────────────
+# Used by preflight at session start if AWS_PROFILE is not already set.
 # Override at runtime with: export AWS_PROFILE_DEFAULT=my-other-profile
-export AWS_PROFILE_DEFAULT="${AWS_PROFILE_DEFAULT:-my-dev-profile}"
+export AWS_PROFILE_DEFAULT="${AWS_PROFILE_DEFAULT:-}"
 
-# Default Git branch names
+# ── Git defaults ─────────────────────────────────────────────────────────────
 export GIT_MAIN_BRANCH="main"
 
-# Editor preferences
+# ── Editor preferences ───────────────────────────────────────────────────────
 export EDITOR="${EDITOR:-vim}"
 export VISUAL="${VISUAL:-code}"
