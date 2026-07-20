@@ -137,6 +137,27 @@ preflight() {
     ((issues++))
   fi
 
+  # ── Git Credentials (Gitea) ───────────────────────────────────────────────
+  # If GITEA_TOKEN was loaded above and a username/host are configured, store an
+  # HTTPS credential so git pushes/pulls to Gitea don't prompt. Gated on the
+  # token being present, so profiles without a Gitea token do nothing here.
+
+  if [[ -n "${GITEA_TOKEN:-}" ]]; then
+    _pf_section "Git Credentials"
+    if [[ -n "${GITEA_USERNAME:-}" && -n "${GITEA_HOST:-}" ]]; then
+      if _pf_write_git_credential "$GITEA_HOST" "$GITEA_USERNAME" "$GITEA_TOKEN"; then
+        _pf_line "✅ Gitea credential stored for $GITEA_USERNAME@$GITEA_HOST"
+      else
+        issue_msgs+=("Failed to write Gitea credential to ~/.git-credentials")
+        ((issues++))
+      fi
+    else
+      issue_msgs+=("GITEA_TOKEN is set but GITEA_USERNAME/GITEA_HOST are not configured")
+      _pf_line "⚠️  GITEA_TOKEN set but GITEA_USERNAME/GITEA_HOST missing — skipping credential write"
+      ((issues++))
+    fi
+  fi
+
   # ── AWS Profile ───────────────────────────────────────────────────────────
 
   if [[ "${_CHECK_AWS:-1}" == "1" ]]; then
@@ -585,6 +606,40 @@ preflight() {
   fi
   printf "%s\n" "$_pf_rule"
   printf "\n"
+}
+
+# ── Git credential helper ─────────────────────────────────────────────────────
+# Idempotently store an HTTPS git credential in ~/.git-credentials and enable the
+# `store` helper scoped to that host (so a global credential.helper is untouched).
+# Args: host username token. Assumes the token contains no '@' (Gitea PATs don't).
+_pf_write_git_credential() {
+  local host="$1" user="$2" token="$3"
+  local cred_file="$HOME/.git-credentials"
+
+  [[ -n "$host" && -n "$user" && -n "$token" ]] || return 1
+
+  # Create the file owner-only before writing a secret into it.
+  if [[ ! -f "$cred_file" ]]; then
+    (umask 077; : > "$cred_file") || return 1
+  fi
+  chmod 600 "$cred_file" 2>/dev/null
+
+  # Drop any existing entry for this host (escaping regex metachars in the host)
+  # so re-runs refresh the token instead of appending duplicates.
+  if [[ -s "$cred_file" ]]; then
+    local esc_host tmp
+    esc_host=$(printf '%s' "$host" | sed 's/[.[\*^$/]/\\&/g')
+    tmp=$(mktemp) || return 1
+    grep -v -E "@${esc_host}(/|\$)" "$cred_file" > "$tmp" 2>/dev/null
+    cat "$tmp" > "$cred_file" && rm -f "$tmp"
+  fi
+
+  printf 'https://%s:%s@%s\n' "$user" "$token" "$host" >> "$cred_file" || return 1
+
+  # Scope the store helper to this host only, so we don't clobber a global helper.
+  git config --global "credential.https://${host}.helper" store 2>/dev/null
+
+  return 0
 }
 
 # ── preflight update ──────────────────────────────────────────────────────────

@@ -37,8 +37,10 @@ OP_SECRETS=(
 _OPTIONAL_ENV_VARS=""
 
 # ── Gitea credential helper ──────────────────────────────────────────────────
-# When GITEA_TOKEN is loaded by op-load-env, preflight writes
-# https://USERNAME:TOKEN@HOST to ~/.git-credentials.
+# When GITEA_TOKEN is loaded by op-load-env and both values below are set,
+# preflight writes https://USERNAME:TOKEN@HOST to ~/.git-credentials and enables
+# the `store` helper scoped to that host (a global credential.helper is left
+# untouched). Leave either blank to skip.
 export GITEA_USERNAME=""
 export GITEA_HOST=""
 
