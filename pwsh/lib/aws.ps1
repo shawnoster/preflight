@@ -56,11 +56,11 @@ function Set-AwsProfile {
     .PARAMETER ProfileName
         Profile name to activate. If omitted, prompts interactively.
     .EXAMPLE
-        Set-AwsProfile guild-prod-readonly
+        Set-AwsProfile my-prod-readonly
     .EXAMPLE
         awsp                        # interactive picker
     .EXAMPLE
-        awsp guild-dev              # direct
+        awsp my-dev-profile         # direct
     #>
     [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Low')]
     param(
@@ -160,7 +160,7 @@ function Connect-Aws {
     .PARAMETER ProfileName
         Profile to log in with. Falls back to $env:AWS_PROFILE, then prompts.
     .EXAMPLE
-        Connect-Aws guild-dev
+        Connect-Aws my-dev-profile
     .EXAMPLE
         aws-login                  # uses $env:AWS_PROFILE or prompts
     #>

@@ -36,7 +36,7 @@ function Get-OpAccount {
         Defaults to $env:OP_ACCOUNT (set by Preflight.psm1 / config/accounts.ps1).
     #>
     if ($env:OP_ACCOUNT) { return $env:OP_ACCOUNT }
-    return 'guild-education'
+    return 'change-me'
 }
 
 function Test-OpCli {
@@ -179,7 +179,7 @@ function Import-OpEnv {
     .EXAMPLE
         Import-OpEnv
     .EXAMPLE
-        Import-OpEnv -Account guild_education
+        Import-OpEnv -Account my-account
     #>
     [CmdletBinding()]
     param(
@@ -433,7 +433,7 @@ function Import-OpCsv {
         Bulk-import a CSV of Login items into a 1Password vault.
     .DESCRIPTION
         Each row becomes a Login item. Default column layout matches
-        the Guild test-credentials export format:
+        a common 1Password export format:
 
             title, url, username, password, notes
 
