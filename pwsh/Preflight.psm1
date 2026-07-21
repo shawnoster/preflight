@@ -19,8 +19,10 @@ $script:PreflightRoot = $PSScriptRoot
 # from accounts.ps1.template by install.ps1). Defaults here are safe to ship.
 
 if (-not $env:OP_ACCOUNT) {
-    # Default 1Password account shorthand. Override in config/accounts.ps1.
-    # Set this to your sign-in address (e.g. "my.1password.com") or shorthand.
+    # Default 1Password account reference. Override in config/accounts.ps1.
+    # For Windows desktop-app integration use your sign-in address
+    # (e.g. my-team.1password.com). For manual `op account add` setups,
+    # shorthand values still work.
     $env:OP_ACCOUNT = 'change-me'
 }
 

@@ -32,7 +32,7 @@ param()
 function Get-OpAccount {
     <#
     .SYNOPSIS
-        Resolve the 1Password account shorthand to use for op invocations.
+        Resolve the 1Password account reference to use for op invocations.
         Defaults to $env:OP_ACCOUNT (set by Preflight.psm1 / config/accounts.ps1).
     #>
     if ($env:OP_ACCOUNT) { return $env:OP_ACCOUNT }
@@ -52,11 +52,12 @@ function Get-OpStatus {
     .SYNOPSIS
         Check whether you're signed in to 1Password.
     .DESCRIPTION
-        Calls `op whoami` for the configured account. Returns $true and writes
-        a success message if signed in; returns $false and writes a status line
-        if not. Mirrors the bash op-status function.
+        Calls `op whoami` for the configured account reference. Returns $true
+        and writes a success message if signed in; returns $false otherwise.
+        Under desktop-app integration, not-signed-in here is expected until
+        the first authorized read.
     .PARAMETER Account
-        1Password account shorthand. Defaults to $env:OP_ACCOUNT.
+        1Password account reference. Defaults to $env:OP_ACCOUNT.
     .EXAMPLE
         Get-OpStatus
     .EXAMPLE
@@ -79,7 +80,8 @@ function Get-OpStatus {
         if ($signedIn) {
             Write-Host "✅ Signed in to 1Password ($Account)"
         } else {
-            Write-Host "❌ Not signed in to 1Password ($Account)"
+            Write-Host "ℹ️  No active 1Password CLI session for ($Account)."
+            Write-Host "   If desktop integration is enabled, the app will prompt on first secret read."
         }
     }
     return $signedIn
@@ -92,13 +94,14 @@ function Connect-Op {
     .SYNOPSIS
         Sign in to 1Password.
     .DESCRIPTION
-        If already signed in, returns immediately. Otherwise calls `op signin`
-        and applies the resulting OP_SESSION_* environment variables to the
-        current shell so subsequent op commands inherit the session.
+        If already signed in, returns immediately. Otherwise it first attempts
+        a desktop-integration authorization warm-up call; if that fails, it
+        falls back to `op signin` and applies any emitted OP_SESSION_*
+        environment variables to the current shell.
 
         Mirrors the bash op-signin function.
     .PARAMETER Account
-        1Password account shorthand. Defaults to $env:OP_ACCOUNT.
+        1Password account reference. Defaults to $env:OP_ACCOUNT.
     .EXAMPLE
         Connect-Op
     #>
@@ -115,6 +118,15 @@ function Connect-Op {
     }
 
     Write-Host "🔐 Signing in to 1Password ($Account)..."
+
+    # Desktop-app integration path (Windows-native op): there may be no
+    # OP_SESSION_* output to capture. A successful authorized read/list call
+    # is sufficient to mark the CLI ready for this shell session.
+    $null = & op vault list --account $Account 2>&1
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "✅ 1Password ready ($Account)"
+        return $true
+    }
 
     # `op signin` prints `export OP_SESSION_xxx="…"` to stdout, intended to be
     # eval'd by a POSIX shell. PowerShell can't `eval`; instead we capture the
@@ -175,11 +187,11 @@ function Import-OpEnv {
         token at ~/.config/gh/hosts.yml; loading GITHUB_TOKEN here would
         shadow it with a narrower-scoped PAT. This matches the bash side.
     .PARAMETER Account
-        1Password account shorthand. Defaults to $env:OP_ACCOUNT.
+        1Password account reference. Defaults to $env:OP_ACCOUNT.
     .EXAMPLE
         Import-OpEnv
     .EXAMPLE
-        Import-OpEnv -Account my-account
+        Import-OpEnv -Account my-team.1password.com
     #>
     [CmdletBinding()]
     param(
@@ -294,7 +306,7 @@ function New-OpItem {
     .PARAMETER DryRun
         Print the op command that would be run, without executing it.
     .PARAMETER Account
-        1Password account shorthand. Defaults to $env:OP_ACCOUNT.
+        1Password account reference. Defaults to $env:OP_ACCOUNT.
     .EXAMPLE
         New-OpItem
     .EXAMPLE
@@ -467,7 +479,7 @@ function Import-OpCsv {
     .PARAMETER DryRun
         Show what would be created without calling op.
     .PARAMETER Account
-        1Password account shorthand. Defaults to $env:OP_ACCOUNT.
+        1Password account reference. Defaults to $env:OP_ACCOUNT.
     .EXAMPLE
         Import-OpCsv 'C:\Users\Me\Downloads\creds.csv' -Vault 'Testing Credentials' -DryRun
     .EXAMPLE
