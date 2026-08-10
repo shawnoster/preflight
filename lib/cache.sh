@@ -59,13 +59,61 @@ _preflight_cache_eval() {
     fi
   fi
 
-  source "$cache"
+  # A cache that exists but is truncated or hand-edited would otherwise leave
+  # the shell with no prompt and no explanation — generation-time fallback
+  # above does not cover a file that is already on disk and broken.
+  #
+  # Exit status is the signal: a healthy init script sources cleanly, a
+  # truncated one dies on a half-written function. If some future generator
+  # legitimately ends on a non-zero command this will regenerate every shell —
+  # slower, not broken, and the warning says why.
+  if ! source "$cache"; then
+    echo "⚠️  preflight: cached '$name' failed to load — discarding it" >&2
+    rm -f -- "$cache"
+    local live
+    live=$("$generator" 2>/dev/null) && [[ -n "$live" ]] && eval "$live"
+  fi
 }
 
 # Regenerate every cache entry on the next shell.
 preflight-cache-clear() {
-  rm -rf "${PREFLIGHT_CACHE_DIR:?}"
-  echo "🧹 preflight cache cleared: $PREFLIGHT_CACHE_DIR"
+  local dir="${PREFLIGHT_CACHE_DIR:-}"
+
+  # Guard explicitly rather than leaning on ${dir:?}. That aborts the command
+  # in an interactive shell (the shell does survive), but *exits* a
+  # non-interactive one outright — a hostile failure mode for a sourced
+  # library. An explicit check also stops a stray `PREFLIGHT_CACHE_DIR=/`
+  # from turning this into `rm -rf /`.
+  if [[ -z "$dir" || "$dir" == "/" || "$dir" == "$HOME" ]]; then
+    echo "preflight: refusing to clear suspicious cache dir '${dir:-<unset>}'" >&2
+    return 1
+  fi
+
+  if [[ ! -d "$dir" ]]; then
+    echo "🧹 preflight cache already empty: $dir"
+    return 0
+  fi
+
+  rm -rf -- "$dir"
+  echo "🧹 preflight cache cleared: $dir"
+}
+
+# Fork-free UUID. /proc is one read and better entropy; the fallback keeps the
+# no-subprocess guarantee on platforms without it (macOS), where calling
+# uuidgen would put a fork back on the cache-hit path. $RANDOM is not
+# cryptographic, which is fine — this identifies a shell session, it is not a
+# secret. Result in $_pf_uuid.
+_preflight_uuid() {
+  if [[ -r /proc/sys/kernel/random/uuid ]]; then
+    read -r _pf_uuid < /proc/sys/kernel/random/uuid
+    return 0
+  fi
+  local _h='' _var _i
+  for ((_i = 0; _i < 32; _i++)); do
+    printf -v _h '%s%x' "$_h" $(( RANDOM & 15 ))
+  done
+  printf -v _var '%x' $(( (16#${_h:16:1} & 3) | 8 ))   # RFC 4122 variant
+  _pf_uuid="${_h:0:8}-${_h:8:4}-4${_h:13:3}-${_var}${_h:17:3}-${_h:20:12}"
 }
 
 # ── Generators ───────────────────────────────────────────────────────────────

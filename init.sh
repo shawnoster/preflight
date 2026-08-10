@@ -133,12 +133,11 @@ if [[ -n "${OWL_OMP_CONFIG:-}" ]] && [[ -f "$OWL_OMP_CONFIG" ]] && command -v oh
   if declare -F _preflight_cache_eval >/dev/null; then
     # POSH_SESSION_ID must stay unique per shell, so it is stripped from the
     # cached script (see _preflight_omp_generate) and minted fresh here.
-    # `read` from /proc avoids forking a uuidgen on every shell.
-    if [[ -r /proc/sys/kernel/random/uuid ]]; then
-      read -r POSH_SESSION_ID < /proc/sys/kernel/random/uuid
-    else
-      POSH_SESSION_ID=$(uuidgen 2>/dev/null || printf '%s-%s' "$$" "${RANDOM}${RANDOM}")
-    fi
+    # _preflight_uuid is fork-free on every platform — calling uuidgen here
+    # would put a subprocess back on the cache-hit path.
+    _preflight_uuid
+    POSH_SESSION_ID="$_pf_uuid"
+    unset _pf_uuid
     export POSH_SESSION_ID
     # Staleness is decided by `-nt` file tests, which are bash builtins — the
     # cache-hit path must not fork, or it defeats the point of caching.
