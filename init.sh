@@ -17,32 +17,40 @@ esac
 # ── First-time setup: pick a profile if config doesn't exist ────────────────
 
 if [[ ! -f "$PREFLIGHT_DIR/config/accounts.sh" ]]; then
+  # NOTE: this file is *sourced*, so we are not inside a function — `local` is
+  # an error here ("local: can only be used in a function"). It used to appear
+  # seven times below, which meant a fresh install greeted the user with seven
+  # error messages. Plain vars + an explicit unset at the end instead.
+  #
   # Collect available profiles (files matching accounts.*.sh, excluding .template and itself)
-  local _pf_profiles=()
-  local _pf_file
+  _pf_profiles=()
   for _pf_file in "$PREFLIGHT_DIR/config/accounts."*.sh; do
     [[ -f "$_pf_file" ]] || continue
-    local _pf_base
     _pf_base=$(basename "$_pf_file")
     [[ "$_pf_base" == "accounts.sh" || "$_pf_base" == "accounts.sh.template" ]] && continue
     _pf_profiles+=("$_pf_file")
   done
 
-  if [[ ${#_pf_profiles[@]} -gt 0 ]]; then
+  # Only prompt when there is a human to answer. A non-interactive shell (a
+  # script sourcing .bashrc, a provisioning run) would otherwise block on
+  # `read` or silently consume the caller's stdin.
+  if [[ ${#_pf_profiles[@]} -gt 0 && $- == *i* ]]; then
     echo "🔧 First-time setup — pick a config profile:"
-    local _pf_idx
     for _pf_idx in "${!_pf_profiles[@]}"; do
-      local _pf_label
       _pf_label=$(basename "${_pf_profiles[$_pf_idx]}" | sed 's/accounts\.\(.*\)\.sh/\1/')
       printf "  %d) %s\n" "$((_pf_idx + 1))" "$_pf_label"
     done
     printf "  Choice [1-%d]: " "${#_pf_profiles[@]}"
-    local _pf_choice
     read -r _pf_choice
-    _pf_choice=$((_pf_choice - 1))
+    # Validate as a plain integer before arithmetic, so stray input can't reach
+    # the arithmetic evaluator.
+    if [[ "$_pf_choice" =~ ^[0-9]+$ ]]; then
+      _pf_choice=$((_pf_choice - 1))
+    else
+      _pf_choice=-1
+    fi
     if [[ $_pf_choice -ge 0 && $_pf_choice -lt ${#_pf_profiles[@]} ]]; then
       cp "${_pf_profiles[$_pf_choice]}" "$PREFLIGHT_DIR/config/accounts.sh"
-      local _pf_label
       _pf_label=$(basename "${_pf_profiles[$_pf_choice]}" | sed 's/accounts\.\(.*\)\.sh/\1/')
       echo "📋 Created config/accounts.sh from $_pf_label profile."
       echo "   Edit it to customize your settings."
@@ -55,6 +63,9 @@ if [[ ! -f "$PREFLIGHT_DIR/config/accounts.sh" ]]; then
     echo "📋 Creating config/accounts.sh from template..."
     echo "✅ Created. Edit config/accounts.sh to customize your settings."
   fi
+  # These are globals (see the `local` note above) — don't leak them into the
+  # user's interactive shell.
+  unset _pf_profiles _pf_file _pf_base _pf_idx _pf_label _pf_choice
 fi
 
 if [[ ! -f "$PREFLIGHT_DIR/lib/1password.sh" ]] && [[ -f "$PREFLIGHT_DIR/lib/1password.sh.template" ]]; then
@@ -73,15 +84,19 @@ fi
 
 # ── Source all library scripts ────────────────────────────────────────────────
 
+# A fixed path in a world-writable /tmp is both a symlink-clobber target and a
+# collision between concurrent shells; mktemp gives a private file per shell.
+_pf_lib_err=$(mktemp 2>/dev/null) || _pf_lib_err=/dev/null
 for lib in "$PREFLIGHT_DIR/lib"/*.sh; do
   if [[ -f "$lib" ]]; then
-    if ! source "$lib" 2>/tmp/_preflight_lib_err; then
+    if ! source "$lib" 2>"$_pf_lib_err"; then
       echo "⚠️  preflight: failed to load $(basename "$lib")"
-      cat /tmp/_preflight_lib_err 2>/dev/null | head -5 | sed 's/^/   /'
-      rm -f /tmp/_preflight_lib_err
+      head -5 "$_pf_lib_err" 2>/dev/null | sed 's/^/   /'
     fi
   fi
 done
+[[ "$_pf_lib_err" != /dev/null ]] && rm -f "$_pf_lib_err"
+unset _pf_lib_err lib
 
 # ── Source config (non-secret environment setup) ──────────────────────────────
 
@@ -91,14 +106,46 @@ done
 # ── Owl theme + splash ────────────────────────────────────────────────────────
 
 # Load active theme colors (exported as OWL_BODY/EYES/TEXT/SUB for preflight.sh)
-_owl_theme_load
+# Guarded: lib sourcing above tolerates a failed owl.sh, so this must too —
+# otherwise a broken owl.sh turns into a command-not-found on every shell.
+declare -F _owl_theme_load >/dev/null && _owl_theme_load
 
-# Show MOTD once per interactive top-level shell
-[[ $- == *i* ]] && [[ $SHLVL -eq 1 ]] && _owl_splash
+# Show MOTD once per interactive session.
+#
+# This used to gate on `$SHLVL -eq 1`, which never fires under WSL + VS Code
+# (the login shell already starts at SHLVL 3), so the splash silently stopped
+# appearing. An exported marker is the right test: a genuinely new terminal
+# starts with a clean environment and shows it once, while nested shells,
+# subshells and tmux panes inherit the marker and stay quiet.
+# Set PREFLIGHT_NO_SPLASH=1 to suppress it entirely.
+if [[ $- == *i* && -z "${PREFLIGHT_SPLASH_SHOWN:-}" && -z "${PREFLIGHT_NO_SPLASH:-}" ]]; then
+  export PREFLIGHT_SPLASH_SHOWN=1
+  declare -F _owl_splash >/dev/null && _owl_splash
+fi
 
-# Initialize Oh My Posh if configured and available
+# Initialize Oh My Posh if configured and available.
+#
+# `oh-my-posh init bash` costs ~55ms of subprocess on *every* shell, which was
+# the single largest item in preflight's startup. Generate once, source the
+# cached script after, and regenerate only when the binary or the theme
+# changes. See _preflight_cache_eval in lib/cache.sh.
 if [[ -n "${OWL_OMP_CONFIG:-}" ]] && [[ -f "$OWL_OMP_CONFIG" ]] && command -v oh-my-posh &>/dev/null; then
-  eval "$(oh-my-posh init bash --config "$OWL_OMP_CONFIG")"
+  if declare -F _preflight_cache_eval >/dev/null; then
+    # POSH_SESSION_ID must stay unique per shell, so it is stripped from the
+    # cached script (see _preflight_omp_generate) and minted fresh here.
+    # _preflight_uuid is fork-free on every platform — calling uuidgen here
+    # would put a subprocess back on the cache-hit path.
+    _preflight_uuid
+    POSH_SESSION_ID="$_pf_uuid"
+    unset _pf_uuid
+    export POSH_SESSION_ID
+    # Staleness is decided by `-nt` file tests, which are bash builtins — the
+    # cache-hit path must not fork, or it defeats the point of caching.
+    _preflight_cache_eval omp-init _preflight_omp_generate \
+      "$(command -v oh-my-posh)" "$OWL_OMP_CONFIG"
+  else
+    eval "$(oh-my-posh init bash --config "$OWL_OMP_CONFIG")"
+  fi
 fi
 
 # ── Optional: print loaded status ────────────────────────────────────────────

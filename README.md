@@ -236,6 +236,13 @@ OOO (Obtusely Optimistic Owl) — a shell MOTD that appears once per interactive
 
 **Available themes:** `catppuccin`, `honeypot`, `twilight`, `moonlit`, `autumn`, `rose`, `moss`, `parchment`
 
+**Suppressing the MOTD:** set `PREFLIGHT_NO_SPLASH=1`. "Once per interactive
+session" is tracked with the exported `PREFLIGHT_SPLASH_SHOWN` marker, so a new
+terminal shows it and nested shells, subshells and tmux panes inherit the marker
+and stay quiet. (This previously keyed off `$SHLVL -eq 1`, which never fired in
+environments that start you at a deeper shell level — under WSL + VS Code the
+login shell begins at `SHLVL=3`, so the MOTD silently never appeared.)
+
 **Oh My Posh integration is optional.** Set `OWL_OMP_CONFIG` in `~/.preflight/config/owl.sh` to the path of your OMP JSON config. If unset or the file doesn't exist, `owl-theme` still switches splash colors — it just won't touch your prompt.
 
 ```bash
@@ -244,6 +251,28 @@ vim ~/.preflight/config/owl.sh   # set OWL_OMP_CONFIG="$HOME/your-theme.omp.json
 
 # Then switch themes live:
 owl-theme moonlit
+```
+
+### Startup Cache (`lib/cache.sh`)
+
+| Command | Description |
+|---------|-------------|
+| `preflight-cache-clear` | Delete cached tool init scripts; they regenerate on the next shell |
+
+Tools that expect `eval "$(tool init bash)"` cost a subprocess on *every* shell.
+`_preflight_cache_eval` generates that output once, sources the cached script
+afterwards, and regenerates only when the tool binary or its config file changes
+— which roughly halves preflight's startup cost. Freshness is decided with
+bash's builtin `-nt` test, so a cache hit never forks.
+
+Cache location: `$XDG_CACHE_HOME/preflight` (default `~/.cache/preflight`),
+overridable with `PREFLIGHT_CACHE_DIR`.
+
+To cache another tool, add a generator function and call it:
+
+```bash
+_preflight_foo_generate() { foo init bash; }
+_preflight_cache_eval foo-init _preflight_foo_generate "$(command -v foo)" "$FOO_CONFIG"
 ```
 
 ### Git (`lib/git.sh`)
