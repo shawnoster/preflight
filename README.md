@@ -172,6 +172,29 @@ op account add --shorthand my-team
 | `proj [directory]` | Jump to project directory |
 | `serve [port]` | Quick Python HTTP server (default: 8000) |
 
+### Git Credentials from 1Password (`bin/`)
+
+| Command | Description |
+|---------|-------------|
+| `git-credential-op` | Git credential helper that reads a token from 1Password at call time |
+
+Keeps HTTPS git tokens out of `~/.git-credentials` and out of remote URLs —
+the secret lives only in 1Password and is read on demand. Configure it per
+host, so it never affects remotes that already authenticate another way:
+
+```bash
+git config --global credential."https://git.example.com".helper \
+  '!git-credential-op "op://Employee/Gitea - PAT/credential" myuser'
+```
+
+Only `get` is implemented; `store` and `erase` are deliberate no-ops, since
+there is nothing local to persist or clear.
+
+On WSL it resolves `op.exe` in preference to the native Linux `op`, which has
+no desktop-app integration and always reports "not currently signed in". It
+also strips CR from `op.exe` output — Windows line endings would otherwise
+corrupt the token and surface as a confusing auth failure.
+
 ### Office Light Reminders (`bin/`)
 
 Visual reminders driven through Home Assistant + Nanoleaf Light Panels.
