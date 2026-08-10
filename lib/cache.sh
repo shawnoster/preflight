@@ -47,11 +47,24 @@ _preflight_cache_eval() {
 
   if (( ! fresh )); then
     mkdir -p "$PREFLIGHT_CACHE_DIR" 2>/dev/null
-    local tmp="$cache.$$.tmp"
+    # mktemp rather than "$cache.$$.tmp": the PID is predictable, collides
+    # between containers sharing a cache dir, and is a symlink/clobber target
+    # if PREFLIGHT_CACHE_DIR is pointed somewhere shared. This costs a fork,
+    # but only on the generation path — which already forks the generator —
+    # so the cache-*hit* path stays subprocess-free.
+    local tmp
+    if ! tmp=$(mktemp "$PREFLIGHT_CACHE_DIR/.$name.XXXXXX" 2>/dev/null); then
+      local live
+      live=$("$generator" 2>/dev/null) && [[ -n "$live" ]] && eval "$live"
+      return
+    fi
     if "$generator" >"$tmp" 2>/dev/null && [[ -s "$tmp" ]]; then
+      # mktemp creates 0600; relax to the usual rw-r--r-- so the cache behaves
+      # like an ordinary generated file, then rename atomically into place.
+      chmod 644 "$tmp" 2>/dev/null
       mv -f "$tmp" "$cache"
     else
-      rm -f "$tmp"
+      rm -f -- "$tmp"
       # Generation failed — run it live so this shell still gets its prompt.
       local live
       live=$("$generator" 2>/dev/null) && [[ -n "$live" ]] && eval "$live"
