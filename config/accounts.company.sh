@@ -13,8 +13,13 @@ export OP_ACCOUNT="my.1password.com"
 # ── 1Password secrets (override lib/1password.sh.template default) ───────────
 # Format: VAR_NAME<TAB>op://vault/item/field. op-load-env and op-clear-env both
 # iterate this array, so listing a secret here registers it for load and clear.
+#
+# NOTE: avoid GITHUB_TOKEN/GH_TOKEN here. `gh` CLI treats those env vars as
+# an override for its own stored auth (~/.config/gh/hosts.yml) — exporting
+# one shadows a working `gh auth login` session for every `gh` command and
+# API call for the rest of the shell session. Use a differently-named var
+# (e.g. GH_PAT) if some other tool needs a personal access token by env var.
 OP_SECRETS=(
-  $'GITHUB_TOKEN\top://Private/GitHub - PAT/credential'
   $'NPM_TOKEN\top://Private/npmjs/credential'
 )
 

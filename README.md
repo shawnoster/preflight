@@ -130,11 +130,11 @@ source ~/.bashrc
 | `op-load-env` | Load all secrets from 1Password into env vars |
 | `op-clear-env` | Clear all sensitive environment variables |
 
-**Secrets loaded by `op-load-env`:** `ANTHROPIC_API_KEY`, `ATLASSIAN_API_TOKEN`, `GITHUB_TOKEN`, `NPM_TOKEN`, `DATADOG_API_KEY`, `SONAR_TOKEN`, and more.
+**Secrets loaded by `op-load-env`:** `ANTHROPIC_API_KEY`, `ATLASSIAN_API_TOKEN`, `NPM_TOKEN`, `DATADOG_API_KEY`, `SONAR_TOKEN`, and more — configured per-install in `OP_SECRETS` (`config/accounts.sh`).
 
 **Auth model:** the helpers resolve an `op` binary and **prefer the Windows `op.exe` under WSL**, so secret reads are authorized by the Windows 1Password desktop app (Windows Hello / desktop unlock) — no password typed in WSL. On native Linux/macOS they fall back to the platform `op` and the manual session-token sign-in. See [docs/wsl-1password-cli.md](./docs/wsl-1password-cli.md) for the full WSL setup.
 
-**GitHub auth:** owned by the `gh` CLI, which stores its own token in `~/.config/gh/hosts.yml`. That stored token is what `gh` (and tools that shell out to it) use — independent of whether `op-load-env` also exports a `GITHUB_TOKEN` for other tooling. Claude Code's `github` MCP server (`api.githubcopilot.com/mcp`) can't do OAuth, so it carries the `gh` token in an `Authorization` header baked into `~/.claude.json`. When the `gh` token rotates (`gh auth login`/`refresh`), re-stamp that header:
+**GitHub auth:** owned by the `gh` CLI, which stores its own token in `~/.config/gh/hosts.yml`. That stored token is what `gh` (and tools that shell out to it) use. Deliberately **do not** add `GITHUB_TOKEN`/`GH_TOKEN` to `OP_SECRETS` — `gh` treats those env vars as an override for its own stored auth, so exporting one shadows a working `gh auth login` session for every `gh` command and API call until the shell exits (use a differently-named var like `GH_PAT` if some other tool needs one). Claude Code's `github` MCP server (`api.githubcopilot.com/mcp`) can't do OAuth, so it carries the `gh` token in an `Authorization` header baked into `~/.claude.json`. When the `gh` token rotates (`gh auth login`/`refresh`), re-stamp that header:
 
 ```bash
 claude mcp remove github -s local

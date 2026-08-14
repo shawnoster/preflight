@@ -26,9 +26,17 @@ export OP_ACCOUNT="my.1password.com"
 # Format: VAR_NAME<TAB>op://vault/item/field
 # Add as many lines as you need. This replaces the default OP_SECRETS array
 # from the template, so include all secrets you want loaded.
-OP_SECRETS=(
-  $'GITHUB_TOKEN\top://Private/GitHub - PAT - Personal Development/credential'
-)
+#
+# NOTE: avoid GITHUB_TOKEN/GH_TOKEN here. `gh` CLI treats those env vars as
+# an override for its own stored auth (~/.config/gh/hosts.yml) — exporting
+# one shadows a working `gh auth login` session for every `gh` command and
+# API call for the rest of the shell session. Use a differently-named var
+# (e.g. GH_PAT) if some other tool needs a personal access token by env var.
+# Example:
+#   OP_SECRETS=(
+#     $'NPM_TOKEN\top://Private/npmjs/credential'
+#   )
+OP_SECRETS=()
 
 # ── Optional env var warnings in preflight ───────────────────────────────────
 # Space-separated list of variable names. Preflight warns if any are unset.
