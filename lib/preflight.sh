@@ -229,7 +229,7 @@ preflight() {
       issue_msgs+=("gh CLI not installed — install from https://cli.github.com/")
       _pf_line "⚠️  gh CLI not installed"
       ((issues++))
-    elif gh auth status --hostname github.com >/dev/null 2>&1; then
+    elif (unset GITHUB_TOKEN GH_TOKEN; gh auth status --hostname github.com >/dev/null 2>&1); then
       _pf_line "✅ GitHub auth active (gh CLI)"
     else
       issue_msgs+=("GitHub auth not found — run 'gh auth login'")
