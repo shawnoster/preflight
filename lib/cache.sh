@@ -137,6 +137,11 @@ _preflight_uuid() {
 # and never read back by the script itself, so dropping it here and exporting a
 # per-shell value before sourcing (see init.sh) is safe.
 _preflight_omp_generate() {
+  # Older oh-my-posh emits POSH_SESSION_ID on its own line; 26.x collapses
+  # the whole init output into one line — `export POSH_SESSION_ID="...";
+  # source $'...'` — so a whole-line grep -v strips 100% of the output on
+  # that version, leaving an empty cache and a silently broken prompt.
+  # Strip just the assignment prefix instead, wherever it starts a line.
   oh-my-posh init bash --config "$OWL_OMP_CONFIG" \
-    | grep -v '^export POSH_SESSION_ID='
+    | sed -E 's/^export POSH_SESSION_ID="[^"]*";?[[:space:]]*//'
 }
