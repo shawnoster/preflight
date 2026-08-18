@@ -125,27 +125,22 @@ fi
 
 # Initialize Oh My Posh if configured and available.
 #
-# `oh-my-posh init bash` costs ~55ms of subprocess on *every* shell, which was
-# the single largest item in preflight's startup. Generate once, source the
-# cached script after, and regenerate only when the binary or the theme
-# changes. See _preflight_cache_eval in lib/cache.sh.
+# `oh-my-posh init bash` costs ~55ms of subprocess on *every* shell, which is
+# why this used to route through _preflight_cache_eval (generate once, source
+# the cached script after — see PR #31 for a real bug that path had on
+# oh-my-posh 26.x). Even with that fixed, the cache-hit path still produces a
+# wrong prompt: on a clean cache, sourcing the cached omp-init script renders
+# oh-my-posh's own fallback theme instead of $OWL_OMP_CONFIG on the first
+# prompt of a new shell — reproduced 3/3 on a clean `~/.cache/oh-my-posh` +
+# `~/.cache/preflight`, every time, regardless of _preflight_omp_generate's
+# output being correct and non-empty. A live, uncached
+# `eval "$(oh-my-posh init bash --config ...)")` — the same call `owl-theme`
+# makes — has not failed once across the same repro. The exact internal
+# oh-my-posh mechanism this depends on wasn't pinned down (a subshell/pipe
+# theory didn't hold up under testing), but the cache-vs-live split is
+# solid and repeatable, so skip the cache for this one and always eval live.
 if [[ -n "${OWL_OMP_CONFIG:-}" ]] && [[ -f "$OWL_OMP_CONFIG" ]] && command -v oh-my-posh &>/dev/null; then
-  if declare -F _preflight_cache_eval >/dev/null; then
-    # POSH_SESSION_ID must stay unique per shell, so it is stripped from the
-    # cached script (see _preflight_omp_generate) and minted fresh here.
-    # _preflight_uuid is fork-free on every platform — calling uuidgen here
-    # would put a subprocess back on the cache-hit path.
-    _preflight_uuid
-    POSH_SESSION_ID="$_pf_uuid"
-    unset _pf_uuid
-    export POSH_SESSION_ID
-    # Staleness is decided by `-nt` file tests, which are bash builtins — the
-    # cache-hit path must not fork, or it defeats the point of caching.
-    _preflight_cache_eval omp-init _preflight_omp_generate \
-      "$(command -v oh-my-posh)" "$OWL_OMP_CONFIG"
-  else
-    eval "$(oh-my-posh init bash --config "$OWL_OMP_CONFIG")"
-  fi
+  eval "$(oh-my-posh init bash --config "$OWL_OMP_CONFIG")"
 fi
 
 # ── Optional: print loaded status ────────────────────────────────────────────
