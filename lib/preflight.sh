@@ -343,6 +343,11 @@ preflight() {
   # the same tool may arrive via apt on one box, Homebrew on another, and pip
   # or a bare binary on a third — so probe the resolved path instead.
   #
+  # Every interpolated path goes through %q rather than %s: these strings exist
+  # to be pasted into a shell, and home directories with spaces are ordinary on
+  # macOS. %q leaves well-behaved paths untouched, so ordinary output carries no
+  # quoting noise.
+  #
   # Called lazily, only for tools that are genuinely behind, so the dpkg and
   # shebang probing costs nothing when everything is current.
   _pf_update_hint() {
@@ -398,9 +403,16 @@ preflight() {
       pkg=$(dpkg -S "$path" 2>/dev/null | head -1)
       pkg="${pkg%%:*}"
       if [[ -n "$pkg" ]]; then
-        # Docker ships as three cooperating packages — upgrading only the
-        # package that owns /usr/bin/docker leaves the daemon behind.
-        [[ "$cmd" == docker ]] && pkg="docker-ce docker-ce-cli containerd.io"
+        # Docker's own repo splits the engine across cooperating packages, so
+        # upgrading only the one that owns /usr/bin/docker leaves the daemon
+        # behind. Ubuntu's docker.io is self-contained, and naming docker-ce
+        # packages the configured repos have never heard of fails the whole
+        # command with "Unable to locate package" — so expand only when the
+        # owner really did come from Docker's packaging. (--only-upgrade skips
+        # whichever of the three isn't installed, so listing all three is safe.)
+        case "$pkg" in
+          docker-ce|docker-ce-cli) pkg="docker-ce docker-ce-cli containerd.io" ;;
+        esac
         printf 'sudo apt update && sudo apt install --only-upgrade %s' "$pkg"; return
       fi
     fi
@@ -413,29 +425,50 @@ preflight() {
       py="${shebang#\#!}"
       py="${py#"${py%%[![:space:]]*}"}"   # tolerate "#! /usr/bin/python"
       py="${py%% *}"
-      # `#!/usr/bin/env python3` names the launcher, not the interpreter — the
-      # interpreter is the next word. Which env owns the script is unknowable
-      # from that, so defer to PATH rather than emitting `env -m pip`.
+      # `#!/usr/bin/env python3` names the launcher, not the interpreter. Walk
+      # past env's own flags and VAR=value assignments to the first plain word
+      # — `env -S python3`, `env -i python3` and `env FOO=1 python3` all appear
+      # in the wild, and taking the next word blindly would emit `-S -m pip`.
+      # Which environment owns the script is unknowable from an env shebang, so
+      # the interpreter it names is left to resolve through PATH.
       if [[ "$py" == env || "$py" == */env ]]; then
-        py="${shebang#*env }"
-        py="${py%% *}"
-        [[ -z "$py" || "$py" == "$shebang" ]] && py=python3
+        local -a _sb_words=()
+        local _sb_word
+        read -r -a _sb_words <<<"${shebang#\#!}"
+        py=""
+        for _sb_word in "${_sb_words[@]:1}"; do
+          case "$_sb_word" in
+            -*|*=*) continue ;;
+            *)      py="$_sb_word"; break ;;
+          esac
+        done
+        # env --split-string='python3 -u' and friends leave nothing plain.
+        [[ -z "$py" ]] && py=python3
       fi
       case "$cmd" in
         sam) pkg="aws-sam-cli" ;;
         *)   pkg="$cmd" ;;
       esac
-      printf '%s -m pip install --upgrade %s' "$py" "$pkg"; return
+      # A shebang interpreter is a single word — the kernel splits at the first
+      # whitespace — so the extraction above truncates any interpreter path
+      # containing a space. Such a script could not have been exec'd in the
+      # first place (pip emits a /bin/sh trampoline for that case, which doesn't
+      # match the python test above), so rather than print a command built from
+      # half a path, verify an absolute interpreter exists and otherwise fall
+      # through to the branches below. Bare names from an env shebang are left
+      # alone: they resolve in the shell the hint is pasted into, not this one.
+      #
+      # %q is still worth having on top of the guard — parentheses and other
+      # metacharacters are legal in a directory name and survive to here.
+      if [[ "$py" != /* || -x "$py" ]]; then
+        printf '%q -m pip install --upgrade %s' "$py" "$pkg"; return
+      fi
     fi
 
     # Installed from a git checkout that ships its own installer — fzf being the
     # common case. Deliberately narrow: plenty of binaries happen to sit inside
     # some unrelated work tree (a pyenv clone, a dotfiles repo), and "git pull"
     # is not an upgrade for those.
-    #
-    # %q rather than %s for interpolated paths from here down: these strings
-    # exist to be pasted into a shell, and home directories with spaces are
-    # ordinary on macOS. %q leaves well-behaved paths untouched.
     dir="${path%/*}"
     if command -v git &>/dev/null &&
        repo=$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null) &&
