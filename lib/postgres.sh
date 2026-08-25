@@ -24,14 +24,21 @@ pg-down [version] [cluster]
 Cluster Selection:
 ------------------
 
-With no arguments, the only cluster on the machine is used. When there is more
-than one, fzf picks (or the list is printed if fzf isn't available). A cluster
-can also be named directly, in any of these forms:
+Arguments narrow the candidate list; they never imply a default. No arguments
+considers every cluster, a bare version considers every cluster of that
+version, and a qualified name matches exactly one:
 
-  pg-up 14           # version 14, cluster 'main'
-  pg-up 14/main
-  pg-up 14-main
-  pg-up 14 main
+  pg-up              # the only cluster on the machine
+  pg-up 14           # the only version-14 cluster
+  pg-up 14/main      # exactly this one — 14-main and "14 main" also work
+
+The action runs when exactly one candidate remains. Otherwise fzf picks, or the
+candidates are listed and nothing happens when fzf isn't available or stderr
+isn't a terminal.
+
+So `pg-up 14` acts on 14/main only because that is the sole version-14 cluster,
+not because 'main' is assumed. Prefer the qualified form in scripts: a bare
+version turns ambiguous the day a second cluster of that version is created.
 
 Manual Startup:
 ---------------

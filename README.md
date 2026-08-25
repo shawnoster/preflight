@@ -171,7 +171,7 @@ op account add --shorthand my-team
 | `pg-down [version] [cluster]` | Stop a PostgreSQL cluster (already stopped is not an error) |
 | `pg-help` | Show PostgreSQL command help |
 
-With no arguments these act on the only cluster present; when there is more than one, fzf picks. A cluster can also be named as `14`, `14/main`, `14-main` or `14 main`.
+Arguments narrow the candidate list rather than implying a default: no arguments considers every cluster, `14` considers every version-14 cluster, and `14/main` (or `14-main`, or `14 main`) matches exactly one. The action runs when a single candidate remains; otherwise fzf picks, or the candidates are listed and nothing happens when fzf isn't available. So `pg-up 14` acts on `14/main` only because that's the sole version-14 cluster, not because `main` is assumed — prefer the qualified form in scripts, since a bare version turns ambiguous the day a second cluster of that version is created.
 
 Most useful once a cluster no longer starts at boot. That is a per-cluster setting in `/etc/postgresql/<version>/<cluster>/start.conf` — `auto` (packaged default), `manual` (start only via `pg-up`/`pg_ctlcluster`/`postgresql@.service`), or `disabled` (refuse to start). Run `sudo systemctl daemon-reload` after editing it: a systemd generator reads `start.conf` to decide which clusters `postgresql.service` pulls in, and it only re-runs on reload.
 
