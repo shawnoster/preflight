@@ -313,6 +313,31 @@ preflight() {
     _pf_status "Tools: checking..."
   fi
 
+  # Resolve a symlink chain to the real file. `readlink -f` is GNU (and only
+  # reached BSD in recent FreeBSD/macOS), so fall back to walking the chain by
+  # hand — otherwise Homebrew's bin/<tool> -> ../Cellar/... link is left
+  # unresolved on exactly the platform where Cellar detection matters most.
+  _pf_resolve_path() {
+    local p="$1" target resolved n=0
+
+    if resolved=$(readlink -f "$p" 2>/dev/null) && [[ -n "$resolved" ]]; then
+      printf '%s' "$resolved"
+      return
+    fi
+
+    while [[ -L "$p" ]] && (( n++ < 32 )); do
+      target=$(readlink "$p" 2>/dev/null) || break
+      case "$target" in
+        /*) p="$target" ;;
+        # Homebrew's links are relative, so resolve against the link's own
+        # directory rather than $PWD. Leaves a ../ in the path, which is
+        # harmless for the pattern matching below.
+        *)  p="${p%/*}/$target" ;;
+      esac
+    done
+    printf '%s' "$p"
+  }
+
   # Work out how a tool was actually installed and return the command that
   # upgrades that install. Guessing from the OS alone gets this wrong often —
   # the same tool may arrive via apt on one box, Homebrew on another, and pip
@@ -324,9 +349,7 @@ preflight() {
     local cmd="$1" path dir repo pkg shebang py
 
     path=$(command -v "$cmd" 2>/dev/null) || return 0
-    # Homebrew bin entries, pyenv shims and ~/.local/bin entries are all
-    # symlinks into the real install; follow them before pattern matching.
-    path=$(readlink -f -- "$path" 2>/dev/null || printf '%s' "$path")
+    path=$(_pf_resolve_path "$path")
 
     # pyenv-style shims are generated scripts rather than symlinks, so
     # readlink can't see through them — ask the version manager instead.
@@ -387,7 +410,17 @@ preflight() {
     # than whichever pip happens to be first on PATH.
     if [[ -f "$path" ]] && IFS= read -r shebang <"$path" 2>/dev/null &&
        [[ "$shebang" == '#!'*python* ]]; then
-      py="${shebang#\#!}"; py="${py%% *}"
+      py="${shebang#\#!}"
+      py="${py#"${py%%[![:space:]]*}"}"   # tolerate "#! /usr/bin/python"
+      py="${py%% *}"
+      # `#!/usr/bin/env python3` names the launcher, not the interpreter — the
+      # interpreter is the next word. Which env owns the script is unknowable
+      # from that, so defer to PATH rather than emitting `env -m pip`.
+      if [[ "$py" == env || "$py" == */env ]]; then
+        py="${shebang#*env }"
+        py="${py%% *}"
+        [[ -z "$py" || "$py" == "$shebang" ]] && py=python3
+      fi
       case "$cmd" in
         sam) pkg="aws-sam-cli" ;;
         *)   pkg="$cmd" ;;
@@ -399,11 +432,15 @@ preflight() {
     # common case. Deliberately narrow: plenty of binaries happen to sit inside
     # some unrelated work tree (a pyenv clone, a dotfiles repo), and "git pull"
     # is not an upgrade for those.
+    #
+    # %q rather than %s for interpolated paths from here down: these strings
+    # exist to be pasted into a shell, and home directories with spaces are
+    # ordinary on macOS. %q leaves well-behaved paths untouched.
     dir="${path%/*}"
     if command -v git &>/dev/null &&
        repo=$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null) &&
        [[ -n "$repo" && -x "$repo/install" ]]; then
-      printf 'git -C %s pull && %s/install --bin' "$repo" "$repo"
+      printf 'git -C %q pull && %q --bin' "$repo" "$repo/install"
       return
     fi
 
@@ -425,7 +462,7 @@ preflight() {
           aarch64|arm64) karch=arm64 ;;
           *)             karch=$(uname -m) ;;
         esac
-        printf 'curl -fsSLO "https://dl.k8s.io/release/$(curl -fsSL https://dl.k8s.io/release/stable.txt)/bin/%s/%s/kubectl" && sudo install -m 0755 kubectl %s' \
+        printf 'curl -fsSLO "https://dl.k8s.io/release/$(curl -fsSL https://dl.k8s.io/release/stable.txt)/bin/%s/%s/kubectl" && sudo install -m 0755 kubectl %q' \
           "$kos" "$karch" "$path"
         ;;
       sam)       printf 'https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/manage-sam-cli-versions.html' ;;
@@ -440,8 +477,19 @@ preflight() {
   }
 
   local tmpdir=""
-  if [[ "$check_updates" == true ]] && command -v gh &>/dev/null; then
+  if [[ "$check_updates" == true ]]; then
     tmpdir=$(mktemp -d)
+
+    # Most upstreams are read through `gh api`, so without gh there is very
+    # little to compare against and every tool reports healthy — a silent no-op
+    # for the one flag whose whole job is finding outdated tools. Note it inline
+    # so the all-green section is explained where it appears. Deliberately not
+    # added to issue_msgs: the Environment Variables section already reports a
+    # missing gh, and one root cause should produce one summary bullet. The npm
+    # and curl lookups below don't need gh and still run.
+    if ! command -v gh &>/dev/null; then
+      _pf_line "⚠️  gh not installed — latest-version lookups skipped except kubectl/claude"
+    fi
 
     # Ask GitHub for a project's latest release tag, normalised to a bare
     # version. Upstreams spell the same idea several ways — "v1.2.3", "jq-1.8.2",
@@ -449,6 +497,7 @@ preflight() {
     # rather than trimming one known string per repo. Skipped entirely when the
     # tool isn't installed: nothing would consume the answer.
     _pf_latest_gh() {
+      command -v gh &>/dev/null || return 0
       command -v "$1" &>/dev/null || return 0
       gh api "repos/$2/releases/latest" \
         --jq '.tag_name | sub("^[^0-9]*"; "")' >"$tmpdir/$1" 2>/dev/null &
@@ -467,14 +516,14 @@ preflight() {
       _pf_latest_gh delta      dandavison/delta
       _pf_latest_gh bun        oven-sh/bun
 
-      # Not served by a GitHub release feed.
-      if command -v claude &>/dev/null; then
+      # Not served by a GitHub release feed, and not gated on gh.
+      if command -v claude &>/dev/null && command -v npm &>/dev/null; then
         npm view @anthropic-ai/claude-code version >"$tmpdir/claude" 2>/dev/null &
       fi
       # Kubernetes tags every patch of every supported minor, so
       # releases/latest is not the version you should be running — the
       # stable channel marker is.
-      if command -v kubectl &>/dev/null; then
+      if command -v kubectl &>/dev/null && command -v curl &>/dev/null; then
         curl -fsSL https://dl.k8s.io/release/stable.txt 2>/dev/null \
           | sed 's/^v//' >"$tmpdir/kubectl" &
       fi
@@ -546,7 +595,7 @@ preflight() {
     fi
   done
 
-  unset -f _pf_tool _pf_update_hint
+  unset -f _pf_tool _pf_update_hint _pf_resolve_path
   [[ -n "$tmpdir" ]] && rm -rf "$tmpdir"
 
   # ── Git Configuration ─────────────────────────────────────────────────────

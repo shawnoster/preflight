@@ -118,6 +118,8 @@ source ~/.bashrc
 
 `-u` looks up the latest stable release of each tool it knows about (GitHub release feeds, plus the npm registry for Claude Code and the Kubernetes stable channel marker for kubectl) and compares it against what's on PATH. Only installed tools are queried.
 
+Most of those lookups go through `gh api`, so **`gh` is required for `-u` to be useful** — without it only the npm and curl-based lookups run, and `-u` reports that it can't check the rest rather than quietly showing everything as current.
+
 When something is behind, the suggested upgrade command is derived from **how that particular copy was installed** rather than from the OS, because the same tool arrives by different routes on different machines. The resolved binary path is probed for Homebrew (`brew upgrade`), pipx, `uv tool`, global npm, dpkg (`sudo apt install --only-upgrade`), a Python entry point (that interpreter's `pip`, not whichever `pip` is first on PATH), or a git checkout that ships its own installer such as fzf. Only when nothing owns the binary does it fall back to a self-update command (`uv self update`, `claude update`, `oh-my-posh upgrade`, `bun upgrade`) or a download pointer — those self-updaters refuse to run on a package-managed install, so package detection has to get first refusal.
 
 ### Help (`lib/help.sh`)
