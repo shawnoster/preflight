@@ -511,8 +511,20 @@ preflight() {
 
   local tmpdir=""
   if [[ "$check_updates" == true ]]; then
-    tmpdir=$(mktemp -d)
+    # GNU mktemp defaults the template; BSD/macOS mktemp requires one, so a bare
+    # `mktemp -d` fails there. Try it anyway, then fall back to an explicit
+    # template both accept. If neither works there is nowhere to collect the
+    # answers, and an empty $tmpdir would turn every ">$tmpdir/<tool>" below into
+    # a write to /<tool> — so skip the lookups rather than scribble on the
+    # filesystem root.
+    tmpdir=$(mktemp -d 2>/dev/null) ||
+      tmpdir=$(mktemp -d "${TMPDIR:-/tmp}/preflight.XXXXXX" 2>/dev/null) ||
+      tmpdir=""
+    [[ -z "$tmpdir" ]] &&
+      _pf_line "⚠️  no writable temp dir — skipping latest-version lookups"
+  fi
 
+  if [[ -n "$tmpdir" ]]; then
     # Most upstreams are read through `gh api`, so without gh there is very
     # little to compare against and every tool reports healthy — a silent no-op
     # for the one flag whose whole job is finding outdated tools. Note it inline
@@ -568,10 +580,17 @@ preflight() {
 
   _pf_tool() {
     local name="$1" installed="$2" raw="$3" key="${4:-}"
-    local latest=""
+    local latest="" asked=false
 
     if [[ "$check_updates" == true ]] && [[ -n "$key" ]] && [[ -n "$tmpdir" ]]; then
-      latest=$(cat "$tmpdir/$key" 2>/dev/null | tr -d '[:space:]')
+      # The file exists if and only if a lookup ran for this tool, because the
+      # redirect creates it before the fetch command executes. So present-but-
+      # empty means "asked and got nothing", which is a different situation
+      # from never having asked, and the two shouldn't render the same.
+      if [[ -f "$tmpdir/$key" ]]; then
+        asked=true
+        latest=$(tr -d '[:space:]' <"$tmpdir/$key" 2>/dev/null)
+      fi
     fi
 
     if [[ -n "$latest" ]] && [[ "$installed" != "$latest" ]]; then
@@ -580,6 +599,12 @@ preflight() {
       _pf_line "⚠️  $name: $installed → $latest available"
       [[ -n "$hint" ]] && _pf_line "    Update: $hint"
       ((updates_available++))
+    elif [[ "$asked" == true ]] && [[ -z "$latest" ]]; then
+      # A transient gh/network failure must not read as a clean bill of health:
+      # ✅ here would assert the tool is current when the truth is that nobody
+      # knows. Not promoted to issue_msgs — it's transient, and the false claim
+      # this replaces only ever appeared in the verbose listing anyway.
+      _pf_line "❔ $name: $raw (latest unknown — lookup failed)"
     else
       _pf_line "✅ $name: $raw"
     fi
