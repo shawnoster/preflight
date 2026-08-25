@@ -25,6 +25,10 @@ op-help
   1Password CLI utilities: secrets management.
   Commands: op-status, op-signin, op-load-env, op-clear-env
 
+pg-help
+  PostgreSQL cluster control for manually-started clusters.
+  Commands: pg-up, pg-down
+
 project-help
   Project navigation and build tool runners.
   Commands: bake, yak, poet, proj, serve
@@ -53,6 +57,10 @@ Switch AWS profile:
 Docker shortcuts:
   dex [container] [shell]  # Exec into container
   dlogs [container]        # Tail container logs
+
+Postgres:
+  pg-up [version]          # Start a cluster
+  pg-down [version]        # Stop a cluster
 
 Git shortcuts:
   gco [branch]             # Checkout branch
@@ -89,7 +97,7 @@ Getting Started:
    preflight
 
 3. Explore individual modules:
-   aws-help / docker-help / git-help / op-help / project-help
+   aws-help / docker-help / git-help / op-help / pg-help / project-help
 
 EOF
 }
@@ -126,6 +134,9 @@ op-help              Show 1Password command help
 op-load-env          Load secrets from 1Password into env vars
 op-signin [account]  Sign in to 1Password
 op-status            Check 1Password sign-in status
+pg-down [ver] [name] Stop a PostgreSQL cluster
+pg-help              Show PostgreSQL command help
+pg-up [ver] [name]   Start a PostgreSQL cluster
 poet [script]        Run poetry script
 preflight            Session startup: sign in, load secrets, verify env
 preflight -v         Same with verbose section output
