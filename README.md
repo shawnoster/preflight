@@ -86,6 +86,7 @@ source ~/.bashrc
 │   ├── git.sh           # Git shortcuts
 │   ├── help.sh          # Unified help system (dev-help / devhelp)
 │   ├── owl.sh           # OOO theme engine + MOTD splash
+│   ├── postgres.sh      # PostgreSQL cluster start/stop (pg-up / pg-down)
 │   ├── preflight.sh     # Session startup + environment health check
 │   └── project.sh       # Build tool wrappers
 ├── config/
@@ -169,6 +170,20 @@ op account add --shorthand my-team
 | `awsp [profile]` | Switch AWS profile (fuzzy-select if no arg) |
 | `aws-whoami` | Show current profile, region, and identity |
 | `aws-login [profile]` | SSO login (fuzzy-selects if no profile given) |
+
+### PostgreSQL (`lib/postgres.sh`)
+
+| Command | Description |
+|---------|-------------|
+| `pg-up [version] [cluster]` | Start a PostgreSQL cluster (already running is not an error) |
+| `pg-down [version] [cluster]` | Stop a PostgreSQL cluster (already stopped is not an error) |
+| `pg-help` | Show PostgreSQL command help |
+
+Arguments narrow the candidate list rather than implying a default: no arguments considers every cluster, `14` considers every version-14 cluster, and `14/main` (or `14-main`, or `14 main`) matches exactly one. The action runs when a single candidate remains; otherwise fzf picks, or the candidates are listed and nothing happens when fzf isn't available. So `pg-up 14` acts on `14/main` only because that's the sole version-14 cluster, not because `main` is assumed — prefer the qualified form in scripts, since a bare version turns ambiguous the day a second cluster of that version is created.
+
+Most useful once a cluster no longer starts at boot. That is a per-cluster setting in `/etc/postgresql/<version>/<cluster>/start.conf` — `auto` (packaged default), `manual` (start only via `pg-up`/`pg_ctlcluster`/`postgresql@.service`), or `disabled` (refuse to start). Run `sudo systemctl daemon-reload` after editing it: a systemd generator reads `start.conf` to decide which clusters `postgresql.service` pulls in, and it only re-runs on reload.
+
+Requires `postgresql-common` (Debian/Ubuntu/WSL) and sudo rights. On Homebrew, Postgres is managed by `brew services` instead.
 
 ### Project Tools (`lib/project.sh`)
 

@@ -33,6 +33,7 @@ Neither ever overwrites an existing live file. So a template change does not ret
 - **AWS** — `lib/aws.sh`: profile switching (`awsp`), SSO login (`aws-login`), identity check (`aws-whoami`)
 - **Git** — `lib/git.sh`: fuzzy branch checkout (`gco`), pretty log (`glog`), stash management (`gstash` — pops by default, `--apply` to keep), WIP commits (`gwip`), GH PR creation (`gpr`)
 - **Docker** — `lib/docker.sh`: container/image management utilities (`dex` tries bash first, falls back to sh)
+- **PostgreSQL** — `lib/postgres.sh`: cluster start/stop (`pg-up`, `pg-down`) for clusters set to `manual` in `start.conf`. Goes through `pg_ctlcluster`, which self-redirects to `systemctl` when systemd is running and the caller is root, so one code path covers systemd and non-systemd hosts. Debian/Ubuntu only — needs `postgresql-common`.
 - **1Password** — `lib/1password.sh.template`: sign-in, sign-out, secret fetching (`op-status`, `op-signin`). On first load `init.sh` copies the template to `lib/1password.sh` — the committed file is the template, not the live one.
 - **Project navigation** — `lib/project.sh`: workspace/project switching helpers
 - **OOO Theme Engine** — `lib/owl.sh`: shell MOTD splash (`_owl_splash`) and Oh My Posh theme switcher (`owl-theme`). 8 themes, each with a name, color palette for the splash, and hex palette for OMP. Theme state persists in `$PREFLIGHT_DIR/state/owl/current`. OMP integration is optional — configured via `config/owl.sh` (auto-copied from `config/owl.sh.template` on first load).
@@ -67,6 +68,7 @@ Read this repo when working on:
 | Session health check + subcommands | `lib/preflight.sh` |
 | AWS utilities | `lib/aws.sh` |
 | Git utilities | `lib/git.sh` |
+| PostgreSQL cluster control | `lib/postgres.sh` |
 | 1Password utilities | `lib/1password.sh.template` (auto-copied to `lib/1password.sh` on first load) |
 | Account/env config | `config/accounts.sh.template` (auto-copied to `config/accounts.sh` on first load) |
 | Owl theme + OMP config | `config/owl.sh.template` (auto-copied to `config/owl.sh` on first load) |
