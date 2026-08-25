@@ -59,8 +59,8 @@ Docker shortcuts:
   dlogs [container]        # Tail container logs
 
 Postgres:
-  pg-up [version]          # Start a cluster
-  pg-down [version]        # Stop a cluster
+  pg-up [version] [cluster]   # Start a cluster
+  pg-down [version] [cluster] # Stop a cluster
 
 Git shortcuts:
   gco [branch]             # Checkout branch
@@ -134,9 +134,9 @@ op-help              Show 1Password command help
 op-load-env          Load secrets from 1Password into env vars
 op-signin [account]  Sign in to 1Password
 op-status            Check 1Password sign-in status
-pg-down [ver] [name] Stop a PostgreSQL cluster
+pg-down [version] [cluster] Stop a PostgreSQL cluster
 pg-help              Show PostgreSQL command help
-pg-up [ver] [name]   Start a PostgreSQL cluster
+pg-up [version] [cluster]   Start a PostgreSQL cluster
 poet [script]        Run poetry script
 preflight            Session startup: sign in, load secrets, verify env
 preflight -v         Same with verbose section output
