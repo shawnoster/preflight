@@ -3,7 +3,9 @@
 #
 # Usage:
 #   preflight            - sign in, load secrets, refresh AWS, run health checks
-#   preflight -u         - same + compare installed tools against latest stable versions
+#   preflight -u         - same + compare installed tools against latest stable
+#                          versions, suggesting an upgrade command matched to how
+#                          each tool was installed
 #   preflight update     - pull latest changes from the upstream repo
 #   preflight uninstall  - remove preflight and undo shell profile changes
 #   preflight configure        - interactively apply recommended settings (git globals, etc.)
@@ -311,82 +313,298 @@ preflight() {
     _pf_status "Tools: checking..."
   fi
 
-  # Detect platform for context-appropriate update hints
-  local _os
-  if [[ "$(uname -s)" == "Darwin" ]]; then
-    _os="mac"
-  elif grep -qi microsoft /proc/version 2>/dev/null; then
-    _os="wsl"
-  else
-    _os="linux"
-  fi
+  # Resolve a symlink chain to the real file. `readlink -f` is GNU (and only
+  # reached BSD in recent FreeBSD/macOS), so fall back to walking the chain by
+  # hand — otherwise Homebrew's bin/<tool> -> ../Cellar/... link is left
+  # unresolved on exactly the platform where Cellar detection matters most.
+  _pf_resolve_path() {
+    local p="$1" target resolved n=0
 
-  declare -A _update_hints
-  case "$_os" in
-    mac)
-      _update_hints=(
-        [sam]="brew upgrade aws-sam-cli"
-        [docker]="brew upgrade --cask docker"
-        [terraform]="brew upgrade hashicorp/tap/terraform"
-        [gh]="brew upgrade gh"
-        [jq]="brew upgrade jq"
-        [fzf]="brew upgrade fzf"
-        [claude]="claude update"
-        [uv]="uv self update"
-      )
-      ;;
-    wsl|linux)
-      _update_hints=(
-        [sam]="sudo ./sam-installation/install --update  # re-run native installer with --update"
-        [docker]="sudo apt update && sudo apt install docker-ce docker-ce-cli containerd.io"
-        [terraform]="sudo apt update && sudo apt install terraform  # requires HashiCorp apt repo"
-        [gh]="sudo apt update && sudo apt install gh  # requires GitHub apt repo"
-        [jq]="sudo apt update && sudo apt install jq"
-        [fzf]="github.com/junegunn/fzf/releases  # apt lags — download binary"
-        [claude]="claude update"
-        [uv]="uv self update"
-      )
-      ;;
-  esac
+    if resolved=$(readlink -f "$p" 2>/dev/null) && [[ -n "$resolved" ]]; then
+      printf '%s' "$resolved"
+      return
+    fi
+
+    while [[ -L "$p" ]] && (( n++ < 32 )); do
+      target=$(readlink "$p" 2>/dev/null) || break
+      case "$target" in
+        /*) p="$target" ;;
+        # Homebrew's links are relative, so resolve against the link's own
+        # directory rather than $PWD. Leaves a ../ in the path, which is
+        # harmless for the pattern matching below.
+        *)  p="${p%/*}/$target" ;;
+      esac
+    done
+    printf '%s' "$p"
+  }
+
+  # Work out how a tool was actually installed and return the command that
+  # upgrades that install. Guessing from the OS alone gets this wrong often —
+  # the same tool may arrive via apt on one box, Homebrew on another, and pip
+  # or a bare binary on a third — so probe the resolved path instead.
+  #
+  # Every interpolated path goes through %q rather than %s: these strings exist
+  # to be pasted into a shell, and home directories with spaces are ordinary on
+  # macOS. %q leaves well-behaved paths untouched, so ordinary output carries no
+  # quoting noise.
+  #
+  # Called lazily, only for tools that are genuinely behind, so the dpkg and
+  # shebang probing costs nothing when everything is current.
+  _pf_update_hint() {
+    local cmd="$1" path dir repo pkg shebang py
+
+    path=$(command -v "$cmd" 2>/dev/null) || return 0
+    path=$(_pf_resolve_path "$path")
+
+    # pyenv-style shims are generated scripts rather than symlinks, so
+    # readlink can't see through them — ask the version manager instead.
+    if [[ "$path" == */shims/* ]] && command -v pyenv &>/dev/null; then
+      local real; real=$(pyenv which "$cmd" 2>/dev/null)
+      [[ -n "$real" ]] && path="$real"
+    fi
+
+    # Homebrew: .../Cellar/<formula>/<version>/bin/<cmd>
+    if [[ "$path" == */Cellar/* ]]; then
+      pkg="${path#*/Cellar/}"; pkg="${pkg%%/*}"
+      printf 'brew upgrade %s' "$pkg"; return
+    fi
+    if [[ "$path" == */Caskroom/* || "$path" == /Applications/* ]]; then
+      printf 'brew upgrade --cask %s' "$cmd"; return
+    fi
+
+    # pipx: .../pipx/venvs/<package>/bin/<cmd>
+    if [[ "$path" == */pipx/venvs/* ]]; then
+      pkg="${path#*/pipx/venvs/}"; pkg="${pkg%%/*}"
+      printf 'pipx upgrade %s' "$pkg"; return
+    fi
+
+    # uv tool: .../uv/tools/<package>/bin/<cmd>
+    if [[ "$path" == */uv/tools/* ]]; then
+      pkg="${path#*/uv/tools/}"; pkg="${pkg%%/*}"
+      printf 'uv tool upgrade %s' "$pkg"; return
+    fi
+
+    # npm global: .../lib/node_modules/<package>/...
+    if [[ "$path" == */node_modules/* ]]; then
+      pkg="${path#*/node_modules/}"
+      if [[ "$pkg" == @* ]]; then
+        # Scoped package — keep both the @scope and the name segment
+        local scope="${pkg%%/*}"
+        pkg="${pkg#*/}"
+        pkg="$scope/${pkg%%/*}"
+      else
+        pkg="${pkg%%/*}"
+      fi
+      printf 'npm install -g %s@latest' "$pkg"; return
+    fi
+
+    # Debian/Ubuntu package
+    if command -v dpkg &>/dev/null; then
+      pkg=$(dpkg -S "$path" 2>/dev/null | head -1)
+      pkg="${pkg%%:*}"
+      if [[ -n "$pkg" ]]; then
+        # Docker's own repo splits the engine across cooperating packages, so
+        # upgrading only the one that owns /usr/bin/docker leaves the daemon
+        # behind. Ubuntu's docker.io is self-contained, and naming docker-ce
+        # packages the configured repos have never heard of fails the whole
+        # command with "Unable to locate package" — so expand only when the
+        # owner really did come from Docker's packaging. (--only-upgrade skips
+        # whichever of the three isn't installed, so listing all three is safe.)
+        case "$pkg" in
+          docker-ce|docker-ce-cli) pkg="docker-ce docker-ce-cli containerd.io" ;;
+        esac
+        printf 'sudo apt update && sudo apt install --only-upgrade %s' "$pkg"; return
+      fi
+    fi
+
+    # Python entry point (pip into a pyenv/virtualenv). The shebang names the
+    # interpreter that owns it, so upgrade with *that* interpreter's pip rather
+    # than whichever pip happens to be first on PATH.
+    if [[ -f "$path" ]] && IFS= read -r shebang <"$path" 2>/dev/null &&
+       [[ "$shebang" == '#!'*python* ]]; then
+      py="${shebang#\#!}"
+      py="${py#"${py%%[![:space:]]*}"}"   # tolerate "#! /usr/bin/python"
+      py="${py%% *}"
+      # `#!/usr/bin/env python3` names the launcher, not the interpreter. Walk
+      # past env's own flags and VAR=value assignments to the first plain word
+      # — `env -S python3`, `env -i python3` and `env FOO=1 python3` all appear
+      # in the wild, and taking the next word blindly would emit `-S -m pip`.
+      # Which environment owns the script is unknowable from an env shebang, so
+      # the interpreter it names is left to resolve through PATH.
+      if [[ "$py" == env || "$py" == */env ]]; then
+        local -a _sb_words=()
+        local _sb_word
+        read -r -a _sb_words <<<"${shebang#\#!}"
+        py=""
+        for _sb_word in "${_sb_words[@]:1}"; do
+          case "$_sb_word" in
+            -*|*=*) continue ;;
+            *)      py="$_sb_word"; break ;;
+          esac
+        done
+        # env --split-string='python3 -u' and friends leave nothing plain.
+        [[ -z "$py" ]] && py=python3
+      fi
+      case "$cmd" in
+        sam) pkg="aws-sam-cli" ;;
+        *)   pkg="$cmd" ;;
+      esac
+      # A shebang interpreter is a single word — the kernel splits at the first
+      # whitespace — so the extraction above truncates any interpreter path
+      # containing a space. Such a script could not have been exec'd in the
+      # first place (pip emits a /bin/sh trampoline for that case, which doesn't
+      # match the python test above), so rather than print a command built from
+      # half a path, verify an absolute interpreter exists and otherwise fall
+      # through to the branches below. Bare names from an env shebang are left
+      # alone: they resolve in the shell the hint is pasted into, not this one.
+      #
+      # %q is still worth having on top of the guard — parentheses and other
+      # metacharacters are legal in a directory name and survive to here.
+      if [[ "$py" != /* || -x "$py" ]]; then
+        printf '%q -m pip install --upgrade %s' "$py" "$pkg"; return
+      fi
+    fi
+
+    # Installed from a git checkout that ships its own installer — fzf being the
+    # common case. Deliberately narrow: plenty of binaries happen to sit inside
+    # some unrelated work tree (a pyenv clone, a dotfiles repo), and "git pull"
+    # is not an upgrade for those.
+    dir="${path%/*}"
+    if command -v git &>/dev/null &&
+       repo=$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null) &&
+       [[ -n "$repo" && -x "$repo/install" ]]; then
+      printf 'git -C %q pull && %q --bin' "$repo" "$repo/install"
+      return
+    fi
+
+    # Nothing owns this binary, so it came from a standalone installer or was
+    # dropped in by hand. Self-update commands live here rather than above
+    # because they refuse to run on a package-managed install — `uv self update`
+    # and `oh-my-posh upgrade` both bail out and tell you to use your package
+    # manager, so the probing above has to get first refusal.
+    case "$cmd" in
+      uv)         printf 'uv self update';     return ;;
+      claude)     printf 'claude update';      return ;;
+      oh-my-posh) printf 'oh-my-posh upgrade'; return ;;
+      bun)        printf 'bun upgrade';        return ;;
+      kubectl)
+        local kos karch
+        kos=$(uname -s | tr '[:upper:]' '[:lower:]')
+        case "$(uname -m)" in
+          x86_64)        karch=amd64 ;;
+          aarch64|arm64) karch=arm64 ;;
+          *)             karch=$(uname -m) ;;
+        esac
+        printf 'curl -fsSLO "https://dl.k8s.io/release/$(curl -fsSL https://dl.k8s.io/release/stable.txt)/bin/%s/%s/kubectl" && sudo install -m 0755 kubectl %q' \
+          "$kos" "$karch" "$path"
+        ;;
+      sam)       printf 'https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/manage-sam-cli-versions.html' ;;
+      docker)    printf 'https://docs.docker.com/engine/install/' ;;
+      terraform) printf 'https://developer.hashicorp.com/terraform/install' ;;
+      gh)        printf 'https://github.com/cli/cli/releases/latest' ;;
+      op)        printf 'https://1password.com/downloads/command-line/' ;;
+      jq)        printf 'https://github.com/jqlang/jq/releases/latest' ;;
+      fzf)       printf 'https://github.com/junegunn/fzf/releases/latest' ;;
+      delta)     printf 'https://github.com/dandavison/delta/releases/latest' ;;
+    esac
+  }
 
   local tmpdir=""
-  if [[ "$check_updates" == true ]] && command -v gh &>/dev/null; then
-    tmpdir=$(mktemp -d)
+  if [[ "$check_updates" == true ]]; then
+    # GNU mktemp defaults the template; BSD/macOS mktemp requires one, so a bare
+    # `mktemp -d` fails there. Try it anyway, then fall back to an explicit
+    # template both accept. If neither works there is nowhere to collect the
+    # answers, and an empty $tmpdir would turn every ">$tmpdir/<tool>" below into
+    # a write to /<tool> — so skip the lookups rather than scribble on the
+    # filesystem root.
+    tmpdir=$(mktemp -d 2>/dev/null) ||
+      tmpdir=$(mktemp -d "${TMPDIR:-/tmp}/preflight.XXXXXX" 2>/dev/null) ||
+      tmpdir=""
+    [[ -z "$tmpdir" ]] &&
+      _pf_line "⚠️  no writable temp dir — skipping latest-version lookups"
+  fi
+
+  if [[ -n "$tmpdir" ]]; then
+    # Most upstreams are read through `gh api`, so without gh there is very
+    # little to compare against and every tool reports healthy — a silent no-op
+    # for the one flag whose whole job is finding outdated tools. Note it inline
+    # so the all-green section is explained where it appears. Deliberately not
+    # added to issue_msgs: the Environment Variables section already reports a
+    # missing gh, and one root cause should produce one summary bullet. The npm
+    # and curl lookups below don't need gh and still run.
+    if ! command -v gh &>/dev/null; then
+      _pf_line "⚠️  gh not installed — latest-version lookups skipped except kubectl/claude"
+    fi
+
+    # Ask GitHub for a project's latest release tag, normalised to a bare
+    # version. Upstreams spell the same idea several ways — "v1.2.3", "jq-1.8.2",
+    # "docker-v29.7.2", "bun-v1.4.0" — so strip any leading non-digit prefix
+    # rather than trimming one known string per repo. Skipped entirely when the
+    # tool isn't installed: nothing would consume the answer.
+    _pf_latest_gh() {
+      command -v gh &>/dev/null || return 0
+      command -v "$1" &>/dev/null || return 0
+      gh api "repos/$2/releases/latest" \
+        --jq '.tag_name | sub("^[^0-9]*"; "")' >"$tmpdir/$1" 2>/dev/null &
+    }
+
     (
       set +m  # suppress job control start/done notifications
-      gh api repos/aws/aws-sam-cli/releases/latest \
-        --jq '.tag_name | ltrimstr("v")' >"$tmpdir/sam" 2>/dev/null &
-      gh api repos/moby/moby/releases/latest \
-        --jq '.tag_name | ltrimstr("v")' >"$tmpdir/docker" 2>/dev/null &
-      gh api repos/hashicorp/terraform/releases/latest \
-        --jq '.tag_name | ltrimstr("v")' >"$tmpdir/terraform" 2>/dev/null &
-      gh api repos/cli/cli/releases/latest \
-        --jq '.tag_name | ltrimstr("v")' >"$tmpdir/gh" 2>/dev/null &
-      gh api repos/jqlang/jq/releases/latest \
-        --jq '.tag_name | ltrimstr("jq-")' >"$tmpdir/jq" 2>/dev/null &
-      gh api repos/junegunn/fzf/releases/latest \
-        --jq '.tag_name | ltrimstr("v")' >"$tmpdir/fzf" 2>/dev/null &
-      npm view @anthropic-ai/claude-code version >"$tmpdir/claude" 2>/dev/null &
-      gh api repos/astral-sh/uv/releases/latest \
-        --jq '.tag_name | ltrimstr("v")' >"$tmpdir/uv" 2>/dev/null &
+      _pf_latest_gh sam        aws/aws-sam-cli
+      _pf_latest_gh docker     moby/moby
+      _pf_latest_gh terraform  hashicorp/terraform
+      _pf_latest_gh gh         cli/cli
+      _pf_latest_gh jq         jqlang/jq
+      _pf_latest_gh fzf        junegunn/fzf
+      _pf_latest_gh uv         astral-sh/uv
+      _pf_latest_gh oh-my-posh JanDeDobbeleer/oh-my-posh
+      _pf_latest_gh delta      dandavison/delta
+      _pf_latest_gh bun        oven-sh/bun
+
+      # Not served by a GitHub release feed, and not gated on gh.
+      if command -v claude &>/dev/null && command -v npm &>/dev/null; then
+        npm view @anthropic-ai/claude-code version >"$tmpdir/claude" 2>/dev/null &
+      fi
+      # Kubernetes tags every patch of every supported minor, so
+      # releases/latest is not the version you should be running — the
+      # stable channel marker is.
+      if command -v kubectl &>/dev/null && command -v curl &>/dev/null; then
+        curl -fsSL https://dl.k8s.io/release/stable.txt 2>/dev/null \
+          | sed 's/^v//' >"$tmpdir/kubectl" &
+      fi
       wait
     )
+
+    unset -f _pf_latest_gh
   fi
 
   _pf_tool() {
     local name="$1" installed="$2" raw="$3" key="${4:-}"
-    local latest=""
+    local latest="" asked=false
 
     if [[ "$check_updates" == true ]] && [[ -n "$key" ]] && [[ -n "$tmpdir" ]]; then
-      latest=$(cat "$tmpdir/$key" 2>/dev/null | tr -d '[:space:]')
+      # The file exists if and only if a lookup ran for this tool, because the
+      # redirect creates it before the fetch command executes. So present-but-
+      # empty means "asked and got nothing", which is a different situation
+      # from never having asked, and the two shouldn't render the same.
+      if [[ -f "$tmpdir/$key" ]]; then
+        asked=true
+        latest=$(tr -d '[:space:]' <"$tmpdir/$key" 2>/dev/null)
+      fi
     fi
 
     if [[ -n "$latest" ]] && [[ "$installed" != "$latest" ]]; then
-      local hint="${_update_hints[$key]:-}"
+      local hint; hint=$(_pf_update_hint "$key")
       issue_msgs+=("$name: $installed → $latest available${hint:+  ($hint)}")
       _pf_line "⚠️  $name: $installed → $latest available"
       [[ -n "$hint" ]] && _pf_line "    Update: $hint"
       ((updates_available++))
+    elif [[ "$asked" == true ]] && [[ -z "$latest" ]]; then
+      # A transient gh/network failure must not read as a clean bill of health:
+      # ✅ here would assert the tool is current when the truth is that nobody
+      # knows. Not promoted to issue_msgs — it's transient, and the false claim
+      # this replaces only ever appeared in the verbose listing anyway.
+      _pf_line "❔ $name: $raw (latest unknown — lookup failed)"
     else
       _pf_line "✅ $name: $raw"
     fi
@@ -395,7 +613,7 @@ preflight() {
   local tools=(
     "sam:AWS SAM CLI:sam"
     "docker:Docker:docker"
-    "kubectl:Kubernetes kubectl:"
+    "kubectl:Kubernetes kubectl:kubectl"
     "terraform:Terraform:terraform"
     "gh:GitHub CLI:gh"
     "op:1Password CLI:"
@@ -416,13 +634,17 @@ preflight() {
 
     if command -v "$cmd" &>/dev/null; then
       local raw installed version_output
-      if version_output=$("$cmd" --version 2>&1); then
+      # Nearly everything answers --version; kubectl insists on a subcommand.
+      local -a version_args=(--version)
+      [[ "$cmd" == kubectl ]] && version_args=(version --client)
+      if version_output=$("$cmd" "${version_args[@]}" 2>&1); then
         raw=$(printf '%s\n' "$version_output" | head -1)
       elif version_output=$("$cmd" -V 2>&1); then
         raw=$(printf '%s\n' "$version_output" | head -1)
       else
         raw="installed"
       fi
+      raw="${raw#Client Version: }"
       installed=$(echo "$raw" | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)*[a-zA-Z0-9]*' | head -1)
       [[ -z "$installed" ]] && installed="$raw"
       _pf_tool "$name" "$installed" "$raw" "$key"
@@ -431,8 +653,7 @@ preflight() {
     fi
   done
 
-  unset -f _pf_tool
-  unset _update_hints
+  unset -f _pf_tool _pf_update_hint _pf_resolve_path
   [[ -n "$tmpdir" ]] && rm -rf "$tmpdir"
 
   # ── Git Configuration ─────────────────────────────────────────────────────
