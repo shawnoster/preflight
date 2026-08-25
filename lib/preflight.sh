@@ -3,7 +3,9 @@
 #
 # Usage:
 #   preflight            - sign in, load secrets, refresh AWS, run health checks
-#   preflight -u         - same + compare installed tools against latest stable versions
+#   preflight -u         - same + compare installed tools against latest stable
+#                          versions, suggesting an upgrade command matched to how
+#                          each tool was installed
 #   preflight update     - pull latest changes from the upstream repo
 #   preflight uninstall  - remove preflight and undo shell profile changes
 #   preflight configure        - interactively apply recommended settings (git globals, etc.)
@@ -311,66 +313,175 @@ preflight() {
     _pf_status "Tools: checking..."
   fi
 
-  # Detect platform for context-appropriate update hints
-  local _os
-  if [[ "$(uname -s)" == "Darwin" ]]; then
-    _os="mac"
-  elif grep -qi microsoft /proc/version 2>/dev/null; then
-    _os="wsl"
-  else
-    _os="linux"
-  fi
+  # Work out how a tool was actually installed and return the command that
+  # upgrades that install. Guessing from the OS alone gets this wrong often —
+  # the same tool may arrive via apt on one box, Homebrew on another, and pip
+  # or a bare binary on a third — so probe the resolved path instead.
+  #
+  # Called lazily, only for tools that are genuinely behind, so the dpkg and
+  # shebang probing costs nothing when everything is current.
+  _pf_update_hint() {
+    local cmd="$1" path dir repo pkg shebang py
 
-  declare -A _update_hints
-  case "$_os" in
-    mac)
-      _update_hints=(
-        [sam]="brew upgrade aws-sam-cli"
-        [docker]="brew upgrade --cask docker"
-        [terraform]="brew upgrade hashicorp/tap/terraform"
-        [gh]="brew upgrade gh"
-        [jq]="brew upgrade jq"
-        [fzf]="brew upgrade fzf"
-        [claude]="claude update"
-        [uv]="uv self update"
-      )
-      ;;
-    wsl|linux)
-      _update_hints=(
-        [sam]="sudo ./sam-installation/install --update  # re-run native installer with --update"
-        [docker]="sudo apt update && sudo apt install docker-ce docker-ce-cli containerd.io"
-        [terraform]="sudo apt update && sudo apt install terraform  # requires HashiCorp apt repo"
-        [gh]="sudo apt update && sudo apt install gh  # requires GitHub apt repo"
-        [jq]="sudo apt update && sudo apt install jq"
-        [fzf]="github.com/junegunn/fzf/releases  # apt lags — download binary"
-        [claude]="claude update"
-        [uv]="uv self update"
-      )
-      ;;
-  esac
+    path=$(command -v "$cmd" 2>/dev/null) || return 0
+    # Homebrew bin entries, pyenv shims and ~/.local/bin entries are all
+    # symlinks into the real install; follow them before pattern matching.
+    path=$(readlink -f -- "$path" 2>/dev/null || printf '%s' "$path")
+
+    # pyenv-style shims are generated scripts rather than symlinks, so
+    # readlink can't see through them — ask the version manager instead.
+    if [[ "$path" == */shims/* ]] && command -v pyenv &>/dev/null; then
+      local real; real=$(pyenv which "$cmd" 2>/dev/null)
+      [[ -n "$real" ]] && path="$real"
+    fi
+
+    # Homebrew: .../Cellar/<formula>/<version>/bin/<cmd>
+    if [[ "$path" == */Cellar/* ]]; then
+      pkg="${path#*/Cellar/}"; pkg="${pkg%%/*}"
+      printf 'brew upgrade %s' "$pkg"; return
+    fi
+    if [[ "$path" == */Caskroom/* || "$path" == /Applications/* ]]; then
+      printf 'brew upgrade --cask %s' "$cmd"; return
+    fi
+
+    # pipx: .../pipx/venvs/<package>/bin/<cmd>
+    if [[ "$path" == */pipx/venvs/* ]]; then
+      pkg="${path#*/pipx/venvs/}"; pkg="${pkg%%/*}"
+      printf 'pipx upgrade %s' "$pkg"; return
+    fi
+
+    # uv tool: .../uv/tools/<package>/bin/<cmd>
+    if [[ "$path" == */uv/tools/* ]]; then
+      pkg="${path#*/uv/tools/}"; pkg="${pkg%%/*}"
+      printf 'uv tool upgrade %s' "$pkg"; return
+    fi
+
+    # npm global: .../lib/node_modules/<package>/...
+    if [[ "$path" == */node_modules/* ]]; then
+      pkg="${path#*/node_modules/}"
+      if [[ "$pkg" == @* ]]; then
+        # Scoped package — keep both the @scope and the name segment
+        local scope="${pkg%%/*}"
+        pkg="${pkg#*/}"
+        pkg="$scope/${pkg%%/*}"
+      else
+        pkg="${pkg%%/*}"
+      fi
+      printf 'npm install -g %s@latest' "$pkg"; return
+    fi
+
+    # Debian/Ubuntu package
+    if command -v dpkg &>/dev/null; then
+      pkg=$(dpkg -S "$path" 2>/dev/null | head -1)
+      pkg="${pkg%%:*}"
+      if [[ -n "$pkg" ]]; then
+        # Docker ships as three cooperating packages — upgrading only the
+        # package that owns /usr/bin/docker leaves the daemon behind.
+        [[ "$cmd" == docker ]] && pkg="docker-ce docker-ce-cli containerd.io"
+        printf 'sudo apt update && sudo apt install --only-upgrade %s' "$pkg"; return
+      fi
+    fi
+
+    # Python entry point (pip into a pyenv/virtualenv). The shebang names the
+    # interpreter that owns it, so upgrade with *that* interpreter's pip rather
+    # than whichever pip happens to be first on PATH.
+    if [[ -f "$path" ]] && IFS= read -r shebang <"$path" 2>/dev/null &&
+       [[ "$shebang" == '#!'*python* ]]; then
+      py="${shebang#\#!}"; py="${py%% *}"
+      case "$cmd" in
+        sam) pkg="aws-sam-cli" ;;
+        *)   pkg="$cmd" ;;
+      esac
+      printf '%s -m pip install --upgrade %s' "$py" "$pkg"; return
+    fi
+
+    # Installed from a git checkout that ships its own installer — fzf being the
+    # common case. Deliberately narrow: plenty of binaries happen to sit inside
+    # some unrelated work tree (a pyenv clone, a dotfiles repo), and "git pull"
+    # is not an upgrade for those.
+    dir="${path%/*}"
+    if command -v git &>/dev/null &&
+       repo=$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null) &&
+       [[ -n "$repo" && -x "$repo/install" ]]; then
+      printf 'git -C %s pull && %s/install --bin' "$repo" "$repo"
+      return
+    fi
+
+    # Nothing owns this binary, so it came from a standalone installer or was
+    # dropped in by hand. Self-update commands live here rather than above
+    # because they refuse to run on a package-managed install — `uv self update`
+    # and `oh-my-posh upgrade` both bail out and tell you to use your package
+    # manager, so the probing above has to get first refusal.
+    case "$cmd" in
+      uv)         printf 'uv self update';     return ;;
+      claude)     printf 'claude update';      return ;;
+      oh-my-posh) printf 'oh-my-posh upgrade'; return ;;
+      bun)        printf 'bun upgrade';        return ;;
+      kubectl)
+        local kos karch
+        kos=$(uname -s | tr '[:upper:]' '[:lower:]')
+        case "$(uname -m)" in
+          x86_64)        karch=amd64 ;;
+          aarch64|arm64) karch=arm64 ;;
+          *)             karch=$(uname -m) ;;
+        esac
+        printf 'curl -fsSLO "https://dl.k8s.io/release/$(curl -fsSL https://dl.k8s.io/release/stable.txt)/bin/%s/%s/kubectl" && sudo install -m 0755 kubectl %s' \
+          "$kos" "$karch" "$path"
+        ;;
+      sam)       printf 'https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/manage-sam-cli-versions.html' ;;
+      docker)    printf 'https://docs.docker.com/engine/install/' ;;
+      terraform) printf 'https://developer.hashicorp.com/terraform/install' ;;
+      gh)        printf 'https://github.com/cli/cli/releases/latest' ;;
+      op)        printf 'https://1password.com/downloads/command-line/' ;;
+      jq)        printf 'https://github.com/jqlang/jq/releases/latest' ;;
+      fzf)       printf 'https://github.com/junegunn/fzf/releases/latest' ;;
+      delta)     printf 'https://github.com/dandavison/delta/releases/latest' ;;
+    esac
+  }
 
   local tmpdir=""
   if [[ "$check_updates" == true ]] && command -v gh &>/dev/null; then
     tmpdir=$(mktemp -d)
+
+    # Ask GitHub for a project's latest release tag, normalised to a bare
+    # version. Upstreams spell the same idea several ways — "v1.2.3", "jq-1.8.2",
+    # "docker-v29.7.2", "bun-v1.4.0" — so strip any leading non-digit prefix
+    # rather than trimming one known string per repo. Skipped entirely when the
+    # tool isn't installed: nothing would consume the answer.
+    _pf_latest_gh() {
+      command -v "$1" &>/dev/null || return 0
+      gh api "repos/$2/releases/latest" \
+        --jq '.tag_name | sub("^[^0-9]*"; "")' >"$tmpdir/$1" 2>/dev/null &
+    }
+
     (
       set +m  # suppress job control start/done notifications
-      gh api repos/aws/aws-sam-cli/releases/latest \
-        --jq '.tag_name | ltrimstr("v")' >"$tmpdir/sam" 2>/dev/null &
-      gh api repos/moby/moby/releases/latest \
-        --jq '.tag_name | ltrimstr("v")' >"$tmpdir/docker" 2>/dev/null &
-      gh api repos/hashicorp/terraform/releases/latest \
-        --jq '.tag_name | ltrimstr("v")' >"$tmpdir/terraform" 2>/dev/null &
-      gh api repos/cli/cli/releases/latest \
-        --jq '.tag_name | ltrimstr("v")' >"$tmpdir/gh" 2>/dev/null &
-      gh api repos/jqlang/jq/releases/latest \
-        --jq '.tag_name | ltrimstr("jq-")' >"$tmpdir/jq" 2>/dev/null &
-      gh api repos/junegunn/fzf/releases/latest \
-        --jq '.tag_name | ltrimstr("v")' >"$tmpdir/fzf" 2>/dev/null &
-      npm view @anthropic-ai/claude-code version >"$tmpdir/claude" 2>/dev/null &
-      gh api repos/astral-sh/uv/releases/latest \
-        --jq '.tag_name | ltrimstr("v")' >"$tmpdir/uv" 2>/dev/null &
+      _pf_latest_gh sam        aws/aws-sam-cli
+      _pf_latest_gh docker     moby/moby
+      _pf_latest_gh terraform  hashicorp/terraform
+      _pf_latest_gh gh         cli/cli
+      _pf_latest_gh jq         jqlang/jq
+      _pf_latest_gh fzf        junegunn/fzf
+      _pf_latest_gh uv         astral-sh/uv
+      _pf_latest_gh oh-my-posh JanDeDobbeleer/oh-my-posh
+      _pf_latest_gh delta      dandavison/delta
+      _pf_latest_gh bun        oven-sh/bun
+
+      # Not served by a GitHub release feed.
+      if command -v claude &>/dev/null; then
+        npm view @anthropic-ai/claude-code version >"$tmpdir/claude" 2>/dev/null &
+      fi
+      # Kubernetes tags every patch of every supported minor, so
+      # releases/latest is not the version you should be running — the
+      # stable channel marker is.
+      if command -v kubectl &>/dev/null; then
+        curl -fsSL https://dl.k8s.io/release/stable.txt 2>/dev/null \
+          | sed 's/^v//' >"$tmpdir/kubectl" &
+      fi
       wait
     )
+
+    unset -f _pf_latest_gh
   fi
 
   _pf_tool() {
@@ -382,7 +493,7 @@ preflight() {
     fi
 
     if [[ -n "$latest" ]] && [[ "$installed" != "$latest" ]]; then
-      local hint="${_update_hints[$key]:-}"
+      local hint; hint=$(_pf_update_hint "$key")
       issue_msgs+=("$name: $installed → $latest available${hint:+  ($hint)}")
       _pf_line "⚠️  $name: $installed → $latest available"
       [[ -n "$hint" ]] && _pf_line "    Update: $hint"
@@ -395,7 +506,7 @@ preflight() {
   local tools=(
     "sam:AWS SAM CLI:sam"
     "docker:Docker:docker"
-    "kubectl:Kubernetes kubectl:"
+    "kubectl:Kubernetes kubectl:kubectl"
     "terraform:Terraform:terraform"
     "gh:GitHub CLI:gh"
     "op:1Password CLI:"
@@ -416,13 +527,17 @@ preflight() {
 
     if command -v "$cmd" &>/dev/null; then
       local raw installed version_output
-      if version_output=$("$cmd" --version 2>&1); then
+      # Nearly everything answers --version; kubectl insists on a subcommand.
+      local -a version_args=(--version)
+      [[ "$cmd" == kubectl ]] && version_args=(version --client)
+      if version_output=$("$cmd" "${version_args[@]}" 2>&1); then
         raw=$(printf '%s\n' "$version_output" | head -1)
       elif version_output=$("$cmd" -V 2>&1); then
         raw=$(printf '%s\n' "$version_output" | head -1)
       else
         raw="installed"
       fi
+      raw="${raw#Client Version: }"
       installed=$(echo "$raw" | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)*[a-zA-Z0-9]*' | head -1)
       [[ -z "$installed" ]] && installed="$raw"
       _pf_tool "$name" "$installed" "$raw" "$key"
@@ -431,8 +546,7 @@ preflight() {
     fi
   done
 
-  unset -f _pf_tool
-  unset _update_hints
+  unset -f _pf_tool _pf_update_hint
   [[ -n "$tmpdir" ]] && rm -rf "$tmpdir"
 
   # ── Git Configuration ─────────────────────────────────────────────────────
