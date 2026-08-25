@@ -126,9 +126,15 @@ _pg_pick_cluster() {
   # than stdout, so a captured stdout doesn't stop it from drawing.
   if command -v fzf &>/dev/null && [[ -t 2 ]]; then
     local choice
+    # --delimiter is not optional here. awk emits tab-separated columns, but
+    # fzf's default field delimiter is AWK-style whitespace, which splits
+    # "port 5432" into two fields and pushes the status out to field 4 — so
+    # --with-nth=1,2,3 would display the port and hide the very thing you
+    # need in order to choose. fzf still prints the untransformed line, so
+    # cut -f1 below reads the same tabs awk wrote.
     choice=$(printf '%s\n' "${found[@]}" \
       | awk '{ printf "%s/%s\tport %s\t%s\n", $1, $2, $3, $4 }' \
-      | fzf --prompt="Select cluster > " --with-nth=1,2,3 \
+      | fzf --prompt="Select cluster > " --delimiter='\t' --with-nth=1,2,3 \
       | cut -f1)
     [[ -z "$choice" ]] && return 1
     printf '%s\n' "${found[@]}" \
@@ -149,7 +155,12 @@ _pg_action() {
   local verb=up
   [[ "$action" == stop ]] && verb=down
 
-  if ! command -v pg_lsclusters &>/dev/null; then
+  # Check both binaries, not just the one used first: they ship together in
+  # postgresql-common, but a half-installed or PATH-mangled host would
+  # otherwise get past this guard and fail much later with a bare
+  # "sudo: pg_ctlcluster: command not found", which says nothing about what
+  # to install. The message below names both, so the test should too.
+  if ! command -v pg_lsclusters &>/dev/null || ! command -v pg_ctlcluster &>/dev/null; then
     printf 'pg-%s: needs postgresql-common (pg_lsclusters/pg_ctlcluster).\n' "$verb" >&2
     if command -v brew &>/dev/null; then
       printf '  Homebrew manages Postgres itself: brew services %s postgresql@<version>\n' \
