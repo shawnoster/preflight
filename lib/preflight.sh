@@ -107,6 +107,7 @@ preflight() {
   local issues=0
   local updates_available=0
   local issue_msgs=()
+  local update_msgs=()
 
   # ── Secrets ───────────────────────────────────────────────────────────────
 
@@ -595,7 +596,7 @@ preflight() {
 
     if [[ -n "$latest" ]] && [[ "$installed" != "$latest" ]]; then
       local hint; hint=$(_pf_update_hint "$key")
-      issue_msgs+=("$name: $installed → $latest available${hint:+  ($hint)}")
+      update_msgs+=("$name: $installed → $latest available${hint:+  ($hint)}")
       _pf_line "⚠️  $name: $installed → $latest available"
       [[ -n "$hint" ]] && _pf_line "    Update: $hint"
       ((updates_available++))
@@ -817,9 +818,14 @@ preflight() {
     printf "  ✅ ${T}All systems go${R}\n"
   fi
   if [[ $updates_available -gt 0 ]]; then
-    printf "  📦 ${T}$updates_available tool update(s) available${R}"
-    [[ "$verbose" == false ]] && printf " ${S}(run preflight -v to see details)${R}"
-    printf "\n"
+    printf "  📦 ${T}$updates_available tool update(s) available${R}\n"
+    # Verbose mode already printed each tool inline with its Update: command,
+    # so only the quiet path needs the list repeated here.
+    if [[ "$verbose" == false ]]; then
+      for msg in "${update_msgs[@]}"; do
+        printf "  ${S}  • %s${R}\n" "$msg"
+      done
+    fi
   fi
   if [[ "$check_updates" == false ]]; then
     printf "\n"
