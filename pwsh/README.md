@@ -102,6 +102,13 @@ Edit `$HOME\.preflight\pwsh\config\accounts.ps1` (gitignored, copied from
 `accounts.ps1.template` by the installer) to override defaults like
 `$env:OP_ACCOUNT`.
 
+Owl theme: the installer seeds a user-owned base theme at
+`$HOME\.preflight\state\owl\theme-catppuccin.omp.json` and defaults
+`$env:OWL_OMP_CONFIG` to it (only when unset) in the profile guard, so
+`owl-theme <name>` patches a working OMP config instead of
+`$env:POSH_THEMES_PATH` (which the module refuses to mutate). Override
+`$env:OWL_OMP_CONFIG` in `accounts.ps1` to use your own theme.
+
 For Windows desktop-app integration (Settings → Developer → "Integrate with
 1Password CLI"), set `OP_ACCOUNT` to your sign-in address
 (for example `my-team.1password.com`). If you manually added an account with

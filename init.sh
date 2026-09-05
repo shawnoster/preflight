@@ -82,6 +82,18 @@ if [[ ! -f "$PREFLIGHT_DIR/config/owl.sh" ]] && [[ -f "$PREFLIGHT_DIR/config/owl
   echo "   init.sh now handles _owl_theme_load, _owl_splash, and oh-my-posh init."
 fi
 
+# Owl base theme: ensure the user-owned OMP copy that owl-theme patches exists
+# (covers installs that predate the bundled theme, and `preflight update`).
+# state/ is gitignored, so owl-theme is free to rewrite the palette. Never
+# overwrites an existing copy — that one may hold the user's palette changes.
+if [[ ! -f "$PREFLIGHT_DIR/state/owl/theme-catppuccin.omp.json" ]] \
+    && [[ -f "$PREFLIGHT_DIR/config/theme-catppuccin.omp.json" ]]; then
+  mkdir -p "$PREFLIGHT_DIR/state/owl"
+  cp "$PREFLIGHT_DIR/config/theme-catppuccin.omp.json" \
+     "$PREFLIGHT_DIR/state/owl/theme-catppuccin.omp.json"
+  echo "📋 Created state/owl/theme-catppuccin.omp.json (owl-theme base theme)"
+fi
+
 # ── Source all library scripts ────────────────────────────────────────────────
 
 # A fixed path in a world-writable /tmp is both a symlink-clobber target and a
