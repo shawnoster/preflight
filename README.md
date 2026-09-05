@@ -14,6 +14,7 @@ The installer:
 - Clones the repo to `~/.preflight` (override with `PREFLIGHT_DIR=/your/path`)
 - Adds a source line to your shell rc file (`.bashrc` or `.zshrc`), with the correct syntax for your shell
 - Creates `config/accounts.sh` and `lib/1password.sh` from their templates
+- Seeds a user-owned owl base theme into `state/owl/theme-catppuccin.omp.json` (gitignored), so `owl-theme` has an OMP config to patch out of the box
 
 After installing:
 
@@ -266,13 +267,10 @@ and stay quiet. (This previously keyed off `$SHLVL -eq 1`, which never fired in
 environments that start you at a deeper shell level — under WSL + VS Code the
 login shell begins at `SHLVL=3`, so the MOTD silently never appeared.)
 
-**Oh My Posh integration is optional.** Set `OWL_OMP_CONFIG` in `~/.preflight/config/owl.sh` to the path of your OMP JSON config. If unset or the file doesn't exist, `owl-theme` still switches splash colors — it just won't touch your prompt.
+**Oh My Posh integration is optional.** `OWL_OMP_CONFIG` (`~/.preflight/config/owl.sh`, auto-created from `config/owl.sh.template`) defaults to `$PREFLIGHT_DIR/state/owl/theme-catppuccin.omp.json` — the bundled owl base theme the installer seeds into the gitignored `state/` dir, which `owl-theme` patches. Point it at your own OMP JSON to use a different base, or leave it empty to disable OMP integration — `owl-theme` still switches splash colors, it just won't touch your prompt.
 
 ```bash
-# After installing, edit config/owl.sh to point at your OMP config:
-vim ~/.preflight/config/owl.sh   # set OWL_OMP_CONFIG="$HOME/your-theme.omp.json"
-
-# Then switch themes live:
+# After installing, switch themes live — owl-theme patches state/owl/theme-catppuccin.omp.json:
 owl-theme moonlit
 ```
 

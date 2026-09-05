@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
     Install (or reinstall, or uninstall) the Preflight PowerShell module.
 
@@ -10,15 +10,19 @@
          from this checkout (or via `git clone` if running standalone).
       2. Copy pwsh/config/accounts.ps1.template -> pwsh/config/accounts.ps1
          (gitignored). Skipped if accounts.ps1 already exists.
-      3. Back up your current $PROFILE to <profile>.bak.<timestamp>.
-      4. Comment out functions in $PROFILE that are superseded by the
+      3. Seed the owl-theme base theme (config/theme-catppuccin.omp.json ->
+         state\owl\theme-catppuccin.omp.json, gitignored) so owl-theme has a
+         user-owned OMP config to patch.
+      4. Back up your current $PROFILE to <profile>.bak.<timestamp>.
+      5. Comment out functions in $PROFILE that are superseded by the
          Preflight module (Set-SecureEnv, Switch-AWSProfile,
          Switch-GitBranch, Remove-MergedBranches, bake), tagging each
          with a marker so
          uninstall can reverse the change.
-      5. Append an Import-Module line that loads Preflight from
+      6. Append an Import-Module line that loads Preflight from
          $HOME\.preflight\pwsh\Preflight.psd1, guarded so reload is
-         idempotent.
+         idempotent, plus a default $env:OWL_OMP_CONFIG pointing at the
+         seeded theme (only set when it isn't already).
 
     Safe to run repeatedly. Use -DryRun to preview without writing.
     Use -Uninstall to reverse everything.
@@ -332,10 +336,20 @@ function Write-ProfileFile {
 }
 
 function New-ImportGuard {
-    param([string]$ManifestPath, [string]$Eol = "`r`n")
+    param(
+        [string]$ManifestPath,
+        [string]$OmpConfigPath,
+        [string]$Eol = "`r`n"
+    )
     $manifestPathLiteral = $ManifestPath -replace "'", "''"
     $lines = @(
         $script:GuardBegin
+        if ($OmpConfigPath) {
+            $ompLiteral = $OmpConfigPath -replace "'", "''"
+            "if (-not `$env:OWL_OMP_CONFIG) {"
+            "    `$env:OWL_OMP_CONFIG = '$ompLiteral'"
+            '}'
+        }
         "if (Test-Path -LiteralPath '$manifestPathLiteral') {"
         "    Import-Module '$manifestPathLiteral' -ErrorAction SilentlyContinue"
         '}'
@@ -363,9 +377,17 @@ function Add-ImportGuard {
         We do NOT strip the user's trailing whitespace — Remove-ImportGuard
         is responsible for removing exactly what we added so the file
         round-trips byte-for-byte.
+
+        If $OmpConfigPath is provided, the guard also exports a default
+        $env:OWL_OMP_CONFIG (only when unset) pointing at the seeded owl base
+        theme, so owl-theme's OMP patching works out of the box.
+
+        If an Import-Module guard is already present, it is removed and
+        re-added so a requested OmpConfigPath (or its absence) is reflected
+        in place rather than duplicating the block. The result is
+        byte-identical when nothing actually changed.
     #>
-    param([string]$Content, [string]$ManifestPath)
-    if (Test-ImportGuardPresent -Content $Content) { return $Content }
+    param([string]$Content, [string]$ManifestPath, [string]$OmpConfigPath)
 
     # Match the dominant line ending of the existing content. Default to CRLF
     # for empty or eol-less files (Windows convention).
@@ -375,11 +397,15 @@ function Add-ImportGuard {
            elseif ($lfOnly -gt 0)                            { "`n" }
            else                                              { "`r`n" }
 
-    $guard = New-ImportGuard -ManifestPath $ManifestPath -Eol $eol
+    $guard = New-ImportGuard -ManifestPath $ManifestPath -OmpConfigPath $OmpConfigPath -Eol $eol
 
-    # Append a blank line separator, the guard, and a final newline. Don't
-    # touch any pre-existing trailing whitespace — Remove-ImportGuard knows
-    # this exact shape and reverses it.
+    # If a guard already exists, replace it (see docstring) instead of nesting
+    # a second one. Compute the replacement target regardless, so the
+    # byte-identical fast-path below still falls through to "no change".
+    if (Test-ImportGuardPresent -Content $Content) {
+        $Content = Remove-ImportGuard -Content $Content
+    }
+
     return "$Content$eol$eol$guard$eol"
 }
 
@@ -555,7 +581,58 @@ function Invoke-Install {
         Write-Step "Would seed $cfgFile from template (if missing)" 'dry'
     }
 
-    # 4) Update $PROFILE.
+    # 4) Seed the owl-theme base theme. owl-theme needs a USER-OWNED OMP
+    # config to patch (it refuses to touch $env:POSH_THEMES_PATH). The
+    # bundled theme is copied to state\owl (gitignored) and $env:OWL_OMP_CONFIG
+    # is defaulted to it in the profile guard when unset.
+    $themeSrc = $null
+    $installConfigDir = Join-Path $InstallRoot 'config'
+    $repoRoot = if ($pwshSrc) { Split-Path -Parent $pwshSrc } else { $null }
+    $themeCandidates = @(
+        (Join-Path $installConfigDir 'theme-catppuccin.omp.json')
+        if ($repoRoot) { (Join-Path $repoRoot 'config\theme-catppuccin.omp.json') }
+        if ($pwshSrc)  { (Join-Path $pwshSrc 'config\theme-catppuccin.omp.json') }
+    )
+    foreach ($candidate in $themeCandidates) {
+        if ($candidate -and (Test-Path -LiteralPath $candidate -PathType Leaf)) {
+            $themeSrc = $candidate
+            break
+        }
+    }
+
+    $owlStateDir = Join-Path $InstallRoot 'state\owl'
+    $themeDest   = Join-Path $owlStateDir 'theme-catppuccin.omp.json'
+    $ompConfigPath = $null
+
+    if ($themeSrc) {
+        if ($DryRun) {
+            Write-Step "Would install owl theme -> $themeDest" 'dry'
+        } else {
+            if (-not (Test-Path -LiteralPath $owlStateDir)) {
+                New-Item -ItemType Directory -Path $owlStateDir -Force | Out-Null
+            }
+            if (Test-Path -LiteralPath $themeDest) {
+                Write-Step "Owl theme already present: $themeDest" 'ok'
+            } else {
+                Copy-Item -LiteralPath $themeSrc -Destination $themeDest
+                Write-Step "Installed owl theme -> $themeDest" 'ok'
+            }
+            # Keep a copy under $InstallRoot\config so a later install run from
+            # the deployed tree (no source checkout) can resolve it again.
+            if (-not (Test-Path -LiteralPath $installConfigDir)) {
+                New-Item -ItemType Directory -Path $installConfigDir -Force | Out-Null
+            }
+            $persistedTheme = Join-Path $installConfigDir 'theme-catppuccin.omp.json'
+            if (-not (Test-Path -LiteralPath $persistedTheme)) {
+                Copy-Item -LiteralPath $themeSrc -Destination $persistedTheme
+            }
+        }
+        $ompConfigPath = $themeDest
+    } else {
+        Write-Step "Owl theme source not found — OWL_OMP_CONFIG won't be defaulted" 'warn'
+    }
+
+    # 5) Update $PROFILE.
     if (-not (Test-Path -LiteralPath $ProfilePath)) {
         Write-Step "No $ProfilePath yet — will create one" 'info'
         $original         = ''
@@ -575,7 +652,7 @@ function Invoke-Install {
 
     $edited = Edit-ProfileContent -Content $original
     $manifest = Join-Path $destPwsh 'Preflight.psd1'
-    $newContent = Add-ImportGuard -Content $edited.Content -ManifestPath $manifest
+    $newContent = Add-ImportGuard -Content $edited.Content -ManifestPath $manifest -OmpConfigPath $ompConfigPath
 
     if ($newContent -eq $original) {
         Write-Step "$ProfilePath already up to date" 'ok'
@@ -584,6 +661,9 @@ function Invoke-Install {
             Show-Diff -Old $original -New $newContent -Label $ProfilePath
             foreach ($c in $edited.Changes) { Write-Step $c 'dry' }
             Write-Step "Would append Import-Module guard for $manifest" 'dry'
+            if ($ompConfigPath) {
+                Write-Step "Would default `$env:OWL_OMP_CONFIG to $ompConfigPath (only if unset)" 'dry'
+            }
         } else {
             # Confirm: -Force skips, -Confirm/-WhatIf go through ShouldProcess,
             # otherwise we ask interactively via Read-Host. Without this the

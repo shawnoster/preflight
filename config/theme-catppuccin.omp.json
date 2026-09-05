@@ -1,0 +1,106 @@
+{
+  "$schema": "https://raw.githubusercontent.com/JanDeDobbeleer/oh-my-posh/main/themes/schema.json",
+  "palette": {
+    "cat": "#CDD6F4",
+    "err": "#F38BA8",
+    "git": "#A6E3A1",
+    "node": "#89B4FA",
+    "ok": "#A6E3A1",
+    "path": "#89DCEB",
+    "python": "#F9E2AF",
+    "yarn": "#F5C2E7"
+  },
+  "blocks": [
+    {
+      "type": "prompt",
+      "alignment": "left",
+      "segments": [
+        {
+          "properties": {
+            "cache_duration": "none"
+          },
+          "template": "🐱 ",
+          "foreground": "p:cat",
+          "type": "text",
+          "style": "plain"
+        },
+        {
+          "properties": {
+            "cache_duration": "none",
+            "folder_separator_icon": "/",
+            "max_depth": 3,
+            "style": "agnoster_short"
+          },
+          "template": "{{ .Path }}",
+          "foreground": "p:path",
+          "type": "path",
+          "style": "plain"
+        },
+        {
+          "properties": {
+            "cache_duration": "none",
+            "fetch_status": true
+          },
+          "template": "  {{ .HEAD }}{{ if .Working.Changed }} ✎{{ end }}{{ if .Staging.Changed }} ●{{ end }}{{ if gt .Ahead 0 }} ⇡{{ end }}{{ if gt .Behind 0 }} ⇣{{ end }}",
+          "foreground": "p:git",
+          "type": "git",
+          "style": "plain"
+        },
+        {
+          "properties": {
+            "cache_duration": "none",
+            "display_mode": "context",
+            "fetch_virtual_env": true
+          },
+          "template": "  🐍 {{ .Full }}{{ if .Venv }} ({{ .Venv }}){{ end }}",
+          "foreground": "p:python",
+          "type": "python",
+          "style": "plain"
+        },
+        {
+          "properties": {
+            "cache_duration": "none",
+            "display_mode": "context"
+          },
+          "template": "  ⬢ {{ .Full }}",
+          "foreground": "p:node",
+          "type": "node",
+          "style": "plain"
+        },
+        {
+          "properties": {
+            "cache_duration": "none",
+            "display_mode": "context"
+          },
+          "template": "  🧶 {{ .Full }}",
+          "foreground": "p:yarn",
+          "type": "yarn",
+          "style": "plain"
+        }
+      ],
+      "newline": true
+    },
+    {
+      "type": "prompt",
+      "alignment": "left",
+      "segments": [
+        {
+          "properties": {
+            "cache_duration": "none",
+            "always_enabled": true
+          },
+          "template": "{{ if eq .Code 0 }}❯{{ else }}✗{{ end }} ",
+          "foreground": "p:err",
+          "type": "status",
+          "style": "plain",
+          "foreground_templates": [
+            "{{ if eq .Code 0 }}p:ok{{ end }}"
+          ]
+        }
+      ],
+      "newline": true
+    }
+  ],
+  "version": 3,
+  "final_space": true
+}
