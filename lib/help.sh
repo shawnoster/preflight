@@ -23,7 +23,7 @@ git-help
 
 op-help
   1Password CLI utilities: secrets management.
-  Commands: op-status, op-signin, op-load-env, op-clear-env
+  Commands: op-status, op-signin, op-load-env, op-env, op-clear-env
 
 pg-help
   PostgreSQL cluster control for manually-started clusters.
@@ -41,7 +41,8 @@ preflight                # Sign in, load secrets, verify environment
   preflight -u             # Same + check for tool updates
   preflight update         # Pull latest changes from upstream
   preflight uninstall      # Remove preflight and undo shell profile changes
-  preflight configure      # Apply recommended git/SSH settings interactively
+  preflight help           # Usage for preflight and its subcommands
+  preflight configure      # Git identity + recommended git/SSH settings
   preflight configure --yes # Apply all without prompting
   dev-commands             # List all available commands
 
@@ -50,6 +51,8 @@ Quick Reference:
 
 Load secrets:
   op-load-env              # Load secrets from 1Password
+  op-env add               # Add a VAR -> op:// ref to a set (guild, personal, ...)
+  op-env use               # Choose which sets load
 
 Switch AWS profile:
   awsp [profile]           # Interactive profile switcher or direct
@@ -129,6 +132,7 @@ gstash [ref]         Pop a stash (use --apply to keep in stash list)
 gsync [main]         Sync fork with upstream
 gunwip               Undo last WIP commit
 gwip [msg]           Quick work-in-progress commit
+op-env [cmd]         Manage env sets of 1Password refs (add/list/rm/use)
 op-clear-env         Clear all sensitive environment variables
 op-help              Show 1Password command help
 op-load-env          Load secrets from 1Password into env vars
@@ -143,6 +147,7 @@ preflight -v         Same with verbose section output
 preflight -u         Same + check for tool updates
 preflight update     Pull latest changes from upstream repo
 preflight uninstall  Remove preflight and undo shell profile changes
+preflight help       Usage for preflight
 preflight configure  Interactively apply recommended git/SSH settings
 preflight configure --yes  Apply all recommended settings without prompting
 proj [directory]     Jump to project directory

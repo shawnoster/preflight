@@ -112,7 +112,8 @@ source ~/.bashrc
 | `preflight -u` | Same + compare installed tools against latest stable versions, with an upgrade command matched to how each tool was installed |
 | `preflight update` | Pull latest changes from upstream repo |
 | `preflight uninstall` | Remove preflight and undo shell profile changes |
-| `preflight configure` | Interactively apply recommended settings (git globals, WSL SSH via 1Password, etc.) |
+| `preflight help` | Usage for preflight and its subcommands (also `-h`, `--help`) |
+| `preflight configure` | Interactively apply recommended settings (git identity if unset, git globals, WSL SSH via 1Password, etc.) |
 | `preflight configure --yes` | Apply all recommended settings without prompting |
 
 #### Tool update checks (`preflight -u`)
@@ -137,9 +138,13 @@ When something is behind, the suggested upgrade command is derived from **how th
 | `op-status` | Check if signed in to 1Password |
 | `op-signin [account]` | Sign in to 1Password |
 | `op-load-env` | Load all secrets from 1Password into env vars |
+| `op-env add [set] [VAR] [ref]` | Add a VAR → `op://` reference to a named set (`guild`, `personal`, ...); prompts for anything omitted |
+| `op-env list [set]` / `rm` / `use` | Show sets, remove a key, choose which sets are active (fzf pickers) |
 | `op-clear-env` | Clear all sensitive environment variables |
 
 **Secrets loaded by `op-load-env`:** `ANTHROPIC_API_KEY`, `ATLASSIAN_API_TOKEN`, `NPM_TOKEN`, `DATADOG_API_KEY`, `SONAR_TOKEN`, and more — configured per-install in `OP_SECRETS` (`config/accounts.sh`).
+
+**Env sets (`lib/envsets.sh`):** `op-env` keeps named groups of `VAR → op://` references in `config/envsets/<set>.tsv` (gitignored). Active sets are merged into `OP_SECRETS` by `op-load-env`/`op-clear-env`; names already in `OP_SECRETS` win.
 
 **Auth model:** the helpers resolve an `op` binary and **prefer the Windows `op.exe` under WSL**, so secret reads are authorized by the Windows 1Password desktop app (Windows Hello / desktop unlock) — no password typed in WSL. On native Linux/macOS they fall back to the platform `op` and the manual session-token sign-in. See [docs/wsl-1password-cli.md](./docs/wsl-1password-cli.md) for the full WSL setup.
 

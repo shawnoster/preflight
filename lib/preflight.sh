@@ -10,6 +10,7 @@
 #   preflight uninstall  - remove preflight and undo shell profile changes
 #   preflight configure        - interactively apply recommended settings (git globals, etc.)
 #   preflight configure --yes  - apply all without prompting
+#   preflight help       - show this usage (also -h / --help)
 
 preflight() {
   # Dispatch subcommands before doing anything else
@@ -17,6 +18,7 @@ preflight() {
     update)         _preflight_update;        return ;;
     uninstall)      _preflight_uninstall;     return ;;
     configure)      _preflight_configure "${@:2}";     return ;;
+    help|-h|--help) _preflight_help;          return ;;
   esac
 
   local check_updates=false
@@ -669,7 +671,7 @@ preflight() {
       if [[ -n "$(git config --global user.email)" ]]; then
         _pf_line "✅ Git user.email: $(git config --global user.email)"
       else
-        issue_msgs+=("Git user.email not set")
+        issue_msgs+=("Git user.email not set  →  preflight configure")
         _pf_line "⚠️  Git user.email not set"
         ((issues++))
       fi
@@ -677,7 +679,7 @@ preflight() {
       if [[ -n "$(git config --global user.name)" ]]; then
         _pf_line "✅ Git user.name: $(git config --global user.name)"
       else
-        issue_msgs+=("Git user.name not set")
+        issue_msgs+=("Git user.name not set  →  preflight configure")
         _pf_line "⚠️  Git user.name not set"
         ((issues++))
       fi
@@ -839,6 +841,31 @@ preflight() {
 # Idempotently store an HTTPS git credential in ~/.git-credentials and enable the
 # `store` helper scoped to that host (so a global credential.helper is untouched).
 # Args: host username token. Assumes the token contains no '@' (Gitea PATs don't).
+_preflight_help() {
+  cat <<'EOF'
+preflight — session startup and environment health check
+
+Usage:
+  preflight [-v] [-u] [--no-login]   Run the health check
+  preflight configure [--yes]        Apply recommended git/SSH settings
+                                     (sets git user.name/email if missing)
+  preflight update                   Pull latest changes from upstream
+  preflight uninstall                Remove preflight and shell profile changes
+  preflight help                     Show this help (also -h, --help)
+
+Options:
+  -v, --verbose   Show every check section
+  -u, --updates   Compare installed tools against latest stable versions
+  --no-login      Skip sign-in steps
+  --yes           (configure) Apply all without prompting
+
+Related:
+  op-env          Manage named env sets (guild, personal, ...) of 1Password refs
+  dev-help        All modules and commands
+  dev-commands    Flat command list
+EOF
+}
+
 _pf_write_git_credential() {
   local host="$1" user="$2" token="$3"
   local cred_file="$HOME/.git-credentials"
@@ -1073,6 +1100,44 @@ _preflight_configure() {
     fi
     echo ""
   }
+
+  echo "--- Git Identity ---"
+  echo ""
+  local _id_key _id_prompt _id_cur _id_val
+  for _id_key in user.name user.email; do
+    _id_cur=$(git config --global "$_id_key" 2>/dev/null || true)
+    if [[ -n "$_id_cur" ]]; then
+      echo "✅ $_id_key = $_id_cur (already set)"
+      ((kept++))
+      continue
+    fi
+    echo "⚠️  $_id_key not set — commits will fail or be attributed incorrectly"
+    if [[ "$auto" == true ]]; then
+      # --yes can't invent an identity; take it from the environment if present.
+      if [[ "$_id_key" == "user.name" ]]; then _id_val="${GIT_AUTHOR_NAME:-}"; else _id_val="${GIT_AUTHOR_EMAIL:-}"; fi
+      if [[ -n "$_id_val" ]]; then
+        git config --global "$_id_key" "$_id_val"
+        echo "   → Set $_id_key from environment: $_id_val"
+        ((applied++))
+      else
+        echo "   Skipped (--yes cannot choose a value). Run: git config --global $_id_key \"...\""
+        ((skipped++))
+      fi
+    else
+      [[ "$_id_key" == "user.name" ]] && _id_prompt="Full name" || _id_prompt="Email"
+      read -r -p "   $_id_prompt (Enter to skip): " _id_val
+      echo ""
+      if [[ -n "$_id_val" ]]; then
+        git config --global "$_id_key" "$_id_val"
+        echo "   ✅ Set $_id_key = $_id_val"
+        ((applied++))
+      else
+        echo "   Skipped."
+        ((skipped++))
+      fi
+    fi
+    echo ""
+  done
 
   echo "--- Fetch / Remote Hygiene ---"
   echo ""
