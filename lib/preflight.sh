@@ -249,11 +249,13 @@ preflight() {
     _pf_section "SSH"
     _pf_status "SSH: checking agent..."
 
-    # Detect WSL — prefer 1Password via ssh-add.exe, fall back to standard agent
+    # Detect WSL. With the agent bridge (SSH_AUTH_SOCK is a live socket) use the
+    # generic native-agent check below; otherwise fall back to the legacy ssh-add.exe
+    # interop check and point at `preflight configure`.
     local _is_wsl=false
     grep -qi microsoft /proc/version 2>/dev/null && _is_wsl=true
 
-    if [[ "$_is_wsl" == true ]]; then
+    if [[ "$_is_wsl" == true && ! -S "${SSH_AUTH_SOCK:-}" ]]; then
       # Resolve ssh-add.exe: try PATH first, fall back to canonical Windows path
       local _ssh_add_exe=""
       command -v ssh-add.exe &>/dev/null && _ssh_add_exe="ssh-add.exe"
@@ -262,11 +264,11 @@ preflight() {
 
       if [[ -n "$_ssh_add_exe" ]]; then
         local _agent_output _agent_exit _key_count
-        _agent_output=$("$_ssh_add_exe" -l 2>&1); _agent_exit=$?
+        _agent_output=$(timeout 10 "$_ssh_add_exe" -l 2>&1); _agent_exit=$?
         # Count lines that look like key fingerprints (SHA256: prefix)
         _key_count=$(echo "$_agent_output" | grep -c 'SHA256:' || true)
         if [[ $_agent_exit -ne 0 && $_key_count -eq 0 ]]; then
-          issue_msgs+=("1Password SSH agent unreachable — is 1Password running with SSH Agent enabled?")
+          issue_msgs+=("1Password SSH agent unreachable — run: preflight configure (sets up the agent bridge)")
           _pf_line "⚠️  1Password SSH agent unreachable"
           ((issues++))
         elif [[ "$_key_count" -gt 0 ]]; then
@@ -283,8 +285,21 @@ preflight() {
       fi
     elif [[ -n "$SSH_AUTH_SOCK" ]]; then
       _pf_line "✅ SSH_AUTH_SOCK is set: $SSH_AUTH_SOCK"
-      if ssh-add -l &>/dev/null; then
+      # Bounded: a locked or wedged 1Password makes ssh-add -l hang, and this must not
+      # block the whole preflight run. Running it under `timeout` also bypasses any
+      # ssh-add alias left over from the old ssh.exe setup.
+      timeout 10 ssh-add -l &>/dev/null; local _agent_rc=$?
+      if [[ $_agent_rc -eq 0 ]]; then
         _pf_line "✅ SSH agent has keys loaded"
+      elif [[ $_agent_rc -eq 124 && "$_is_wsl" == true ]]; then
+        issue_msgs+=("1Password SSH agent bridge timed out — is 1Password locked? Unlock it, then retry")
+        _pf_line "⚠️  SSH agent bridge timed out after 10s (1Password locked or unresponsive?)"
+        ((issues++))
+      elif [[ "$_is_wsl" == true ]]; then
+        # On WSL this socket is the 1Password bridge, so a failure is a real problem.
+        issue_msgs+=("1Password SSH agent bridge returned no keys — unlock 1Password, or run: preflight configure")
+        _pf_line "⚠️  SSH agent bridge returned no keys (ssh-add exit $_agent_rc)"
+        ((issues++))
       else
         _pf_line "⚠️  SSH agent running but no keys loaded"
       fi
@@ -1272,10 +1287,10 @@ GITIGNORE
         read -r -p "   Select default profile (or Enter to skip): " chosen_profile
         echo ""
         if [[ -n "$chosen_profile" ]]; then
-          if echo "$profiles" | grep -qF "$chosen_profile"; then
+          if echo "$profiles" | grep -qxF "$chosen_profile"; then
             local accounts_file="${PREFLIGHT_DIR:-$HOME/.preflight}/config/accounts.sh"
-            if grep -q 'AWS_PROFILE_DEFAULT' "$accounts_file" 2>/dev/null; then
-              sed -i "s|.*AWS_PROFILE_DEFAULT.*|export AWS_PROFILE_DEFAULT=\"$chosen_profile\"|" "$accounts_file"
+            if grep -q '^export AWS_PROFILE_DEFAULT=' "$accounts_file" 2>/dev/null; then
+              sed -i "s|^export AWS_PROFILE_DEFAULT=.*|export AWS_PROFILE_DEFAULT=\"$chosen_profile\"|" "$accounts_file"
             else
               printf '\n# Default AWS profile\nexport AWS_PROFILE_DEFAULT="%s"\n' "$chosen_profile" >> "$accounts_file"
             fi
@@ -1295,174 +1310,316 @@ GITIGNORE
     fi
   fi
 
-  # ── WSL SSH (1Password) ───────────────────────────────────────────────────
+  # ── WSL SSH (1Password agent bridge) ──────────────────────────────────────
+  #
+  # Native Linux ssh/git get a real Unix socket (~/.1password/agent.sock) that a
+  # systemd user socket relays to 1Password's Windows named pipe via npiperelay.
+  # Unlike aliasing ssh.exe, scripts, hooks, scp and rsync get the agent too, and
+  # the WSL ~/.ssh/config and known_hosts are honoured. See docs/wsl-ssh-setup.md.
 
   local _is_wsl=false
   grep -qi microsoft /proc/version 2>/dev/null && _is_wsl=true
 
   if [[ "$_is_wsl" == true ]]; then
-    echo "--- WSL SSH (1Password) ---"
+    echo "--- WSL SSH (1Password agent bridge) ---"
     echo ""
 
-    local _win_user _win_ssh_conf _win_ssh_dir
-    # Use full path to cmd.exe — PATH may not include Windows binaries (appendWindowsPath=false)
-    _win_user=$(/mnt/c/Windows/System32/cmd.exe /c "echo %USERNAME%" 2>/dev/null | tr -d '\r\n')
-    _win_ssh_dir="/mnt/c/Users/${_win_user}/.ssh"
-    _win_ssh_conf="${_win_ssh_dir}/config"
-
-    local _ssh_exe="/mnt/c/Windows/System32/OpenSSH/ssh.exe"
-    local _prereqs_ok=true
-
-    # Resolve ssh-add.exe once — use it consistently for both the existence
-    # check and the key-listing call so PATH vs hardcoded path are never mixed
-    local _cfg_ssh_add_exe=""
-    command -v ssh-add.exe &>/dev/null && _cfg_ssh_add_exe=$(command -v ssh-add.exe)
-    [[ -z "$_cfg_ssh_add_exe" && -f "/mnt/c/Windows/System32/OpenSSH/ssh-add.exe" ]] && \
-      _cfg_ssh_add_exe="/mnt/c/Windows/System32/OpenSSH/ssh-add.exe"
-
-    # Check 1Password SSH agent is reachable
-    if [[ -z "$_cfg_ssh_add_exe" ]]; then
-      echo "⚠️  ssh-add.exe not found — Windows OpenSSH or WSL interop may be disabled"
-      echo "   See: ${PREFLIGHT_DIR:-$HOME/.preflight}/docs/wsl-ssh-setup.md"
+    # Ask-or-auto helper: returns 0 to apply. Usage: _pf_yes
+    _pf_yes() {
+      [[ "$auto" == true ]] && return 0
+      local r
+      printf "   Apply? [Y/n] "
+      # A failed read (end of input, or no terminal) is a decline, never consent.
+      read -r r || { echo ""; return 1; }
       echo ""
-      _prereqs_ok=false
-    else
-      local _agent_output _agent_exit _key_count
-      _agent_output=$("$_cfg_ssh_add_exe" -l 2>&1); _agent_exit=$?
-      _key_count=$(echo "$_agent_output" | grep -c 'SHA256:' || true)
-      if [[ $_agent_exit -ne 0 && $_key_count -eq 0 ]]; then
-        echo "⚠️  1Password SSH agent unreachable — is 1Password running with SSH Agent enabled?"
-        echo "   See: ${PREFLIGHT_DIR:-$HOME/.preflight}/docs/wsl-ssh-setup.md"
-        echo ""
-        _prereqs_ok=false
-      elif [[ "$_key_count" -eq 0 ]]; then
-        echo "⚠️  1Password SSH agent has no keys loaded"
-        echo "   Make sure 1Password is unlocked and SSH Agent is enabled:"
-        echo "   See: ${PREFLIGHT_DIR:-$HOME/.preflight}/docs/wsl-ssh-setup.md"
-        echo ""
-        _prereqs_ok=false
-      else
-        echo "✅ 1Password SSH agent active ($_key_count key(s))"
-        echo ""
+      [[ -z "$r" || "$r" =~ ^[Yy]$ ]]
+    }
+
+    # Pinned for reproducibility; override with NPIPERELAY_VERSION. The release's
+    # checksums file lives on the same host as the binary, so it only catches a
+    # corrupt download. For the default version we also pin the expected hash here
+    # so a tampered release asset is rejected too.
+    local _npr_ver="${NPIPERELAY_VERSION:-v1.12.1}"
+    local _npr_pin=""
+    [[ "$_npr_ver" == "v1.12.1" ]] && _npr_pin="dbb448aea38835a65e2e10d83e2dd770a8e4dfa5f43b5669d7551a3125445ca4"
+    local _npr_bin="$HOME/.local/bin/npiperelay.exe"
+    local _unit_dir="$HOME/.config/systemd/user"
+    local _sock="$HOME/.1password/agent.sock"
+    local _bridge_ok=true
+
+    # 0. Prerequisites: systemd in WSL. Needs a wsl --shutdown, so we can't do it.
+    if [[ ! -d /run/systemd/system ]] || ! systemctl --user show-environment &>/dev/null; then
+      echo "⚠️  systemd is not running in this WSL distro (needed for the agent bridge)"
+      echo "   Add to /etc/wsl.conf:   [boot]  systemd=true"
+      echo "   Then run in PowerShell: wsl --shutdown   and re-run: preflight configure"
+      echo "   (Fallback without systemd: see docs/wsl-ssh-setup.md)"
+      echo ""
+      _bridge_ok=false
+    fi
+
+    # npiperelay.exe is a Windows program, so the bridge only works while WSL interop
+    # is enabled (a [interop] enabled=false in /etc/wsl.conf unregisters the handler).
+    # Read each handler file on its own: with several files, grep exits 2 if any is missing.
+    local _interop_on=false _f
+    for _f in /proc/sys/fs/binfmt_misc/WSLInterop /proc/sys/fs/binfmt_misc/WSLInterop-late; do
+      [[ "$(head -1 "$_f" 2>/dev/null)" == enabled ]] && { _interop_on=true; break; }
+    done
+    if [[ "$_bridge_ok" == true && "$_interop_on" != true ]]; then
+      echo "⚠️  WSL interop is disabled (needed to run npiperelay.exe)"
+      echo "   Set in /etc/wsl.conf:   [interop]  enabled=true"
+      echo "   Then run in PowerShell: wsl --shutdown   and re-run: preflight configure"
+      echo ""
+      _bridge_ok=false
+    fi
+
+    # 1. npiperelay (albertony fork — upstream jstarks is frozen at 0.1.0)
+    if [[ "$_bridge_ok" == true ]]; then
+      if [[ -x "$_npr_bin" ]]; then
+        echo "✅ npiperelay.exe installed ($_npr_bin)"
         ((kept++))
+      else
+        echo "💡 npiperelay.exe not installed"
+        echo "   Installs albertony/npiperelay $_npr_ver to $_npr_bin (checksum verified)"
+        if _pf_yes; then
+          local _base="https://github.com/albertony/npiperelay/releases/download/$_npr_ver"
+          local _tmp _want _got
+          _tmp=$(mktemp) || _tmp=""
+          if [[ -n "$_tmp" ]] \
+             && curl -fsSL -o "$_tmp" "$_base/npiperelay_windows_amd64.exe" \
+             && _want=$(curl -fsSL "$_base/npiperelay_checksums.txt" | awk '/npiperelay_windows_amd64.exe$/ {print $1}') \
+             && _got=$(sha256sum "$_tmp" | awk '{print $1}') \
+             && [[ -n "$_want" && "$_want" == "$_got" ]] \
+             && [[ -z "$_npr_pin" || "$_npr_pin" == "$_got" ]]; then
+            if mkdir -p "$HOME/.local/bin" && install -m 0755 "$_tmp" "$_npr_bin"; then
+              echo "   ✅ Installed (sha256 $_got)"
+              ((applied++))
+            else
+              echo "   ❌ Could not install to $_npr_bin — not installed"
+              _bridge_ok=false
+              ((skipped++))
+            fi
+          else
+            echo "   ❌ Download or checksum verification failed — not installed"
+            _bridge_ok=false
+            ((skipped++))
+          fi
+          [[ -n "$_tmp" ]] && rm -f "$_tmp"
+        else
+          echo "   Skipped."; ((skipped++)); _bridge_ok=false
+        fi
+        echo ""
       fi
     fi
 
-    if [[ "$_prereqs_ok" == true ]]; then
-
-      # 1. ~/.bashrc — ssh/ssh-add aliases + SSH_AUTH_SOCK
-      local _bashrc="$HOME/.bashrc"
-      if grep -q '# 1Password SSH agent via WSL interop' "$_bashrc" 2>/dev/null; then
-        echo "✅ ~/.bashrc ssh aliases already configured"
+    # 2. systemd units
+    if [[ "$_bridge_ok" == true ]]; then
+      local _want_sock _want_svc
+      _want_sock=$'[Unit]\nDescription=1Password SSH agent bridge (Windows named pipe -> WSL unix socket)\n\n[Socket]\nListenStream=%h/.1password/agent.sock\nSocketMode=0600\nAccept=yes\nRemoveOnStop=yes\n\n[Install]\nWantedBy=sockets.target\n'
+      # -ei: exit when the ssh client closes (no leaked relays). -s: send a 0-byte
+      # message at EOF. Never -p: 1Password serves one pipe instance, so polling
+      # loops forever and orphans a process per SSH operation.
+      _want_svc=$'[Unit]\nDescription=1Password SSH agent bridge connection %i\nRequires=1password-agent.socket\n\n[Service]\nType=simple\nExecStart=%h/.local/bin/npiperelay.exe -ei -s //./pipe/openssh-ssh-agent\nStandardInput=socket\nStandardOutput=socket\nStandardError=journal\n'
+      if [[ "$(cat "$_unit_dir/1password-agent.socket" 2>/dev/null)" == "${_want_sock%$'\n'}" \
+         && "$(cat "$_unit_dir/1password-agent@.service" 2>/dev/null)" == "${_want_svc%$'\n'}" ]]; then
+        echo "✅ systemd units present (1password-agent.socket, 1password-agent@.service)"
         ((kept++))
       else
-        echo "💡 ~/.bashrc missing ssh.exe aliases and SSH_AUTH_SOCK"
-        echo "   Adds: alias ssh (full path), alias ssh-add (full path), SSH_AUTH_SOCK"
-        local _ssh_full='/mnt/c/Windows/System32/OpenSSH/ssh.exe'
-        local _sshadd_full='/mnt/c/Windows/System32/OpenSSH/ssh-add.exe'
-        if [[ "$auto" == true ]]; then
-          printf '\n# 1Password SSH agent via WSL interop\nexport SSH_AUTH_SOCK=$HOME/.1password/agent.sock\nalias ssh='"'"'%s'"'"'\nalias ssh-add='"'"'%s'"'"'\n' "$_ssh_full" "$_sshadd_full" >> "$_bashrc"
-          echo "   → Added to ~/.bashrc (reload shell to apply: source ~/.bashrc)"
+        echo "💡 systemd units missing or different"
+        echo "   Writes 1password-agent.socket and 1password-agent@.service to $_unit_dir"
+        if _pf_yes; then
+          mkdir -p "$_unit_dir"
+          printf '%s' "$_want_sock" > "$_unit_dir/1password-agent.socket"
+          printf '%s' "$_want_svc"  > "$_unit_dir/1password-agent@.service"
+          systemctl --user daemon-reload
+          # daemon-reload does not change a running listener, so apply the new unit now.
+          systemctl --user is-active --quiet 1password-agent.socket \
+            && systemctl --user restart 1password-agent.socket
+          echo "   ✅ Written"
           ((applied++))
         else
-          read -r -p "   Apply? [Y/n] " reply; echo ""
-          if [[ -z "$reply" || "$reply" =~ ^[Yy]$ ]]; then
-            printf '\n# 1Password SSH agent via WSL interop\nexport SSH_AUTH_SOCK=$HOME/.1password/agent.sock\nalias ssh='"'"'%s'"'"'\nalias ssh-add='"'"'%s'"'"'\n' "$_ssh_full" "$_sshadd_full" >> "$_bashrc"
-            echo "   ✅ Added to ~/.bashrc (reload shell to apply: source ~/.bashrc)"
-            ((applied++))
-          else
-            echo "   Skipped."; ((skipped++))
-          fi
+          echo "   Skipped."; ((skipped++)); _bridge_ok=false
         fi
+        echo ""
       fi
-      echo ""
+    fi
 
-      # 2. git core.sshCommand
-      local _cur_ssh_cmd
-      _cur_ssh_cmd=$(git config --global core.sshCommand 2>/dev/null || true)
-      if [[ "$_cur_ssh_cmd" == *"ssh.exe"* ]]; then
-        echo "✅ git core.sshCommand = $_cur_ssh_cmd"
+    # 3. enable the socket
+    if [[ "$_bridge_ok" == true ]]; then
+      if systemctl --user is-active --quiet 1password-agent.socket \
+         && systemctl --user is-enabled --quiet 1password-agent.socket; then
+        echo "✅ 1password-agent.socket active and enabled"
         ((kept++))
       else
-        echo "💡 git core.sshCommand not set to ssh.exe"
-        echo "   Recommended: $_ssh_exe"
-        if [[ "$auto" == true ]]; then
-          git config --global core.sshCommand "$_ssh_exe"
-          echo "   → Set git core.sshCommand"
-          ((applied++))
+        echo "💡 1password-agent.socket not active/enabled"
+        if _pf_yes; then
+          mkdir -p "$HOME/.1password" && chmod 700 "$HOME/.1password"
+          if systemctl --user enable --now 1password-agent.socket 2>/dev/null; then
+            echo "   ✅ Enabled and started"
+            ((applied++))
+          else
+            echo "   ❌ systemctl enable failed — check: systemctl --user status 1password-agent.socket"
+            _bridge_ok=false
+            ((skipped++))
+          fi
         else
-          read -r -p "   Apply? [Y/n] " reply; echo ""
-          if [[ -z "$reply" || "$reply" =~ ^[Yy]$ ]]; then
-            git config --global core.sshCommand "$_ssh_exe"
-            echo "   ✅ Set git core.sshCommand = $_ssh_exe"
-            ((applied++))
-          else
-            echo "   Skipped."; ((skipped++))
-          fi
+          # An active but not enabled socket works now and vanishes on restart, so it
+          # must not count as a bridge worth migrating to.
+          echo "   Skipped. The bridge stays unverified until the socket is enabled."
+          ((skipped++)); _bridge_ok=false
         fi
+        echo ""
+      fi
+    fi
+
+    # Verify the bridge before touching shell/ssh config or removing the old
+    # fallback: only a bridge that returns keys may replace what works today.
+    # (Listing keys needs no approval; signing does.)
+    local _bridge_verified=false _n=0
+    if [[ "$_bridge_ok" == true && -S "$_sock" ]]; then
+      _n=$(SSH_AUTH_SOCK="$_sock" timeout 15 /usr/bin/ssh-add -l 2>/dev/null | grep -c 'SHA256:' || true)
+      [[ "$_n" -gt 0 ]] && _bridge_verified=true
+    fi
+    if [[ "$_bridge_verified" != true ]]; then
+      echo "ℹ️  Bridge not verified yet, so ~/.profile, ~/.ssh/config and the old ssh.exe aliases are left alone."
+      echo "   Fix the problem above, or unlock 1Password with 'Use the SSH agent' on, then re-run: preflight configure"
+      echo ""
+    fi
+
+    # 4. SSH_AUTH_SOCK in ~/.profile (environment, not interactive config: .bashrc
+    #    is skipped by hooks, cron and scripts, which then get no agent)
+    if [[ "$_bridge_verified" != true ]]; then
+      :  # skipped: see the note above
+    elif grep -qE '^[[:space:]]*(export[[:space:]]+)?SSH_AUTH_SOCK=.*\.1password/agent\.sock' "$HOME/.profile" 2>/dev/null; then
+      echo "✅ ~/.profile exports SSH_AUTH_SOCK"
+      ((kept++))
+    else
+      echo "💡 ~/.profile does not export SSH_AUTH_SOCK"
+      if _pf_yes; then
+        printf '\n# 1Password SSH agent (bridged from Windows via systemd socket + npiperelay)\nexport SSH_AUTH_SOCK="$HOME/.1password/agent.sock"\n' >> "$HOME/.profile"
+        echo "   ✅ Added to ~/.profile (takes effect on next login shell)"
+        ((applied++))
+      else
+        echo "   Skipped."; ((skipped++))
       fi
       echo ""
+    fi
 
-      # 3. ~/.ssh/config (Linux)
-      local _linux_ssh_conf="$HOME/.ssh/config"
-      if grep -qF '/.1password/agent.sock' "$_linux_ssh_conf" 2>/dev/null; then
-        echo "✅ ~/.ssh/config already has 1Password IdentityAgent"
-        ((kept++))
+    # 5. ~/.ssh/config IdentityAgent
+    local _linux_ssh_conf="$HOME/.ssh/config"
+    # True when the file has an active IdentityAgent for the 1Password socket that
+    # applies to every host: before any Host/Match line, or inside `Host *`. A comment
+    # or a host-specific block does not count.
+    _pf_ssh_global_agent() {
+      awk '
+        BEGIN { g = 1 }
+        /^[[:space:]]*#/ { next }
+        tolower($1) == "host"  { g = (NF == 2 && $2 == "*"); next }
+        tolower($1) == "match" { g = 0; next }
+        g && tolower($0) ~ /^[[:space:]]*identityagent[[:space:]=]/ && $0 ~ /1password\/agent\.sock/ { found = 1 }
+        END { exit !found }
+      ' "$1" 2>/dev/null
+    }
+    if [[ "$_bridge_verified" != true ]]; then
+      :  # skipped: see the note above
+    elif _pf_ssh_global_agent "$_linux_ssh_conf"; then
+      echo "✅ ~/.ssh/config has 1Password IdentityAgent"
+      ((kept++))
+    else
+      echo "💡 ~/.ssh/config missing IdentityAgent entry (Host * IdentityAgent ~/.1password/agent.sock)"
+      if _pf_yes; then
+        mkdir -p "$HOME/.ssh" && chmod 700 "$HOME/.ssh"
+        printf '\nHost *\n  IdentityAgent "~/.1password/agent.sock"\n' >> "$_linux_ssh_conf"
+        chmod 600 "$_linux_ssh_conf"
+        echo "   ✅ Written to ~/.ssh/config"
+        ((applied++))
       else
-        echo "💡 ~/.ssh/config missing IdentityAgent entry"
-        echo "   Adds: Host * IdentityAgent ~/.1password/agent.sock"
-        if [[ "$auto" == true ]]; then
+        echo "   Skipped."; ((skipped++))
+      fi
+      echo ""
+    fi
+
+    # 6. GitHub host keys. Native ssh reads the WSL known_hosts, not Windows's, so
+    #    the first connection fails host-key verification. Take the keys from
+    #    GitHub's published API rather than trusting whatever answers a keyscan.
+    if ssh-keygen -F github.com -f "$HOME/.ssh/known_hosts" &>/dev/null; then
+      echo "✅ github.com in ~/.ssh/known_hosts"
+      ((kept++))
+    elif command -v gh &>/dev/null; then
+      echo "💡 github.com not in ~/.ssh/known_hosts (native ssh would fail host-key verification)"
+      echo "   Adds GitHub's published host keys (from 'gh api meta')"
+      if _pf_yes; then
+        local _hk
+        if _hk=$(gh api meta --jq '.ssh_keys[]' 2>/dev/null) && [[ -n "$_hk" ]]; then
           mkdir -p "$HOME/.ssh" && chmod 700 "$HOME/.ssh"
-          printf '\nHost *\n  IdentityAgent "~/.1password/agent.sock"\n' >> "$_linux_ssh_conf"
-          chmod 600 "$_linux_ssh_conf"
-          echo "   → Written to ~/.ssh/config"
+          printf '%s\n' "$_hk" | sed 's/^/github.com /' >> "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+          echo "   ✅ Added"
           ((applied++))
         else
-          read -r -p "   Apply? [Y/n] " reply; echo ""
-          if [[ -z "$reply" || "$reply" =~ ^[Yy]$ ]]; then
-            mkdir -p "$HOME/.ssh" && chmod 700 "$HOME/.ssh"
-            printf '\nHost *\n  IdentityAgent "~/.1password/agent.sock"\n' >> "$_linux_ssh_conf"
-            chmod 600 "$_linux_ssh_conf"
-            echo "   ✅ Written to ~/.ssh/config"
-            ((applied++))
-          else
-            echo "   Skipped."; ((skipped++))
-          fi
-        fi
-      fi
-      echo ""
-
-      # 4. Windows %USERPROFILE%\.ssh\config
-      if [[ -n "$_win_user" ]] && grep -qF 'pipe\openssh-ssh-agent' "$_win_ssh_conf" 2>/dev/null; then
-        echo "✅ Windows ~/.ssh/config already has 1Password pipe"
-        ((kept++))
-      elif [[ -n "$_win_user" ]]; then
-        echo "💡 Windows %USERPROFILE%\\.ssh\\config missing 1Password agent pipe"
-        echo "   Path: $_win_ssh_conf"
-        echo "   Adds: Host * IdentityAgent \\\\.\\pipe\\openssh-ssh-agent"
-        if [[ "$auto" == true ]]; then
-          mkdir -p "$_win_ssh_dir"
-          printf '\nHost *\n  IdentityAgent "\\\\.\\pipe\\openssh-ssh-agent"\n' >> "$_win_ssh_conf"
-          echo "   → Written to $_win_ssh_conf"
-          ((applied++))
-        else
-          read -r -p "   Apply? [Y/n] " reply; echo ""
-          if [[ -z "$reply" || "$reply" =~ ^[Yy]$ ]]; then
-            mkdir -p "$_win_ssh_dir"
-            printf '\nHost *\n  IdentityAgent "\\\\.\\pipe\\openssh-ssh-agent"\n' >> "$_win_ssh_conf"
-            echo "   ✅ Written to $_win_ssh_conf"
-            ((applied++))
-          else
-            echo "   Skipped."; ((skipped++))
-          fi
+          echo "   ❌ 'gh api meta' failed (is gh authenticated?) — skipped"
+          ((skipped++))
         fi
       else
-        echo "ℹ️  Could not detect Windows username — skipping Windows SSH config"
-        echo "   Run manually: see ${PREFLIGHT_DIR:-$HOME/.preflight}/docs/wsl-ssh-setup.md"
+        echo "   Skipped."; ((skipped++))
       fi
       echo ""
+    fi
 
-    fi # _prereqs_ok
+    # 7. Migrate away from the old ssh.exe interop approach, but only once the
+    #    bridge is verified: until then those aliases are what makes SSH work.
+    local _bashrc="$HOME/.bashrc" _cur_ssh_cmd
+    if [[ "$_bridge_verified" == true ]]; then
+    if grep -qE "^alias ssh(-add)?='/mnt/c/Windows/System32/OpenSSH/|^# 1Password SSH agent via WSL interop" "$_bashrc" 2>/dev/null; then
+      echo "💡 ~/.bashrc has the old ssh.exe aliases / SSH_AUTH_SOCK block (they shadow the native agent)"
+      echo "   Removes them (backup: ~/.bashrc.preflight-bak)"
+      if _pf_yes; then
+        cp "$_bashrc" "$HOME/.bashrc.preflight-bak"
+        sed -i -E "/^# 1Password SSH agent via WSL interop\$/d; /^export SSH_AUTH_SOCK=\\\$HOME\/\.1password\/agent\.sock\$/d; /^alias ssh(-add)?='\/mnt\/c\/Windows\/System32\/OpenSSH\/ssh(-add)?\.exe'\$/d" "$_bashrc"
+        echo "   ✅ Removed (open a new terminal to drop the aliases)"
+        ((applied++))
+      else
+        echo "   Skipped."; ((skipped++))
+      fi
+      echo ""
+    fi
+    _cur_ssh_cmd=$(git config --global core.sshCommand 2>/dev/null || true)
+    if [[ "$_cur_ssh_cmd" == *ssh.exe* ]]; then
+      echo "💡 git core.sshCommand = $_cur_ssh_cmd (uses the Windows ssh, bypassing the native agent and ~/.ssh/config)"
+      echo "   Unsets it"
+      if _pf_yes; then
+        git config --global --unset core.sshCommand
+        echo "   ✅ Unset"
+        ((applied++))
+      else
+        echo "   Skipped."; ((skipped++))
+      fi
+      echo ""
+    fi
+
+    fi # _bridge_verified
+
+    # 8. 1Password CLI: prefer the Windows op.exe (desktop-app approval, no WSL
+    #    install). Windows PATH is often not appended, so use the resolver.
+    unset OP_BIN
+    if declare -F _op_resolve_bin &>/dev/null && _op_resolve_bin && [[ "$OP_BIN" == *op.exe ]]; then
+      echo "✅ 1Password CLI: $OP_BIN"
+      ((kept++))
+    elif [[ -n "${OP_BIN:-}" ]]; then
+      echo "ℹ️  1Password CLI: native $OP_BIN (op.exe preferred: winget install AgileBits.1Password.CLI)"
+    else
+      echo "💡 1Password CLI not found. In PowerShell: winget install AgileBits.1Password.CLI"
+      echo "   Then enable Settings → Developer → 'Integrate with 1Password CLI'"
+    fi
+    echo ""
+
+    # 9. Summary
+    if [[ "$_bridge_verified" == true ]]; then
+      echo "✅ Agent bridge working: $_n key(s) via $_sock"
+      echo "   Signing needs an approval click in 1Password on Windows: ssh -T git@github.com"
+      echo ""
+    fi
+
+    unset -f _pf_yes _pf_ssh_global_agent
   fi # _is_wsl
 
   printf "  \033[38;2;${OWL_SUB:-120;130;150}m%s\033[0m\n" "$(printf '%0.s-' {1..33})"

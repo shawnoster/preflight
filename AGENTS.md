@@ -51,7 +51,7 @@ Read this repo when working on:
 
 - **Developer onboarding shell setup** — `init.sh` and `bashrc-snippet.sh` show exactly what to add to dotfiles; `install.sh` is the one-line curl installer
 - **AWS SSO profile workflow issues** — `lib/aws.sh` has the profile switching and SSO login flow; `AWS_PROFILE_DEFAULT` in `config/accounts.sh` sets the session default
-- **WSL SSH setup with 1Password** — `docs/wsl-ssh-setup.md` covers prerequisites; `preflight configure` automates the WSL-side steps
+- **WSL SSH setup with 1Password** — `docs/wsl-ssh-setup.md` covers prerequisites; `preflight configure` installs the systemd + npiperelay agent bridge and migrates off the old `ssh.exe` aliases
 - **Adding new shell utilities for all engineers** — add a new `lib/<domain>.sh` file
 - **1Password CLI integration for secrets** — `lib/1password.sh.template` has the sign-in flow for WSL/headless environments
 - **Shell MOTD or theme customization** — `lib/owl.sh` has the theme engine and splash; `config/owl.sh.template` controls `OWL_OMP_CONFIG` and `OWL_THEME_DIR`

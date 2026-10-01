@@ -113,7 +113,7 @@ source ~/.bashrc
 | `preflight update` | Pull latest changes from upstream repo |
 | `preflight uninstall` | Remove preflight and undo shell profile changes |
 | `preflight help` | Usage for preflight and its subcommands (also `-h`, `--help`) |
-| `preflight configure` | Interactively apply recommended settings (git globals, WSL SSH via 1Password, etc.) |
+| `preflight configure` | Interactively apply recommended settings (git identity if unset, git globals and, on WSL, the 1Password SSH agent bridge described in [docs/wsl-ssh-setup.md](./docs/wsl-ssh-setup.md)) |
 | `preflight configure --yes` | Apply all recommended settings without prompting |
 
 #### Tool update checks (`preflight -u`)

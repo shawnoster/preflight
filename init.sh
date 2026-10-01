@@ -14,6 +14,14 @@ case ":$PATH:" in
   *) PATH="$PREFLIGHT_DIR/bin:$PATH" ;;
 esac
 
+# Point SSH at the 1Password agent bridge when it exists (docs/wsl-ssh-setup.md).
+# ~/.profile covers login shells and scripts, but zsh and non-login Bash never read
+# it, so interactive shells that source this file get the export here. An agent
+# that something else already configured is left alone.
+if [[ -z "${SSH_AUTH_SOCK:-}" && -S "$HOME/.1password/agent.sock" ]]; then
+  export SSH_AUTH_SOCK="$HOME/.1password/agent.sock"
+fi
+
 # ── First-time setup: pick a profile if config doesn't exist ────────────────
 
 if [[ ! -f "$PREFLIGHT_DIR/config/accounts.sh" ]]; then
