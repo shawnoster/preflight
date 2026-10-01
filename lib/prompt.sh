@@ -10,8 +10,10 @@
 #   -s  do not echo the input (passwords). The caller prints the newline, as with `read -s`.
 #   -k  read a single key instead of a line (Bash `-n 1`, zsh `-k 1`). The caller prints
 #       the newline, as with `read -n 1`.
-# Returns non-zero when no answer could be read (end of input, or no terminal). A caller
-# whose empty answer means "yes" must treat that as a decline:
+# Returns non-zero when no answer could be read (end of input, or no terminal), and then
+# sets VAR to the empty string rather than leaving whatever it held before: a stale "y"
+# must never approve the next confirmation. A caller whose empty answer means "yes" must
+# still treat the failure as a decline:
 #   _pf_ask reply "Apply? [Y/n] " || reply=n
 _pf_ask() {
   local __silent=0 __key=0
@@ -22,19 +24,23 @@ _pf_ask() {
     esac
     shift
   done
-  local __var="$1" __prompt="$2" __ans=""
+  local __var="$1" __prompt="$2" __ans="" __rc=0
   printf '%s' "$__prompt" >&2
   if [[ $__key -eq 1 ]]; then
     if [[ -n "${ZSH_VERSION:-}" ]]; then
-      IFS= read -r -k 1 __ans || return 1
+      IFS= read -r -k 1 __ans || __rc=1
     else
-      IFS= read -r -n 1 __ans || return 1
+      IFS= read -r -n 1 __ans || __rc=1
     fi
   elif [[ $__silent -eq 1 ]]; then
-    IFS= read -r -s __ans || return 1
+    IFS= read -r -s __ans || __rc=1
   else
-    IFS= read -r __ans || return 1
+    IFS= read -r __ans || __rc=1
   fi
+  # A failed read can still have filled __ans with a final line that had no newline.
+  # That is not an answer a person gave, so discard it.
+  [[ $__rc -eq 0 ]] || __ans=""
   # eval assigns to the caller's variable by name; the value is never re-expanded.
   eval "$__var=\$__ans"
+  return $__rc
 }
