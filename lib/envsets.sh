@@ -157,7 +157,7 @@ _op_env_use() {
     if command -v fzf &>/dev/null; then
       mapfile -t chosen < <(_op_envsets_names | fzf -m --prompt="Active sets (Tab to multi-select): " --height=40% --reverse)
     else
-      read -r -p "  Sets to activate (space-separated; have: $(_op_envsets_names | tr '\n' ' ')): " -a chosen </dev/tty
+      read -r -p "  Sets to activate (space-separated, available: $(_op_envsets_names | tr '\n' ' ')): " -a chosen </dev/tty
     fi
   fi
   [[ ${#chosen[@]} -gt 0 ]] || { echo "No change."; return 0; }
@@ -171,7 +171,7 @@ _op_env_use() {
 
 _op_env_help() {
   cat <<'EOF'
-op-env — named env sets backed by 1Password references
+op-env manages named env sets backed by 1Password references.
 
   op-env add [set] [VAR] [op://ref]   Add or update a key (prompts for the rest)
   op-env list [set]                   Show sets and keys (● active, ○ inactive)

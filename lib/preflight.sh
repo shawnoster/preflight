@@ -843,7 +843,7 @@ preflight() {
 # Args: host username token. Assumes the token contains no '@' (Gitea PATs don't).
 _preflight_help() {
   cat <<'EOF'
-preflight — session startup and environment health check
+preflight starts a session and checks the health of your environment.
 
 Usage:
   preflight [-v] [-u] [--no-login]   Run the health check
