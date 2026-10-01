@@ -170,7 +170,7 @@ _op_env_rm() {
   awk -F'\t' -v n="$name" '$1 != n' "$file" > "$tmp" && chmod 600 "$tmp" && mv "$tmp" "$file" \
     || { rm -f "$tmp"; return 1; }
   echo "🗑️  Removed $name from $set"
-  echo "   It stays set in this shell until you run op-clear-env or: unset $name"
+  echo "   It is unset on the next op-load-env or op-clear-env, or now with: unset $name"
 }
 
 _op_env_use() {
@@ -222,22 +222,13 @@ op-env() {
 # Entries a previous merge added to OP_SECRETS, so the next merge can drop them.
 declare -p _OP_ENVSETS_INJECTED &>/dev/null || _OP_ENVSETS_INJECTED=()
 
-# Every variable name an env set has supplied in this shell. Unlike the list above
-# it is never pruned, so op-clear-env can still clear keys that were removed or
-# whose set was deactivated after they were loaded.
-declare -p _OP_ENVSETS_SEEN &>/dev/null || _OP_ENVSETS_SEEN=()
-
-_op_envsets_unset_seen() {
-  local n
-  for n in "${_OP_ENVSETS_SEEN[@]}"; do unset "$n"; done
-}
-
 # Rebuild OP_SECRETS to include the active sets' entries (names already supplied
 # by the base list win), so op-load-env and op-clear-env treat them like any other
 # secret. Safe to call repeatedly: entries from a previous merge are removed first,
-# so removed keys and deactivated sets don't linger in the array.
+# and any variable that merge supplied but this one no longer does (key removed,
+# set deactivated) is unset, so a stale secret can't outlive its definition.
 _op_envsets_merge() {
-  local set file name ref existing injected entry dup keep=()
+  local set file name ref existing injected entry dup old_names=() n keep=()
   for existing in "${OP_SECRETS[@]}"; do
     dup=0
     for injected in "${_OP_ENVSETS_INJECTED[@]}"; do
@@ -246,6 +237,7 @@ _op_envsets_merge() {
     [[ $dup -eq 1 ]] || keep+=("$existing")
   done
   OP_SECRETS=("${keep[@]}")
+  for injected in "${_OP_ENVSETS_INJECTED[@]}"; do old_names+=("${injected%%$'\t'*}"); done
   _OP_ENVSETS_INJECTED=()
 
   while IFS= read -r set; do
@@ -262,8 +254,15 @@ _op_envsets_merge() {
         entry="$name"$'\t'"$ref"
         OP_SECRETS+=("$entry")
         _OP_ENVSETS_INJECTED+=("$entry")
-        _OP_ENVSETS_SEEN+=("$name")
       fi
     done < "$file"
   done < <(_op_envsets_active)
+
+  for n in "${old_names[@]}"; do
+    dup=0
+    for existing in "${OP_SECRETS[@]}"; do
+      [[ "${existing%%$'\t'*}" == "$n" ]] && { dup=1; break; }
+    done
+    [[ $dup -eq 1 ]] || unset "$n"
+  done
 }
