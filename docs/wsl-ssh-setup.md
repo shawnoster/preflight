@@ -122,7 +122,8 @@ systemctl --user daemon-reload
 systemctl --user enable --now 1password-agent.socket
 
 echo 'export SSH_AUTH_SOCK="$HOME/.1password/agent.sock"' >> ~/.profile
-printf 'Host *\n  IdentityAgent "~/.1password/agent.sock"\n' >> ~/.ssh/config
+mkdir -p ~/.ssh && chmod 700 ~/.ssh
+printf 'Host *\n  IdentityAgent "~/.1password/agent.sock"\n' >> ~/.ssh/config && chmod 600 ~/.ssh/config
 ```
 
 Do **not** set `ssh`/`ssh-add` aliases or `core.sshCommand`.
