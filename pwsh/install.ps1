@@ -423,6 +423,10 @@ function Remove-ImportGuard {
         any line ending preceding GuardBegin, and remove from that
         leading-eol through the trailing newline that follows GuardEnd.
         That preserves the original content's trailing characters byte-for-byte.
+
+        A guard that is not at the end of the file (the user added profile code
+        after it) is removed too, as is every duplicate, and the code around it
+        is kept.
     #>
     param([string]$Content)
 
@@ -432,9 +436,29 @@ function Remove-ImportGuard {
     # newline in legacy installs.
     $beginEsc = [regex]::Escape($script:GuardBegin)
     $endEsc   = [regex]::Escape($script:GuardEnd)
-    $pattern  = "(?s)(\r\n|\r|\n){1,2}$beginEsc(\r\n|\r|\n).*?$endEsc(\r\n|\r|\n)?\z"
+    # The body may not contain another begin marker: without that, a lazy .*? starts
+    # at the first guard and runs on to the last end marker, taking any user code
+    # between two guards with it.
+    $body     = "(?:(?!$beginEsc).)*?"
+    $atEnd    = "(?s)(\r\n|\r|\n){1,2}$beginEsc(\r\n|\r|\n)$body$endEsc(\r\n|\r|\n)?\z"
 
-    return ($Content -replace $pattern, '')
+    # A guard with profile code after it (anything the user appended later) is not at
+    # end-of-string. Remove it too, keeping the separator that preceded it so the lines
+    # on either side do not run together.
+    $inPlace  = "(?s)((?:\r\n|\r|\n){1,2})$beginEsc(\r\n|\r|\n)$body$endEsc(\r\n|\r|\n)?"
+
+    # Repeat until no guard is left, so stale duplicates from earlier runs go as well.
+    # A malformed guard (begin marker without an end marker) matches neither pattern;
+    # stop as soon as a pass changes nothing instead of looping forever.
+    do {
+        $before  = $Content
+        $Content = $Content -replace $atEnd, ''
+        if ($Content -eq $before) {
+            $Content = $Content -replace $inPlace, '$1'
+        }
+    } while ($Content -ne $before)
+
+    return $Content
 }
 
 function Restore-CommentedFunctions {
