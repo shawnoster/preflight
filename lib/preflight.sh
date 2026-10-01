@@ -450,16 +450,18 @@ preflight() {
       # Which environment owns the script is unknowable from an env shebang, so
       # the interpreter it names is left to resolve through PATH.
       if [[ "$py" == env || "$py" == */env ]]; then
-        local -a _sb_words=()
-        local _sb_word
-        read -r -a _sb_words <<<"${shebang#\#!}"
+        # Split on blanks without an array (read -a is Bash-only, zsh uses -A) and
+        # skip the first word, which is env itself. awk drops the empty field a leading
+        # blank would otherwise produce.
+        local _sb_word _sb_skip=1
         py=""
-        for _sb_word in "${_sb_words[@]:1}"; do
+        while IFS= read -r _sb_word; do
+          if [[ $_sb_skip -eq 1 ]]; then _sb_skip=0; continue; fi
           case "$_sb_word" in
             -*|*=*) continue ;;
             *)      py="$_sb_word"; break ;;
           esac
-        done
+        done < <(printf '%s\n' "${shebang#\#!}" | tr -s ' \t' '\n' | awk 'NF')
         # env --split-string='python3 -u' and friends leave nothing plain.
         [[ -z "$py" ]] && py=python3
       fi
@@ -936,7 +938,7 @@ _preflight_update() {
     echo "   These files may conflict with upstream changes."
     echo "   Consider moving customizations to lib/local.sh (which is gitignored)."
     echo ""
-    read -r -p "   Continue with update anyway? [y/N] " reply
+    _pf_ask reply "   Continue with update anyway? [y/N] "
     echo ""
     [[ "$reply" =~ ^[Yy]$ ]] || { echo "Update cancelled."; return 0; }
   fi
@@ -1010,7 +1012,7 @@ _preflight_uninstall() {
   echo "  • Remove $dir"
   echo "  • Remove the preflight source line from your shell profile"
   echo ""
-  read -r -p "Are you sure? [y/N] " reply
+  _pf_ask reply "Are you sure? [y/N] "
   echo ""
   [[ "$reply" =~ ^[Yy]$ ]] || { echo "Uninstall cancelled."; return 0; }
 
@@ -1101,7 +1103,7 @@ _preflight_configure() {
       echo "   → Set to $value"
       ((applied++))
     else
-      read -r -p "   Apply? [Y/n] " reply
+      _pf_ask reply "   Apply? [Y/n] " || reply=n
       echo ""
       if [[ -z "$reply" || "$reply" =~ ^[Yy]$ ]]; then
         git config --global "$key" "$value"
@@ -1132,7 +1134,7 @@ _preflight_configure() {
     else
       echo "⚠️  $label not set"
       echo "   Commits would be authored without a proper identity."
-      read -r -p "   $prompt: " answer
+      _pf_ask answer "   $prompt: "
       echo ""
       if [[ -n "$answer" ]]; then
         git config --global "$key" "$answer"
@@ -1207,7 +1209,7 @@ _preflight_configure() {
       echo "   → Set to $default_ignore"
       ((applied++))
     else
-      read -r -p "   Apply? [Y/n] " reply
+      _pf_ask reply "   Apply? [Y/n] " || reply=n
       echo ""
       if [[ -z "$reply" || "$reply" =~ ^[Yy]$ ]]; then
         git config --global core.excludesFile "$default_ignore"
@@ -1284,7 +1286,7 @@ GITIGNORE
         echo "     export AWS_PROFILE_DEFAULT=\"$first_profile\""
         ((applied++))
       else
-        read -r -p "   Select default profile (or Enter to skip): " chosen_profile
+        _pf_ask chosen_profile "   Select default profile (or Enter to skip): "
         echo ""
         if [[ -n "$chosen_profile" ]]; then
           if echo "$profiles" | grep -qxF "$chosen_profile"; then
