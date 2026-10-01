@@ -264,7 +264,7 @@ preflight() {
 
       if [[ -n "$_ssh_add_exe" ]]; then
         local _agent_output _agent_exit _key_count
-        _agent_output=$("$_ssh_add_exe" -l 2>&1); _agent_exit=$?
+        _agent_output=$(timeout 10 "$_ssh_add_exe" -l 2>&1); _agent_exit=$?
         # Count lines that look like key fingerprints (SHA256: prefix)
         _key_count=$(echo "$_agent_output" | grep -c 'SHA256:' || true)
         if [[ $_agent_exit -ne 0 && $_key_count -eq 0 ]]; then
@@ -285,10 +285,16 @@ preflight() {
       fi
     elif [[ -n "$SSH_AUTH_SOCK" ]]; then
       _pf_line "✅ SSH_AUTH_SOCK is set: $SSH_AUTH_SOCK"
-      # `command` skips any ssh-add alias left over from the old ssh.exe setup.
-      command ssh-add -l &>/dev/null; local _agent_rc=$?
+      # Bounded: a locked or wedged 1Password makes ssh-add -l hang, and this must not
+      # block the whole preflight run. Running it under `timeout` also bypasses any
+      # ssh-add alias left over from the old ssh.exe setup.
+      timeout 10 ssh-add -l &>/dev/null; local _agent_rc=$?
       if [[ $_agent_rc -eq 0 ]]; then
         _pf_line "✅ SSH agent has keys loaded"
+      elif [[ $_agent_rc -eq 124 && "$_is_wsl" == true ]]; then
+        issue_msgs+=("1Password SSH agent bridge timed out — is 1Password locked? Unlock it, then retry")
+        _pf_line "⚠️  SSH agent bridge timed out after 10s (1Password locked or unresponsive?)"
+        ((issues++))
       elif [[ "$_is_wsl" == true ]]; then
         # On WSL this socket is the 1Password bridge, so a failure is a real problem.
         issue_msgs+=("1Password SSH agent bridge returned no keys — unlock 1Password, or run: preflight configure")
