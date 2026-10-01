@@ -146,7 +146,10 @@ _op_env_list() {
       [[ -n "$line" ]] && printf '    %-28s %s\n' "$line" "$ref"
     done < "$file"
   done < <(_op_envsets_names)
-  [[ $found -eq 1 ]] || echo "No env sets yet. Create one with: op-env add"
+  if [[ $found -eq 0 ]]; then
+    [[ -n "$only" ]] && { echo "❌ No such set: $only" >&2; return 1; }
+    echo "No env sets yet. Create one with: op-env add"
+  fi
 }
 
 _op_env_rm() {
