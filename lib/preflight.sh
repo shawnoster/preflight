@@ -1340,6 +1340,17 @@ GITIGNORE
       _bridge_ok=false
     fi
 
+    # npiperelay.exe is a Windows program, so the bridge only works while WSL interop
+    # is enabled (a [interop] enabled=false in /etc/wsl.conf unregisters the handler).
+    if [[ "$_bridge_ok" == true ]] \
+       && ! grep -qx enabled /proc/sys/fs/binfmt_misc/WSLInterop /proc/sys/fs/binfmt_misc/WSLInterop-late 2>/dev/null; then
+      echo "⚠️  WSL interop is disabled (needed to run npiperelay.exe)"
+      echo "   Set in /etc/wsl.conf:   [interop]  enabled=true"
+      echo "   Then run in PowerShell: wsl --shutdown   and re-run: preflight configure"
+      echo ""
+      _bridge_ok=false
+    fi
+
     # 1. npiperelay (albertony fork — upstream jstarks is frozen at 0.1.0)
     if [[ "$_bridge_ok" == true ]]; then
       if [[ -x "$_npr_bin" ]]; then
