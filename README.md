@@ -112,7 +112,7 @@ source ~/.bashrc
 | `preflight -u` | Same + compare installed tools against latest stable versions, with an upgrade command matched to how each tool was installed |
 | `preflight update` | Pull latest changes from upstream repo |
 | `preflight uninstall` | Remove preflight and undo shell profile changes |
-| `preflight configure` | Interactively apply recommended settings (git globals, WSL SSH via 1Password, etc.) |
+| `preflight configure` | Interactively apply recommended settings (git globals; on WSL, the 1Password SSH agent bridge — see [docs/wsl-ssh-setup.md](./docs/wsl-ssh-setup.md)) |
 | `preflight configure --yes` | Apply all recommended settings without prompting |
 
 #### Tool update checks (`preflight -u`)
