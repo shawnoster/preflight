@@ -6,7 +6,7 @@ Use the 1Password SSH agent on Windows for SSH and Git in Windows Subsystem for 
 
 1Password exposes its SSH agent on a Windows named pipe. WSL can't talk to that pipe directly, so a systemd user socket bridges it to a normal Unix socket:
 
-```
+```text
 git / ssh (native Linux)
   → ~/.1password/agent.sock         (SSH_AUTH_SOCK, exported from ~/.profile)
   → 1password-agent.socket          (systemd user unit, Accept=yes)
@@ -16,7 +16,7 @@ git / ssh (native Linux)
 
 systemd accepts each connection and hands it to `npiperelay.exe` as stdin/stdout. There is no `socat` and no long-running relay process.
 
-### Why not alias `ssh` to `ssh.exe`?
+### Comparison with the `ssh.exe` approach
 
 1Password's [WSL guide](https://www.1password.dev/ssh/integrations/wsl/) tells you to alias `ssh` and `ssh-add` to the `.exe` versions and to set `git config --global core.sshCommand ssh.exe`. That works for interactive use, but:
 
@@ -25,16 +25,16 @@ systemd accepts each connection and hands it to `npiperelay.exe` as stdin/stdout
 
 The bridge avoids both. 1Password's guide doesn't cover a native Unix socket for WSL, so the bridge is how you get a native agent.
 
-## Prerequisites (manual, once per Windows machine)
+## Windows prerequisites
 
-These need the GUI or admin rights. `preflight configure` can't do them. They are shared by every WSL distro on the machine, so skip any you've already done.
+These steps need the 1Password or Windows interface, or administrator rights, so `preflight configure` can't do them. Every WSL distro on the machine shares them, so skip any you have already done.
 
 1. **Enable the 1Password SSH agent.** In the Windows app: Settings → Developer → **Use the SSH agent**. The badge should read **running**.
    If 1Password warns about the *OpenSSH Authentication Agent* service, disable that service (`services.msc` → Startup type: Disabled → Stop). Both agents can't listen on the same pipe.
 2. **Add an SSH key** to 1Password (New Item → SSH Key) and register its public key with GitHub.
-3. **Install the 1Password CLI on Windows** (used for secrets; see [1Password CLI](./wsl-1password-cli.md)): `winget install AgileBits.1Password.CLI`, then enable Settings → Developer → **Integrate with 1Password CLI**.
+3. **Install the 1Password CLI on Windows.** Preflight uses it for secrets, as described in [1Password CLI](./wsl-1password-cli.md). Run `winget install AgileBits.1Password.CLI`, then enable Settings → Developer → **Integrate with 1Password CLI**.
 
-## Prerequisites (per WSL distro)
+## WSL prerequisites
 
 Enable systemd in `/etc/wsl.conf`, then restart WSL from PowerShell:
 
@@ -59,15 +59,15 @@ For the WSL SSH section it does the following, asking before each step (`--yes` 
 
 | Step | Where |
 |------|-------|
-| Install npiperelay (the [albertony fork](https://github.com/albertony/npiperelay), a Windows program that connects stdin/stdout to a named pipe; checksum verified) | `~/.local/bin/npiperelay.exe` |
+| Install npiperelay (the [albertony fork](https://github.com/albertony/npiperelay), a Windows program that connects standard input and output to a named pipe, verified against a checksum) | `~/.local/bin/npiperelay.exe` |
 | Write the socket and service units, enable the socket | `~/.config/systemd/user/1password-agent.socket`, `1password-agent@.service` |
 | Export `SSH_AUTH_SOCK` | `~/.profile` |
 | Point SSH at the agent | `~/.ssh/config`: `Host *` → `IdentityAgent "~/.1password/agent.sock"` |
 | Trust GitHub's host keys (from `gh api meta`) | `~/.ssh/known_hosts` |
-| Remove the old `ssh`/`ssh-add` aliases and `SSH_AUTH_SOCK` from `.bashrc`; unset `core.sshCommand` | `~/.bashrc`, `~/.gitconfig` |
+| Remove the old `ssh` and `ssh-add` aliases and `SSH_AUTH_SOCK` from `.bashrc`, and unset `core.sshCommand` | `~/.bashrc`, `~/.gitconfig` |
 | Check for the Windows `op.exe` | reported only |
 
-`SSH_AUTH_SOCK` goes in `~/.profile`, not `~/.bashrc`. It is environment, not interactive config. `.bashrc` is skipped by git hooks, cron and spawned scripts, so with the export there only your own terminals would have the agent, and that gap hides well.
+`SSH_AUTH_SOCK` goes in `~/.profile`, not `~/.bashrc`, because it is environment configuration and not interactive configuration. Git hooks, cron jobs and spawned scripts skip `.bashrc`, so with the export there only your own terminals get the agent. That gap is easy to miss because your terminals keep working.
 
 Open a new terminal afterwards so the old aliases are dropped.
 
@@ -127,13 +127,13 @@ printf 'Host *\n  IdentityAgent "~/.1password/agent.sock"\n' >> ~/.ssh/config
 
 Do **not** set `ssh`/`ssh-add` aliases or `core.sshCommand`.
 
-### The npiperelay flags
+### npiperelay flags
 
-- **`-ei`**: exit when stdin closes, so each relay dies with its ssh client. Without it, `npiperelay.exe` processes leak.
-- **`-s`**: send a zero-byte message after EOF so the agent sees a complete request.
-- **Never `-p`**: it polls until the pipe is free, but 1Password serves a single pipe instance, so it loops forever and orphans a process per SSH operation. Don't force-kill stuck relays; killing an in-flight pipe client can wedge the agent until you toggle the SSH agent setting in 1Password.
+- `-ei` makes the relay exit when its input closes, so each relay ends with its ssh client. Without it, `npiperelay.exe` processes accumulate.
+- `-s` sends a zero-byte message after the end of input, so the agent sees a complete request.
+- Never use `-p`. It polls until the pipe is free, but 1Password serves a single pipe instance, so the poll loops forever and leaves one orphaned process per SSH operation. Don't force-kill stuck relays either. Killing an in-flight pipe client can wedge the agent until you toggle the SSH agent setting in 1Password.
 
-## Verify
+## Verification
 
 ```bash
 systemctl --user is-active 1password-agent.socket   # active
@@ -141,9 +141,9 @@ systemctl --user is-active 1password-agent.socket   # active
 ssh -T git@github.com                               # "Hi <user>! You've successfully authenticated…"
 ```
 
-Listing keys needs no approval; **signing does**. `ssh-add -l` is instant, while `ssh -T` waits for an approval click in the 1Password window on Windows. If nobody approves, you get `sign_and_send_pubkey: signing failed … agent refused operation`. That means authorization was declined, not that the relay is broken. Unattended SSH (cron, CI-style scripts) will always hit this.
+Listing keys needs no approval, but signing does. `ssh-add -l` returns immediately, while `ssh -T` waits for an approval click in the 1Password window on Windows. If nobody approves, you get `sign_and_send_pubkey: signing failed … agent refused operation`. That error means authorization was declined, not that the relay is broken. Unattended SSH, such as cron jobs and scripts, always needs an approval.
 
-## Removing the bridge
+## Removal
 
 `preflight uninstall` does not touch these, because the bridge works without preflight. To remove it:
 
@@ -156,7 +156,9 @@ systemctl --user daemon-reload
 
 Then delete the `SSH_AUTH_SOCK` line from `~/.profile` and the `IdentityAgent` entry from `~/.ssh/config`.
 
-## Git commit signing (optional)
+## Git commit signing
+
+To sign commits with your 1Password SSH key (optional):
 
 1. In 1Password, open your SSH Key item.
 2. `···` menu → **Configure Commit Signing**.
@@ -178,34 +180,36 @@ alias ssh-add='/mnt/c/Windows/System32/OpenSSH/ssh-add.exe'
 git config --global core.sshCommand /mnt/c/Windows/System32/OpenSSH/ssh.exe
 ```
 
-`preflight` still reports agent status in this mode but `preflight configure` won't set it up. Note that `ssh.exe` uses the Windows `~/.ssh/config`.
+In this mode `preflight` still reports agent status, but `preflight configure` doesn't set anything up.
 
 ## Troubleshooting
 
-**`Host key verification failed`**
+Each heading below is a symptom, followed by its likely causes.
+
+### `Host key verification failed`
 - Native `ssh` uses the WSL `known_hosts`, not the Windows one. Run `preflight configure` (it adds GitHub's keys), or connect once interactively and accept the host key for other hosts.
 
-**`ssh-add -l` says "Could not open a connection to your authentication agent"**
+### `ssh-add -l` says "Could not open a connection to your authentication agent"
 - `SSH_AUTH_SOCK` isn't set in this shell. Open a new login shell, or `export SSH_AUTH_SOCK=$HOME/.1password/agent.sock`.
 - Check the socket: `systemctl --user status 1password-agent.socket`.
 
-**`ssh-add -l` hangs or returns nothing**
+### `ssh-add -l` hangs or returns nothing
 - 1Password is locked, or the SSH agent shows stopped in Settings → Developer. Unlock it and confirm **Use the SSH agent** is on.
 - Toggle the SSH agent setting off and on if relays were force-killed.
 
-**`sign_and_send_pubkey: signing failed … agent refused operation`**
-- You declined, or missed, the approval prompt in 1Password on Windows. Retry and approve.
+### `sign_and_send_pubkey: signing failed … agent refused operation`
+- The approval prompt in 1Password on Windows was declined or missed. Retry and approve it, as described in [Verification](#verification).
 
-**It authenticates but 1Password never prompted**
+### It authenticates but 1Password never prompted
 - ssh may have fallen back to an on-disk key such as `~/.ssh/id_ed25519` after the agent refused. If 1Password should be authoritative, add `IdentitiesOnly yes` to the relevant `Host` block in `~/.ssh/config`, or move the key out, so a refusal fails loudly.
 
 **`ssh_agent_bind_hostkey: agent refused operation`** (in `ssh -vv`)
 - Harmless. 1Password doesn't implement host-key binding.
 
-**Agent resolves to the wrong keys**
+### Agent resolves to the wrong keys
 - A competing agent (for example GNOME Keyring's `gcr-ssh-agent.socket`) may be serving `SSH_AUTH_SOCK`. Mask it: `systemctl --user mask gcr-ssh-agent.socket`.
 
-**`Too many authentication failures`**
+### `Too many authentication failures`
 - You have more than 6 SSH keys in 1Password, and OpenSSH servers reject after 6 attempts. Save the public key from the 1Password item to `~/.ssh/github-key.pub` and reference it **without** the `.pub` extension:
   ```
   Host github.com
@@ -214,5 +218,5 @@ git config --global core.sshCommand /mnt/c/Windows/System32/OpenSSH/ssh.exe
   ```
   The private key stays in 1Password.
 
-**Keys missing after a WSL or Windows restart**
+### Keys missing after a WSL or Windows restart
 - 1Password may have locked. Unlock it on Windows and confirm the SSH agent still shows **running**.
