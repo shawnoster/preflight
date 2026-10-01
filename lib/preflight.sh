@@ -1078,7 +1078,7 @@ _preflight_configure() {
   echo ""
   _pf_git_identity() {
     local key="$1" label="$2" prompt="$3"
-    local current
+    local current answer
     current=$(git config --global "$key" 2>/dev/null || true)
 
     if [[ -n "$current" ]]; then
