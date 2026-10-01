@@ -837,10 +837,6 @@ preflight() {
   printf "\n"
 }
 
-# ── Git credential helper ─────────────────────────────────────────────────────
-# Idempotently store an HTTPS git credential in ~/.git-credentials and enable the
-# `store` helper scoped to that host (so a global credential.helper is untouched).
-# Args: host username token. Assumes the token contains no '@' (Gitea PATs don't).
 _preflight_help() {
   cat <<'EOF'
 preflight starts a session and checks the health of your environment.
@@ -865,6 +861,10 @@ Related:
 EOF
 }
 
+# ── Git credential helper ─────────────────────────────────────────────────────
+# Idempotently store an HTTPS git credential in ~/.git-credentials and enable the
+# `store` helper scoped to that host (so a global credential.helper is untouched).
+# Args: host username token. Assumes the token contains no '@' (Gitea PATs don't).
 _pf_write_git_credential() {
   local host="$1" user="$2" token="$3"
   local cred_file="$HOME/.git-credentials"
