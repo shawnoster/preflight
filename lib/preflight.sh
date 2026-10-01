@@ -1100,6 +1100,40 @@ _preflight_configure() {
     echo ""
   }
 
+  echo "--- Git Identity ---"
+  echo ""
+  _pf_git_identity() {
+    local key="$1" label="$2" prompt="$3"
+    local current answer
+    current=$(git config --global "$key" 2>/dev/null || true)
+
+    if [[ -n "$current" ]]; then
+      echo "✅ $label = $current (already set)"
+      ((kept++))
+    elif [[ "$auto" == true ]]; then
+      echo "⚠️  $label not set — (--yes) cannot guess your identity."
+      echo "   Set manually: git config --global $key \"<value>\""
+      ((skipped++))
+    else
+      echo "⚠️  $label not set"
+      echo "   Commits would be authored without a proper identity."
+      read -r -p "   $prompt: " answer
+      echo ""
+      if [[ -n "$answer" ]]; then
+        git config --global "$key" "$answer"
+        echo "   ✅ Set $label = $answer"
+        ((applied++))
+      else
+        echo "   Skipped."
+        ((skipped++))
+      fi
+    fi
+    echo ""
+  }
+  _pf_git_identity "user.name"  "Git user.name"  "GitHub / full name (e.g. Jane Doe)"
+  _pf_git_identity "user.email" "Git user.email" "Email (e.g. jane@example.com)"
+  unset -f _pf_git_identity
+
   echo "--- Fetch / Remote Hygiene ---"
   echo ""
   _pf_git_set "fetch.prune"      "true"  "stale remote-tracking refs accumulate without this" "⚠️ "
