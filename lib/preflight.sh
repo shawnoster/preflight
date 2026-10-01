@@ -1500,9 +1500,22 @@ GITIGNORE
 
     # 5. ~/.ssh/config IdentityAgent
     local _linux_ssh_conf="$HOME/.ssh/config"
+    # True when the file has an active IdentityAgent for the 1Password socket that
+    # applies to every host: before any Host/Match line, or inside `Host *`. A comment
+    # or a host-specific block does not count.
+    _pf_ssh_global_agent() {
+      awk '
+        BEGIN { g = 1 }
+        /^[[:space:]]*#/ { next }
+        tolower($1) == "host"  { g = (NF == 2 && $2 == "*"); next }
+        tolower($1) == "match" { g = 0; next }
+        g && tolower($0) ~ /^[[:space:]]*identityagent[[:space:]=]/ && $0 ~ /1password\/agent\.sock/ { found = 1 }
+        END { exit !found }
+      ' "$1" 2>/dev/null
+    }
     if [[ "$_bridge_verified" != true ]]; then
       :  # skipped: see the note above
-    elif grep -qF '/.1password/agent.sock' "$_linux_ssh_conf" 2>/dev/null; then
+    elif _pf_ssh_global_agent "$_linux_ssh_conf"; then
       echo "✅ ~/.ssh/config has 1Password IdentityAgent"
       ((kept++))
     else
@@ -1600,7 +1613,7 @@ GITIGNORE
       echo ""
     fi
 
-    unset -f _pf_yes
+    unset -f _pf_yes _pf_ssh_global_agent
   fi # _is_wsl
 
   printf "  \033[38;2;${OWL_SUB:-120;130;150}m%s\033[0m\n" "$(printf '%0.s-' {1..33})"
