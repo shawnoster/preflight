@@ -339,6 +339,7 @@ function New-ImportGuard {
     param(
         [string]$ManifestPath,
         [string]$OmpConfigPath,
+        [string]$OwlStateDir,
         [string]$Eol = "`r`n"
     )
     $manifestPathLiteral = $ManifestPath -replace "'", "''"
@@ -350,6 +351,15 @@ function New-ImportGuard {
             # empty OWL_OMP_CONFIG is the documented way to turn OMP integration off.
             "if (-not (Test-Path -LiteralPath 'Env:OWL_OMP_CONFIG')) {"
             "    `$env:OWL_OMP_CONFIG = '$ompLiteral'"
+            '}'
+        }
+        # Only for an install root other than the default: owl.ps1 looks for its state
+        # in $HOME\.preflight unless OWL_THEME_DIR says otherwise, so a custom -InstallRoot
+        # would patch one copy of the theme and persist the chosen theme somewhere else.
+        if ($OwlStateDir) {
+            $stateLiteral = $OwlStateDir -replace "'", "''"
+            "if (-not (Test-Path -LiteralPath 'Env:OWL_THEME_DIR')) {"
+            "    `$env:OWL_THEME_DIR = '$stateLiteral'"
             '}'
         }
         "if (Test-Path -LiteralPath '$manifestPathLiteral') {"
@@ -389,7 +399,7 @@ function Add-ImportGuard {
         in place rather than duplicating the block. The result is
         byte-identical when nothing actually changed.
     #>
-    param([string]$Content, [string]$ManifestPath, [string]$OmpConfigPath)
+    param([string]$Content, [string]$ManifestPath, [string]$OmpConfigPath, [string]$OwlStateDir)
 
     # Match the dominant line ending of the existing content. Default to CRLF
     # for empty or eol-less files (Windows convention).
@@ -399,7 +409,7 @@ function Add-ImportGuard {
            elseif ($lfOnly -gt 0)                            { "`n" }
            else                                              { "`r`n" }
 
-    $guard = New-ImportGuard -ManifestPath $ManifestPath -OmpConfigPath $OmpConfigPath -Eol $eol
+    $guard = New-ImportGuard -ManifestPath $ManifestPath -OmpConfigPath $OmpConfigPath -OwlStateDir $OwlStateDir -Eol $eol
 
     # If a guard already exists, replace it (see docstring) instead of nesting
     # a second one. Compute the replacement target regardless, so the
@@ -628,6 +638,14 @@ function Invoke-Install {
 
     $owlStateDir = Join-Path $InstallRoot 'state\owl'
     $themeDest   = Join-Path $owlStateDir 'theme-catppuccin.omp.json'
+
+    # The profile guard sets OWL_THEME_DIR only when the install root is not the default
+    # one, so profiles of default installs stay exactly as they are.
+    $defaultRoot      = Join-Path $HOME '.preflight'
+    $stateDirForGuard = $null
+    if ([System.IO.Path]::GetFullPath($InstallRoot).TrimEnd('\', '/') -ne [System.IO.Path]::GetFullPath($defaultRoot).TrimEnd('\', '/')) {
+        $stateDirForGuard = $owlStateDir
+    }
     $ompConfigPath = $null
 
     if ($themeSrc) {
@@ -678,7 +696,7 @@ function Invoke-Install {
 
     $edited = Edit-ProfileContent -Content $original
     $manifest = Join-Path $destPwsh 'Preflight.psd1'
-    $newContent = Add-ImportGuard -Content $edited.Content -ManifestPath $manifest -OmpConfigPath $ompConfigPath
+    $newContent = Add-ImportGuard -Content $edited.Content -ManifestPath $manifest -OmpConfigPath $ompConfigPath -OwlStateDir $stateDirForGuard
 
     if ($newContent -eq $original) {
         Write-Step "$ProfilePath already up to date" 'ok'

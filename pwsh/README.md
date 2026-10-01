@@ -109,6 +109,11 @@ Owl theme: the installer seeds a user-owned base theme at
 `$env:POSH_THEMES_PATH` (which the module refuses to mutate). Override
 `$env:OWL_OMP_CONFIG` in `accounts.ps1` to use your own theme.
 
+With a custom `-InstallRoot`, the guard also defaults `$env:OWL_THEME_DIR` to
+`<InstallRoot>\state\owl` (only when not already defined), so the theme you pick
+is saved next to the config `owl-theme` patches. A default install needs no such
+line and its profile is unchanged.
+
 For Windows desktop-app integration (Settings → Developer → "Integrate with
 1Password CLI"), set `OP_ACCOUNT` to your sign-in address
 (for example `my-team.1password.com`). If you manually added an account with
