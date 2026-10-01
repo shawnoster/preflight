@@ -1483,7 +1483,7 @@ GITIGNORE
     #    is skipped by hooks, cron and scripts, which then get no agent)
     if [[ "$_bridge_verified" != true ]]; then
       :  # skipped: see the note above
-    elif grep -qF '.1password/agent.sock' "$HOME/.profile" 2>/dev/null; then
+    elif grep -qE '^[[:space:]]*(export[[:space:]]+)?SSH_AUTH_SOCK=.*\.1password/agent\.sock' "$HOME/.profile" 2>/dev/null; then
       echo "✅ ~/.profile exports SSH_AUTH_SOCK"
       ((kept++))
     else
