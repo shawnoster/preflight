@@ -1,6 +1,6 @@
 # WSL SSH Setup with 1Password
 
-Use the 1Password SSH agent on Windows for SSH and Git in WSL. Your keys stay in 1Password, and every Linux tool (`ssh`, `scp`, `rsync`, `git`, scripts, hooks) can use them.
+Use the 1Password SSH agent on Windows for SSH and Git in Windows Subsystem for Linux (WSL). Your keys stay in 1Password, and every Linux tool (`ssh`, `scp`, `rsync`, `git`, scripts, hooks) can use them.
 
 ## How it works
 
@@ -23,7 +23,7 @@ systemd accepts each connection and hands it to `npiperelay.exe` as stdin/stdout
 - Native `ssh`, `scp`, `rsync` and scripts never get an agent. Aliases only apply to interactive shells.
 - Windows `ssh.exe` reads the **Windows** `~/.ssh/config` and `known_hosts`, so your WSL SSH config is ignored.
 
-The bridge avoids both. As of this writing 1Password has not shipped native Unix-socket support for WSL, so the bridge is still the way to get a native agent.
+The bridge avoids both. 1Password's guide doesn't cover a native Unix socket for WSL, so the bridge is how you get a native agent.
 
 ## Prerequisites (manual, once per Windows machine)
 
@@ -59,7 +59,7 @@ For the WSL SSH section it does the following, asking before each step (`--yes` 
 
 | Step | Where |
 |------|-------|
-| Install npiperelay (albertony fork, checksum verified) | `~/.local/bin/npiperelay.exe` |
+| Install npiperelay (the [albertony fork](https://github.com/albertony/npiperelay), a Windows program that connects stdin/stdout to a named pipe; checksum verified) | `~/.local/bin/npiperelay.exe` |
 | Write the socket and service units, enable the socket | `~/.config/systemd/user/1password-agent.socket`, `1password-agent@.service` |
 | Export `SSH_AUTH_SOCK` | `~/.profile` |
 | Point SSH at the agent | `~/.ssh/config`: `Host *` → `IdentityAgent "~/.1password/agent.sock"` |
@@ -142,6 +142,19 @@ ssh -T git@github.com                               # "Hi <user>! You've success
 ```
 
 Listing keys needs no approval; **signing does**. `ssh-add -l` is instant, while `ssh -T` waits for an approval click in the 1Password window on Windows. If nobody approves, you get `sign_and_send_pubkey: signing failed … agent refused operation`. That means authorization was declined, not that the relay is broken. Unattended SSH (cron, CI-style scripts) will always hit this.
+
+## Removing the bridge
+
+`preflight uninstall` does not touch these, because the bridge works without preflight. To remove it:
+
+```bash
+systemctl --user disable --now 1password-agent.socket
+rm ~/.config/systemd/user/1password-agent.socket ~/.config/systemd/user/1password-agent@.service
+rm ~/.local/bin/npiperelay.exe
+systemctl --user daemon-reload
+```
+
+Then delete the `SSH_AUTH_SOCK` line from `~/.profile` and the `IdentityAgent` entry from `~/.ssh/config`.
 
 ## Git commit signing (optional)
 

@@ -1258,7 +1258,13 @@ GITIGNORE
       [[ -z "$r" || "$r" =~ ^[Yy]$ ]]
     }
 
+    # Pinned for reproducibility; override with NPIPERELAY_VERSION. The release's
+    # checksums file lives on the same host as the binary, so it only catches a
+    # corrupt download. For the default version we also pin the expected hash here
+    # so a tampered release asset is rejected too.
     local _npr_ver="${NPIPERELAY_VERSION:-v1.12.1}"
+    local _npr_pin=""
+    [[ "$_npr_ver" == "v1.12.1" ]] && _npr_pin="dbb448aea38835a65e2e10d83e2dd770a8e4dfa5f43b5669d7551a3125445ca4"
     local _npr_bin="$HOME/.local/bin/npiperelay.exe"
     local _unit_dir="$HOME/.config/systemd/user"
     local _sock="$HOME/.1password/agent.sock"
@@ -1290,7 +1296,8 @@ GITIGNORE
              && curl -fsSL -o "$_tmp" "$_base/npiperelay_windows_amd64.exe" \
              && _want=$(curl -fsSL "$_base/npiperelay_checksums.txt" | awk '/npiperelay_windows_amd64.exe$/ {print $1}') \
              && _got=$(sha256sum "$_tmp" | awk '{print $1}') \
-             && [[ -n "$_want" && "$_want" == "$_got" ]]; then
+             && [[ -n "$_want" && "$_want" == "$_got" ]] \
+             && [[ -z "$_npr_pin" || "$_npr_pin" == "$_got" ]]; then
             mkdir -p "$HOME/.local/bin" && install -m 0755 "$_tmp" "$_npr_bin"
             echo "   ✅ Installed (sha256 $_got)"
             ((applied++))
