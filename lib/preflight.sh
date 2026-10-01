@@ -1410,6 +1410,9 @@ GITIGNORE
           printf '%s' "$_want_sock" > "$_unit_dir/1password-agent.socket"
           printf '%s' "$_want_svc"  > "$_unit_dir/1password-agent@.service"
           systemctl --user daemon-reload
+          # daemon-reload does not change a running listener, so apply the new unit now.
+          systemctl --user is-active --quiet 1password-agent.socket \
+            && systemctl --user restart 1password-agent.socket
           echo "   ✅ Written"
           ((applied++))
         else
