@@ -104,7 +104,15 @@ _op_env_add() {
     printf '%s\n' "$set" >> "$act"
   fi
   echo "✅ [$set] $name -> $ref"
-  echo "   Load it now: op-load-env"
+  if declare -f op-load-env 2>/dev/null | grep -q _op_envsets_merge; then
+    echo "   Load it now: op-load-env"
+  else
+    # lib/1password.sh is a per-install copy of the template; it predates the
+    # env-set hook until its owner merges the template change in.
+    echo "⚠️  Your lib/1password.sh doesn't load env sets yet, so op-load-env will skip this."
+    echo "   Merge the _op_envsets_merge calls from lib/1password.sh.template into it"
+    echo "   (in op-load-env and op-clear-env), or delete lib/1password.sh to regenerate it."
+  fi
 }
 
 _op_env_list() {
