@@ -1450,9 +1450,25 @@ GITIGNORE
       fi
     fi
 
+    # Verify the bridge before touching shell/ssh config or removing the old
+    # fallback: only a bridge that returns keys may replace what works today.
+    # (Listing keys needs no approval; signing does.)
+    local _bridge_verified=false _n=0
+    if [[ "$_bridge_ok" == true && -S "$_sock" ]]; then
+      _n=$(SSH_AUTH_SOCK="$_sock" timeout 15 /usr/bin/ssh-add -l 2>/dev/null | grep -c 'SHA256:' || true)
+      [[ "$_n" -gt 0 ]] && _bridge_verified=true
+    fi
+    if [[ "$_bridge_verified" != true ]]; then
+      echo "ℹ️  Bridge not verified yet, so ~/.profile, ~/.ssh/config and the old ssh.exe aliases are left alone."
+      echo "   Fix the problem above, or unlock 1Password with 'Use the SSH agent' on, then re-run: preflight configure"
+      echo ""
+    fi
+
     # 4. SSH_AUTH_SOCK in ~/.profile (environment, not interactive config: .bashrc
     #    is skipped by hooks, cron and scripts, which then get no agent)
-    if grep -qF '.1password/agent.sock' "$HOME/.profile" 2>/dev/null; then
+    if [[ "$_bridge_verified" != true ]]; then
+      :  # skipped: see the note above
+    elif grep -qF '.1password/agent.sock' "$HOME/.profile" 2>/dev/null; then
       echo "✅ ~/.profile exports SSH_AUTH_SOCK"
       ((kept++))
     else
@@ -1469,7 +1485,9 @@ GITIGNORE
 
     # 5. ~/.ssh/config IdentityAgent
     local _linux_ssh_conf="$HOME/.ssh/config"
-    if grep -qF '/.1password/agent.sock' "$_linux_ssh_conf" 2>/dev/null; then
+    if [[ "$_bridge_verified" != true ]]; then
+      :  # skipped: see the note above
+    elif grep -qF '/.1password/agent.sock' "$_linux_ssh_conf" 2>/dev/null; then
       echo "✅ ~/.ssh/config has 1Password IdentityAgent"
       ((kept++))
     else
@@ -1513,8 +1531,10 @@ GITIGNORE
       echo ""
     fi
 
-    # 7. Migrate away from the old ssh.exe interop approach
-    local _bashrc="$HOME/.bashrc"
+    # 7. Migrate away from the old ssh.exe interop approach, but only once the
+    #    bridge is verified: until then those aliases are what makes SSH work.
+    local _bashrc="$HOME/.bashrc" _cur_ssh_cmd
+    if [[ "$_bridge_verified" == true ]]; then
     if grep -qE "^alias ssh(-add)?='/mnt/c/Windows/System32/OpenSSH/|^# 1Password SSH agent via WSL interop" "$_bashrc" 2>/dev/null; then
       echo "💡 ~/.bashrc has the old ssh.exe aliases / SSH_AUTH_SOCK block (they shadow the native agent)"
       echo "   Removes them (backup: ~/.bashrc.preflight-bak)"
@@ -1528,7 +1548,6 @@ GITIGNORE
       fi
       echo ""
     fi
-    local _cur_ssh_cmd
     _cur_ssh_cmd=$(git config --global core.sshCommand 2>/dev/null || true)
     if [[ "$_cur_ssh_cmd" == *ssh.exe* ]]; then
       echo "💡 git core.sshCommand = $_cur_ssh_cmd (uses the Windows ssh, bypassing the native agent and ~/.ssh/config)"
@@ -1542,6 +1561,8 @@ GITIGNORE
       fi
       echo ""
     fi
+
+    fi # _bridge_verified
 
     # 8. 1Password CLI: prefer the Windows op.exe (desktop-app approval, no WSL
     #    install). Windows PATH is often not appended, so use the resolver.
@@ -1557,15 +1578,9 @@ GITIGNORE
     fi
     echo ""
 
-    # 9. Verify (listing keys needs no approval; signing does)
-    if [[ "$_bridge_ok" == true && -S "$_sock" ]]; then
-      local _n
-      _n=$(SSH_AUTH_SOCK="$_sock" timeout 15 /usr/bin/ssh-add -l 2>/dev/null | grep -c 'SHA256:' || true)
-      if [[ "$_n" -gt 0 ]]; then
-        echo "✅ Agent bridge working: $_n key(s) via $_sock"
-      else
-        echo "⚠️  Bridge socket exists but no keys returned — is 1Password running with 'Use the SSH agent' enabled?"
-      fi
+    # 9. Summary
+    if [[ "$_bridge_verified" == true ]]; then
+      echo "✅ Agent bridge working: $_n key(s) via $_sock"
       echo "   Signing needs an approval click in 1Password on Windows: ssh -T git@github.com"
       echo ""
     fi
