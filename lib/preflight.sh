@@ -10,6 +10,7 @@
 #   preflight uninstall  - remove preflight and undo shell profile changes
 #   preflight configure        - interactively apply recommended settings (git globals, etc.)
 #   preflight configure --yes  - apply all without prompting
+#   preflight help       - show this usage (also -h / --help)
 
 preflight() {
   # Dispatch subcommands before doing anything else
@@ -17,6 +18,7 @@ preflight() {
     update)         _preflight_update;        return ;;
     uninstall)      _preflight_uninstall;     return ;;
     configure)      _preflight_configure "${@:2}";     return ;;
+    help|-h|--help) _preflight_help;          return ;;
   esac
 
   local check_updates=false
@@ -837,6 +839,30 @@ preflight() {
   printf "\n"
 }
 
+_preflight_help() {
+  cat <<'EOF'
+preflight starts a session and checks the health of your environment.
+
+Usage:
+  preflight [-v] [-u] [--no-login]   Run the health check
+  preflight configure [--yes]        Apply recommended git/SSH settings
+  preflight update                   Pull latest changes from upstream
+  preflight uninstall                Remove preflight and shell profile changes
+  preflight help                     Show this help (also -h, --help)
+
+Options:
+  -v, --verbose   Show every check section
+  -u, --updates   Compare installed tools against latest stable versions
+  --no-login      Skip sign-in steps
+  --yes           (configure) Apply all without prompting
+
+Related:
+  op-env          Manage named env sets (guild, personal, ...) of 1Password refs
+  dev-help        All modules and commands
+  dev-commands    Flat command list
+EOF
+}
+
 # ── Git credential helper ─────────────────────────────────────────────────────
 # Idempotently store an HTTPS git credential in ~/.git-credentials and enable the
 # `store` helper scoped to that host (so a global credential.helper is untouched).
@@ -1075,6 +1101,40 @@ _preflight_configure() {
     fi
     echo ""
   }
+
+  echo "--- Git Identity ---"
+  echo ""
+  _pf_git_identity() {
+    local key="$1" label="$2" prompt="$3"
+    local current answer
+    current=$(git config --global "$key" 2>/dev/null || true)
+
+    if [[ -n "$current" ]]; then
+      echo "✅ $label = $current (already set)"
+      ((kept++))
+    elif [[ "$auto" == true ]]; then
+      echo "⚠️  $label not set — (--yes) cannot guess your identity."
+      echo "   Set manually: git config --global $key \"<value>\""
+      ((skipped++))
+    else
+      echo "⚠️  $label not set"
+      echo "   Commits would be authored without a proper identity."
+      read -r -p "   $prompt: " answer
+      echo ""
+      if [[ -n "$answer" ]]; then
+        git config --global "$key" "$answer"
+        echo "   ✅ Set $label = $answer"
+        ((applied++))
+      else
+        echo "   Skipped."
+        ((skipped++))
+      fi
+    fi
+    echo ""
+  }
+  _pf_git_identity "user.name"  "Git user.name"  "GitHub / full name (e.g. Jane Doe)"
+  _pf_git_identity "user.email" "Git user.email" "Email (e.g. jane@example.com)"
+  unset -f _pf_git_identity
 
   echo "--- Fetch / Remote Hygiene ---"
   echo ""
