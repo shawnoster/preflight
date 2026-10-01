@@ -1276,7 +1276,7 @@ GITIGNORE
         if [[ -n "$chosen_profile" ]]; then
           if echo "$profiles" | grep -qxF "$chosen_profile"; then
             local accounts_file="${PREFLIGHT_DIR:-$HOME/.preflight}/config/accounts.sh"
-            if grep -q 'AWS_PROFILE_DEFAULT' "$accounts_file" 2>/dev/null; then
+            if grep -q '^export AWS_PROFILE_DEFAULT=' "$accounts_file" 2>/dev/null; then
               sed -i "s|^export AWS_PROFILE_DEFAULT=.*|export AWS_PROFILE_DEFAULT=\"$chosen_profile\"|" "$accounts_file"
             else
               printf '\n# Default AWS profile\nexport AWS_PROFILE_DEFAULT="%s"\n' "$chosen_profile" >> "$accounts_file"
