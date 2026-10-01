@@ -160,7 +160,7 @@ dprune() {
 # dprune-all: aggressive cleanup (includes volumes)
 dprune-all() {
   echo "⚠️  This will remove all unused containers, networks, images, and volumes"
-  read -p "Continue? [y/N] " -n 1 -r
+  _pf_ask -k REPLY "Continue? [y/N] "
   echo
   if [[ $REPLY =~ ^[Yy]$ ]]; then
     docker system prune -af --volumes
