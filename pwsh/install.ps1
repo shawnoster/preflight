@@ -90,6 +90,13 @@ param(
 Set-StrictMode -Version 3.0
 $ErrorActionPreference = 'Stop'
 
+# Resolve -InstallRoot to an absolute path once, before anything derives a path from it.
+# The profile guard embeds paths built from it (the module manifest, OWL_OMP_CONFIG,
+# OWL_THEME_DIR), and a relative path there would be resolved against whatever directory
+# each later shell happens to start in. Use PowerShell's own resolver rather than
+# [IO.Path]::GetFullPath: it follows the session's location and expands "~".
+$InstallRoot = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($InstallRoot)
+
 # Markers used to tag every line we touch in $PROFILE so that -Uninstall
 # can find and reverse them deterministically.
 $script:MarkerPrefix     = '# preflight: '
