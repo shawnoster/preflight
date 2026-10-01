@@ -42,7 +42,7 @@ preflight                # Sign in, load secrets, verify environment
   preflight update         # Pull latest changes from upstream
   preflight uninstall      # Remove preflight and undo shell profile changes
   preflight help           # Usage for preflight and its subcommands
-  preflight configure      # Git identity + recommended git/SSH settings
+  preflight configure      # Apply recommended git/SSH settings
   preflight configure --yes # Apply all without prompting
   dev-commands             # List all available commands
 

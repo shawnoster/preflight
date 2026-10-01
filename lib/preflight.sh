@@ -671,7 +671,7 @@ preflight() {
       if [[ -n "$(git config --global user.email)" ]]; then
         _pf_line "✅ Git user.email: $(git config --global user.email)"
       else
-        issue_msgs+=("Git user.email not set  →  preflight configure")
+        issue_msgs+=("Git user.email not set")
         _pf_line "⚠️  Git user.email not set"
         ((issues++))
       fi
@@ -679,7 +679,7 @@ preflight() {
       if [[ -n "$(git config --global user.name)" ]]; then
         _pf_line "✅ Git user.name: $(git config --global user.name)"
       else
-        issue_msgs+=("Git user.name not set  →  preflight configure")
+        issue_msgs+=("Git user.name not set")
         _pf_line "⚠️  Git user.name not set"
         ((issues++))
       fi
@@ -848,7 +848,6 @@ preflight starts a session and checks the health of your environment.
 Usage:
   preflight [-v] [-u] [--no-login]   Run the health check
   preflight configure [--yes]        Apply recommended git/SSH settings
-                                     (sets git user.name/email if missing)
   preflight update                   Pull latest changes from upstream
   preflight uninstall                Remove preflight and shell profile changes
   preflight help                     Show this help (also -h, --help)
@@ -1100,44 +1099,6 @@ _preflight_configure() {
     fi
     echo ""
   }
-
-  echo "--- Git Identity ---"
-  echo ""
-  local _id_key _id_prompt _id_cur _id_val
-  for _id_key in user.name user.email; do
-    _id_cur=$(git config --global "$_id_key" 2>/dev/null || true)
-    if [[ -n "$_id_cur" ]]; then
-      echo "✅ $_id_key = $_id_cur (already set)"
-      ((kept++))
-      continue
-    fi
-    echo "⚠️  $_id_key not set — commits will fail or be attributed incorrectly"
-    if [[ "$auto" == true ]]; then
-      # --yes can't invent an identity; take it from the environment if present.
-      if [[ "$_id_key" == "user.name" ]]; then _id_val="${GIT_AUTHOR_NAME:-}"; else _id_val="${GIT_AUTHOR_EMAIL:-}"; fi
-      if [[ -n "$_id_val" ]]; then
-        git config --global "$_id_key" "$_id_val"
-        echo "   → Set $_id_key from environment: $_id_val"
-        ((applied++))
-      else
-        echo "   Skipped (--yes cannot choose a value). Run: git config --global $_id_key \"...\""
-        ((skipped++))
-      fi
-    else
-      [[ "$_id_key" == "user.name" ]] && _id_prompt="Full name" || _id_prompt="Email"
-      read -r -p "   $_id_prompt (Enter to skip): " _id_val
-      echo ""
-      if [[ -n "$_id_val" ]]; then
-        git config --global "$_id_key" "$_id_val"
-        echo "   ✅ Set $_id_key = $_id_val"
-        ((applied++))
-      else
-        echo "   Skipped."
-        ((skipped++))
-      fi
-    fi
-    echo ""
-  done
 
   echo "--- Fetch / Remote Hygiene ---"
   echo ""
