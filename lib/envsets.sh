@@ -185,7 +185,8 @@ _op_env_use() {
   while IFS= read -r s; do
     _op_envsets_valid_name "$s" && [[ -f "$(_op_envsets_dir)/$s.tsv" ]] || { echo "❌ No such set: $s" >&2; return 1; }
   done <<< "$chosen"
-  printf '%s\n' "$chosen" > "$(_op_envsets_dir)/.active"
+  printf '%s\n' "$chosen" > "$(_op_envsets_dir)/.active" \
+    || { echo "❌ Could not save the active sets to $(_op_envsets_dir)/.active" >&2; return 1; }
   echo "✅ Active sets: $(printf '%s\n' "$chosen" | paste -sd' ' -)"
 }
 
