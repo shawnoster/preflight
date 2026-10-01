@@ -104,7 +104,7 @@ Edit `$HOME\.preflight\pwsh\config\accounts.ps1` (gitignored, copied from
 
 Owl theme: the installer seeds a user-owned base theme at
 `$HOME\.preflight\state\owl\theme-catppuccin.omp.json` and defaults
-`$env:OWL_OMP_CONFIG` to it (only when unset) in the profile guard, so
+`$env:OWL_OMP_CONFIG` to it (only when not already defined) in the profile guard, so
 `owl-theme <name>` patches a working OMP config instead of
 `$env:POSH_THEMES_PATH` (which the module refuses to mutate). Override
 `$env:OWL_OMP_CONFIG` in `accounts.ps1` to use your own theme.

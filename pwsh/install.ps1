@@ -346,7 +346,9 @@ function New-ImportGuard {
         $script:GuardBegin
         if ($OmpConfigPath) {
             $ompLiteral = $OmpConfigPath -replace "'", "''"
-            "if (-not `$env:OWL_OMP_CONFIG) {"
+            # Test for the variable being defined, not for a truthy value: an explicitly
+            # empty OWL_OMP_CONFIG is the documented way to turn OMP integration off.
+            "if (-not (Test-Path -LiteralPath 'Env:OWL_OMP_CONFIG')) {"
             "    `$env:OWL_OMP_CONFIG = '$ompLiteral'"
             '}'
         }
@@ -379,7 +381,7 @@ function Add-ImportGuard {
         round-trips byte-for-byte.
 
         If $OmpConfigPath is provided, the guard also exports a default
-        $env:OWL_OMP_CONFIG (only when unset) pointing at the seeded owl base
+        $env:OWL_OMP_CONFIG (only when not already defined) pointing at the seeded owl base
         theme, so owl-theme's OMP patching works out of the box.
 
         If an Import-Module guard is already present, it is removed and
@@ -662,7 +664,7 @@ function Invoke-Install {
             foreach ($c in $edited.Changes) { Write-Step $c 'dry' }
             Write-Step "Would append Import-Module guard for $manifest" 'dry'
             if ($ompConfigPath) {
-                Write-Step "Would default `$env:OWL_OMP_CONFIG to $ompConfigPath (only if unset)" 'dry'
+                Write-Step "Would default `$env:OWL_OMP_CONFIG to $ompConfigPath (only if not already defined)" 'dry'
             }
         } else {
             # Confirm: -Force skips, -Confirm/-WhatIf go through ShouldProcess,
