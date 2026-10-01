@@ -1452,10 +1452,14 @@ GITIGNORE
             ((applied++))
           else
             echo "   ❌ systemctl enable failed — check: systemctl --user status 1password-agent.socket"
+            _bridge_ok=false
             ((skipped++))
           fi
         else
-          echo "   Skipped."; ((skipped++))
+          # An active but not enabled socket works now and vanishes on restart, so it
+          # must not count as a bridge worth migrating to.
+          echo "   Skipped. The bridge stays unverified until the socket is enabled."
+          ((skipped++)); _bridge_ok=false
         fi
         echo ""
       fi
