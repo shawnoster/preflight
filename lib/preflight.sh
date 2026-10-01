@@ -1369,9 +1369,14 @@ GITIGNORE
              && _got=$(sha256sum "$_tmp" | awk '{print $1}') \
              && [[ -n "$_want" && "$_want" == "$_got" ]] \
              && [[ -z "$_npr_pin" || "$_npr_pin" == "$_got" ]]; then
-            mkdir -p "$HOME/.local/bin" && install -m 0755 "$_tmp" "$_npr_bin"
-            echo "   ✅ Installed (sha256 $_got)"
-            ((applied++))
+            if mkdir -p "$HOME/.local/bin" && install -m 0755 "$_tmp" "$_npr_bin"; then
+              echo "   ✅ Installed (sha256 $_got)"
+              ((applied++))
+            else
+              echo "   ❌ Could not install to $_npr_bin — not installed"
+              _bridge_ok=false
+              ((skipped++))
+            fi
           else
             echo "   ❌ Download or checksum verification failed — not installed"
             _bridge_ok=false
