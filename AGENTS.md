@@ -36,6 +36,7 @@ Neither ever overwrites an existing live file. So a template change does not ret
 - **PostgreSQL** — `lib/postgres.sh`: cluster start/stop (`pg-up`, `pg-down`) for clusters set to `manual` in `start.conf`. Goes through `pg_ctlcluster`, which self-redirects to `systemctl` when systemd is running and the caller is root, so one code path covers systemd and non-systemd hosts. Debian/Ubuntu only — needs `postgresql-common`.
 - **1Password** — `lib/1password.sh.template`: sign-in, sign-out, secret fetching (`op-status`, `op-signin`). On first load `init.sh` copies the template to `lib/1password.sh` — the committed file is the template, not the live one.
 - **Project navigation** — `lib/project.sh`: workspace/project switching helpers
+- **Prompting** — `lib/prompt.sh`: `_pf_ask`, the Bash/zsh-portable replacement for `read -p`
 - **OOO Theme Engine** — `lib/owl.sh`: shell MOTD splash (`_owl_splash`) and Oh My Posh theme switcher (`owl-theme`). 8 themes, each with a name, color palette for the splash, and hex palette for OMP. Theme state persists in `$PREFLIGHT_DIR/state/owl/current`. OMP integration is optional — configured via `config/owl.sh` (auto-copied from `config/owl.sh.template` on first load).
 
 ## Patterns & Tech
@@ -43,7 +44,7 @@ Neither ever overwrites an existing live file. So a template change does not ret
 - **Stack**: Bash
 - **Architecture**: Library of shell functions loaded via `init.sh` sourcing `lib/*.sh`; `config/accounts.sh.template`, `config/owl.sh.template` are committed and auto-copied to their live counterparts by `init.sh` on first load — edit the templates, not the generated copies
 - **Key libraries**: `fzf` (interactive selection), `aws` CLI, `gh` CLI, `op` (1Password CLI), `git`, `docker`, `oh-my-posh` (optional, for `owl-theme`)
-- **Notable patterns**: All functions are shell aliases/functions — no subcommand framework; `PREFLIGHT_DIR` env var controls install location (default `~/.preflight`); `PREFLIGHT_BRANCH` controls the branch used by `preflight update` (default `main`); `PREFLIGHT_VERBOSE=1` for load confirmation; `AWS_PROFILE_DEFAULT` sets the default AWS profile that `preflight` exports as `AWS_PROFILE` at session start; `OWL_OMP_CONFIG` in `config/owl.sh` points to the Oh My Posh JSON — leave empty to use owl themes without OMP
+- **Notable patterns**: Libraries are sourced from both Bash and zsh, so avoid Bash-only constructs: prompt with `_pf_ask` (`lib/prompt.sh`) instead of `read -p`, and do not use `read -a`, `mapfile`/`readarray` or relying on 0-based array indexes. A prompt whose empty answer means yes must treat a failed read as a decline (`_pf_ask reply "..." || reply=n`). All functions are shell aliases/functions — no subcommand framework; `PREFLIGHT_DIR` env var controls install location (default `~/.preflight`); `PREFLIGHT_BRANCH` controls the branch used by `preflight update` (default `main`); `PREFLIGHT_VERBOSE=1` for load confirmation; `AWS_PROFILE_DEFAULT` sets the default AWS profile that `preflight` exports as `AWS_PROFILE` at session start; `OWL_OMP_CONFIG` in `config/owl.sh` points to the Oh My Posh JSON — leave empty to use owl themes without OMP
 
 ## When to Dive Deeper
 
