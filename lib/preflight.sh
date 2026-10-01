@@ -285,8 +285,15 @@ preflight() {
       fi
     elif [[ -n "$SSH_AUTH_SOCK" ]]; then
       _pf_line "✅ SSH_AUTH_SOCK is set: $SSH_AUTH_SOCK"
-      if ssh-add -l &>/dev/null; then
+      # `command` skips any ssh-add alias left over from the old ssh.exe setup.
+      command ssh-add -l &>/dev/null; local _agent_rc=$?
+      if [[ $_agent_rc -eq 0 ]]; then
         _pf_line "✅ SSH agent has keys loaded"
+      elif [[ "$_is_wsl" == true ]]; then
+        # On WSL this socket is the 1Password bridge, so a failure is a real problem.
+        issue_msgs+=("1Password SSH agent bridge returned no keys — unlock 1Password, or run: preflight configure")
+        _pf_line "⚠️  SSH agent bridge returned no keys (ssh-add exit $_agent_rc)"
+        ((issues++))
       else
         _pf_line "⚠️  SSH agent running but no keys loaded"
       fi
