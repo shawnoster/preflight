@@ -172,6 +172,17 @@ main() {
     _pf_ok "Created lib/1password.sh from template"
   fi
 
+  # Owl base theme: place the bundled OMP theme in the gitignored state dir so
+  # owl-theme has a user-owned config to patch (it refuses to touch Oh My
+  # Posh's own theme directory). init.sh re-ensures this on later updates.
+  mkdir -p "$PREFLIGHT_DIR/state/owl"
+  if [[ ! -f "$PREFLIGHT_DIR/state/owl/theme-catppuccin.omp.json" ]] \
+      && [[ -f "$PREFLIGHT_DIR/config/theme-catppuccin.omp.json" ]]; then
+    cp "$PREFLIGHT_DIR/config/theme-catppuccin.omp.json" \
+       "$PREFLIGHT_DIR/state/owl/theme-catppuccin.omp.json"
+    _pf_ok "Created state/owl/theme-catppuccin.omp.json (owl-theme OMP base theme)"
+  fi
+
   # Done
   local reload_cmd="source ~/.bashrc"
   [[ "$shell_name" == "zsh" ]]  && reload_cmd="source ${ZDOTDIR:-~}/.zshrc"
