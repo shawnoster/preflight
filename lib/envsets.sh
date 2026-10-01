@@ -117,7 +117,10 @@ _op_env_add() {
   # editing a set the user deliberately deactivated must not reactivate it.
   local act; act="$(_op_envsets_dir)/.active"
   if [[ $is_new -eq 1 && -f "$act" ]] && ! grep -qxF "$set" "$act"; then
-    printf '%s\n' "$set" >> "$act"
+    printf '%s\n' "$set" >> "$act" || {
+      echo "❌ Saved the key, but could not activate set '$set' (write to $act failed). Fix the file, then run: op-env use" >&2
+      return 1
+    }
   fi
   echo "✅ [$set] $name -> $ref"
   if declare -f op-load-env 2>/dev/null | grep -q _op_envsets_merge; then
