@@ -20,6 +20,19 @@ _op_envsets_ensure() {
   [[ -d "$d" ]] || { mkdir -p "$d" && chmod 700 "$d"; }
 }
 
+# Set names become file names, so restrict them to a safe alphabet.
+_op_envsets_valid_name() { [[ "$1" =~ ^[a-z0-9][a-z0-9_-]*$ ]]; }
+
+# Read one line from the terminal and print it. The prompt goes to stderr and the
+# builtin `read` takes no -p/-a, so this behaves the same in Bash and zsh.
+# Usage: reply=$(_op_envsets_ask "Prompt: ")
+_op_envsets_ask() {
+  local __reply
+  printf '%s' "$1" >&2
+  IFS= read -r __reply </dev/tty
+  printf '%s' "$__reply"
+}
+
 # Names of existing sets, one per line.
 _op_envsets_names() {
   local d f; d=$(_op_envsets_dir)
@@ -41,18 +54,19 @@ _op_envsets_active() {
 # Pick one of several lines: fzf when available, numbered prompt otherwise.
 # Usage: _op_envsets_pick "prompt" <<< "$choices"   (prints the choice)
 _op_envsets_pick() {
-  local prompt="$1" choices reply i
+  local prompt="$1" choices reply out
   choices=$(cat)
   [[ -n "$choices" ]] || return 1
   if command -v fzf &>/dev/null && [[ -t 2 ]]; then
     printf '%s\n' "$choices" | fzf --prompt="$prompt " --height=40% --reverse
     return
   fi
-  local -a opts; mapfile -t opts <<< "$choices"
-  for i in "${!opts[@]}"; do printf '  %d) %s\n' "$((i + 1))" "${opts[$i]}" >&2; done
-  read -r -p "  $prompt [1-${#opts[@]}]: " reply </dev/tty
-  [[ "$reply" =~ ^[0-9]+$ && reply -ge 1 && reply -le ${#opts[@]} ]] || return 1
-  printf '%s\n' "${opts[$((reply - 1))]}"
+  printf '%s\n' "$choices" | awk '{ printf "  %d) %s\n", NR, $0 }' >&2
+  reply=$(_op_envsets_ask "  $prompt [number]: ")
+  [[ "$reply" =~ ^[0-9]+$ ]] || return 1
+  out=$(printf '%s\n' "$choices" | awk -v n="$reply" 'NR == n')
+  [[ -n "$out" ]] || return 1
+  printf '%s\n' "$out"
 }
 
 # Resolve a set name: use $1 if given, else pick an existing one or create new.
@@ -63,10 +77,10 @@ _op_envsets_choose_set() {
     choices+=$'\n'"+ new set..."
     set=$(printf '%s\n' "$choices" | _op_envsets_pick "Set:") || return 1
     if [[ "$set" == "+ new set..." ]]; then
-      read -r -p "  New set name: " set </dev/tty
+      set=$(_op_envsets_ask "  New set name: ")
     fi
   fi
-  if [[ ! "$set" =~ ^[a-z0-9][a-z0-9_-]*$ ]]; then
+  if ! _op_envsets_valid_name "$set"; then
     echo "❌ Invalid set name '$set' (use lowercase letters, digits, - or _)" >&2
     return 1
   fi
@@ -78,29 +92,31 @@ _op_env_add() {
   _op_envsets_ensure
   set=$(_op_envsets_choose_set "$set") || return 1
 
-  [[ -n "$name" ]] || read -r -p "  Env var name: " name </dev/tty
+  [[ -n "$name" ]] || name=$(_op_envsets_ask "  Env var name: ")
   if [[ ! "$name" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
     echo "❌ Invalid env var name '$name'" >&2; return 1
   fi
   if [[ "$name" == "GITHUB_TOKEN" || "$name" == "GH_TOKEN" ]]; then
     echo "⚠️  $name overrides gh CLI's stored auth for every gh call. Consider GH_PAT instead."
-    local ok; read -r -p "  Use it anyway? [y/N] " ok </dev/tty
+    local ok; ok=$(_op_envsets_ask "  Use it anyway? [y/N] ")
     [[ "$ok" =~ ^[Yy]$ ]] || return 1
   fi
 
-  [[ -n "$ref" ]] || read -r -p "  1Password reference (op://vault/item/field): " ref </dev/tty
+  [[ -n "$ref" ]] || ref=$(_op_envsets_ask "  1Password reference (op://vault/item/field): ")
   if [[ ! "$ref" =~ ^op://[^/]+/[^/]+/.+ ]]; then
     echo "❌ Reference must look like op://vault/item/field" >&2; return 1
   fi
 
-  local file; file="$(_op_envsets_dir)/$set.tsv"
+  local file is_new=0; file="$(_op_envsets_dir)/$set.tsv"
+  [[ -f "$file" ]] || is_new=1
   local tmp; tmp=$(mktemp "$(_op_envsets_dir)/.tmp.XXXXXX") || return 1
   { [[ -f "$file" ]] && awk -F'\t' -v n="$name" '$1 != n' "$file"; printf '%s\t%s\n' "$name" "$ref"; } > "$tmp" \
     && chmod 600 "$tmp" && mv "$tmp" "$file" || { rm -f "$tmp"; return 1; }
 
-  # Keep an explicit .active list consistent: a brand-new set should load.
+  # Keep an explicit .active list consistent: a brand-new set should load, but
+  # editing a set the user deliberately deactivated must not reactivate it.
   local act; act="$(_op_envsets_dir)/.active"
-  if [[ -f "$act" ]] && ! grep -qxF "$set" "$act"; then
+  if [[ $is_new -eq 1 && -f "$act" ]] && ! grep -qxF "$set" "$act"; then
     printf '%s\n' "$set" >> "$act"
   fi
   echo "✅ [$set] $name -> $ref"
@@ -135,6 +151,7 @@ _op_env_rm() {
   if [[ -z "$set" ]]; then
     set=$(_op_envsets_names | _op_envsets_pick "Set:") || return 1
   fi
+  _op_envsets_valid_name "$set" || { echo "❌ Invalid set name '$set'" >&2; return 1; }
   file="$(_op_envsets_dir)/$set.tsv"
   [[ -f "$file" ]] || { echo "❌ No such set: $set" >&2; return 1; }
   if [[ -z "$name" ]]; then
@@ -146,27 +163,27 @@ _op_env_rm() {
   local tmp; tmp=$(mktemp "$(_op_envsets_dir)/.tmp.XXXXXX") || return 1
   awk -F'\t' -v n="$name" '$1 != n' "$file" > "$tmp" && chmod 600 "$tmp" && mv "$tmp" "$file" \
     || { rm -f "$tmp"; return 1; }
-  unset "$name"
   echo "🗑️  Removed $name from $set"
+  echo "   It stays set in this shell until you run: unset $name"
 }
 
 _op_env_use() {
   _op_envsets_ensure
-  local -a chosen=("$@")
-  if [[ ${#chosen[@]} -eq 0 ]]; then
-    if command -v fzf &>/dev/null; then
-      mapfile -t chosen < <(_op_envsets_names | fzf -m --prompt="Active sets (Tab to multi-select): " --height=40% --reverse)
-    else
-      read -r -p "  Sets to activate (space-separated, available: $(_op_envsets_names | tr '\n' ' ')): " -a chosen </dev/tty
-    fi
+  local chosen s
+  if [[ $# -gt 0 ]]; then
+    chosen=$(printf '%s\n' "$@")
+  elif command -v fzf &>/dev/null && [[ -t 2 ]]; then
+    chosen=$(_op_envsets_names | fzf -m --prompt="Active sets (Tab to multi-select): " --height=40% --reverse)
+  else
+    chosen=$(_op_envsets_ask "  Sets to activate (space-separated, available: $(_op_envsets_names | tr '\n' ' ')): " | tr -s ' ' '\n')
   fi
-  [[ ${#chosen[@]} -gt 0 ]] || { echo "No change."; return 0; }
-  local s
-  for s in "${chosen[@]}"; do
-    [[ -f "$(_op_envsets_dir)/$s.tsv" ]] || { echo "❌ No such set: $s" >&2; return 1; }
-  done
-  printf '%s\n' "${chosen[@]}" > "$(_op_envsets_dir)/.active"
-  echo "✅ Active sets: ${chosen[*]}"
+  chosen=$(printf '%s\n' "$chosen" | awk 'NF')
+  [[ -n "$chosen" ]] || { echo "No change."; return 0; }
+  while IFS= read -r s; do
+    _op_envsets_valid_name "$s" && [[ -f "$(_op_envsets_dir)/$s.tsv" ]] || { echo "❌ No such set: $s" >&2; return 1; }
+  done <<< "$chosen"
+  printf '%s\n' "$chosen" > "$(_op_envsets_dir)/.active"
+  echo "✅ Active sets: $(printf '%s\n' "$chosen" | paste -sd' ' -)"
 }
 
 _op_env_help() {
@@ -195,11 +212,27 @@ op-env() {
   esac
 }
 
-# Append active sets' entries to OP_SECRETS (skipping names already present),
-# so op-load-env and op-clear-env treat them like any other secret.
+# Entries a previous merge added to OP_SECRETS, so the next merge can drop them.
+declare -p _OP_ENVSETS_INJECTED &>/dev/null || _OP_ENVSETS_INJECTED=()
+
+# Rebuild OP_SECRETS to include the active sets' entries (names already supplied
+# by the base list win), so op-load-env and op-clear-env treat them like any other
+# secret. Safe to call repeatedly: entries from a previous merge are removed first,
+# so removed keys and deactivated sets don't linger in the array.
 _op_envsets_merge() {
-  local set file name ref existing dup
+  local set file name ref existing injected entry dup keep=()
+  for existing in "${OP_SECRETS[@]}"; do
+    dup=0
+    for injected in "${_OP_ENVSETS_INJECTED[@]}"; do
+      [[ "$existing" == "$injected" ]] && { dup=1; break; }
+    done
+    [[ $dup -eq 1 ]] || keep+=("$existing")
+  done
+  OP_SECRETS=("${keep[@]}")
+  _OP_ENVSETS_INJECTED=()
+
   while IFS= read -r set; do
+    _op_envsets_valid_name "$set" || continue
     file="$(_op_envsets_dir)/$set.tsv"
     [[ -f "$file" ]] || continue
     while IFS=$'\t' read -r name ref; do
@@ -208,7 +241,11 @@ _op_envsets_merge() {
       for existing in "${OP_SECRETS[@]}"; do
         [[ "${existing%%$'\t'*}" == "$name" ]] && { dup=1; break; }
       done
-      [[ $dup -eq 1 ]] || OP_SECRETS+=("$name"$'\t'"$ref")
+      if [[ $dup -eq 0 ]]; then
+        entry="$name"$'\t'"$ref"
+        OP_SECRETS+=("$entry")
+        _OP_ENVSETS_INJECTED+=("$entry")
+      fi
     done < "$file"
   done < <(_op_envsets_active)
 }
