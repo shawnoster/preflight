@@ -1321,7 +1321,11 @@ GITIGNORE
     # Ask-or-auto helper: returns 0 to apply. Usage: _pf_yes
     _pf_yes() {
       [[ "$auto" == true ]] && return 0
-      local r; read -r -p "   Apply? [Y/n] " r; echo ""
+      local r
+      printf "   Apply? [Y/n] "
+      # A failed read (end of input, or no terminal) is a decline, never consent.
+      read -r r || { echo ""; return 1; }
+      echo ""
       [[ -z "$r" || "$r" =~ ^[Yy]$ ]]
     }
 
