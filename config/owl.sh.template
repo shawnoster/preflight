@@ -9,13 +9,12 @@
 # ── Oh My Posh config ─────────────────────────────────────────────────────────
 # Path to your Oh My Posh JSON config file.
 # owl-theme will patch the palette and prompt icon in this file when you switch themes.
-# Leave empty (or keep commented out) to disable OMP integration — owl-theme will still
-# switch splash colors, it just won't touch your prompt.
-#
-# Uncomment and set to your OMP config path to enable:
-# export OWL_OMP_CONFIG="$HOME/theme-catppuccin.omp.json"
-# export OWL_OMP_CONFIG="$HOME/.config/oh-my-posh/theme.json"
-export OWL_OMP_CONFIG=""
+# Default: the bundled owl base theme copied to the gitignored state dir at
+# install time (install.sh / pwsh/install.ps1). owl-theme patches THIS copy —
+# it never touches Oh My Posh's own theme directory.
+# Point this elsewhere to use your own theme. Leave empty to disable OMP
+# integration entirely — owl-theme will still switch splash colors.
+export OWL_OMP_CONFIG="$PREFLIGHT_DIR/state/owl/theme-catppuccin.omp.json"
 
 # ── Theme state directory ─────────────────────────────────────────────────────
 # Where the current theme name is persisted (one file: "current").

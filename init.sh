@@ -90,6 +90,41 @@ if [[ ! -f "$PREFLIGHT_DIR/config/owl.sh" ]] && [[ -f "$PREFLIGHT_DIR/config/owl
   echo "   init.sh now handles _owl_theme_load, _owl_splash, and oh-my-posh init."
 fi
 
+# Migrate an untouched config/owl.sh left over from an earlier template. Those shipped
+# OWL_OMP_CONFIG="" (Oh My Posh off), and the block above only copies the template when
+# owl.sh is missing, so such installs would never get the new default. A byte-for-byte
+# match with a previously shipped template proves nothing was customized, so replacing
+# it is safe. Any edited owl.sh, including a deliberate OWL_OMP_CONFIG="", is left alone.
+# Add the sha256 of the old template here whenever the template changes.
+if [[ -f "$PREFLIGHT_DIR/config/owl.sh" ]] && [[ -f "$PREFLIGHT_DIR/config/owl.sh.template" ]]; then
+  if command -v sha256sum &>/dev/null; then
+    _pf_owl_sum=$(sha256sum "$PREFLIGHT_DIR/config/owl.sh" | cut -d' ' -f1)
+  else
+    _pf_owl_sum=$(shasum -a 256 "$PREFLIGHT_DIR/config/owl.sh" 2>/dev/null | cut -d' ' -f1)
+  fi
+  case " 7f380ed0545479cda924211f52b21bc8539779492028504503f6cd5c02c9dee8 " in
+    *" $_pf_owl_sum "*)
+      cp "$PREFLIGHT_DIR/config/owl.sh.template" "$PREFLIGHT_DIR/config/owl.sh"
+      echo "📋 Updated config/owl.sh: it was an untouched copy of an earlier template, so it now"
+      echo "   defaults OWL_OMP_CONFIG to the bundled owl theme. To turn Oh My Posh integration"
+      echo "   off, set OWL_OMP_CONFIG=\"\" in config/owl.sh."
+      ;;
+  esac
+  unset _pf_owl_sum
+fi
+
+# Owl base theme: ensure the user-owned OMP copy that owl-theme patches exists
+# (covers installs that predate the bundled theme, and `preflight update`).
+# state/ is gitignored, so owl-theme is free to rewrite the palette. Never
+# overwrites an existing copy — that one may hold the user's palette changes.
+if [[ ! -f "$PREFLIGHT_DIR/state/owl/theme-catppuccin.omp.json" ]] \
+    && [[ -f "$PREFLIGHT_DIR/config/theme-catppuccin.omp.json" ]]; then
+  mkdir -p "$PREFLIGHT_DIR/state/owl"
+  cp "$PREFLIGHT_DIR/config/theme-catppuccin.omp.json" \
+     "$PREFLIGHT_DIR/state/owl/theme-catppuccin.omp.json"
+  echo "📋 Created state/owl/theme-catppuccin.omp.json (owl-theme base theme)"
+fi
+
 # ── Source all library scripts ────────────────────────────────────────────────
 
 # A fixed path in a world-writable /tmp is both a symlink-clobber target and a
