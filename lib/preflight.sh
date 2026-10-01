@@ -1342,8 +1342,12 @@ GITIGNORE
 
     # npiperelay.exe is a Windows program, so the bridge only works while WSL interop
     # is enabled (a [interop] enabled=false in /etc/wsl.conf unregisters the handler).
-    if [[ "$_bridge_ok" == true ]] \
-       && ! grep -qx enabled /proc/sys/fs/binfmt_misc/WSLInterop /proc/sys/fs/binfmt_misc/WSLInterop-late 2>/dev/null; then
+    # Read each handler file on its own: with several files, grep exits 2 if any is missing.
+    local _interop_on=false _f
+    for _f in /proc/sys/fs/binfmt_misc/WSLInterop /proc/sys/fs/binfmt_misc/WSLInterop-late; do
+      [[ "$(head -1 "$_f" 2>/dev/null)" == enabled ]] && { _interop_on=true; break; }
+    done
+    if [[ "$_bridge_ok" == true && "$_interop_on" != true ]]; then
       echo "⚠️  WSL interop is disabled (needed to run npiperelay.exe)"
       echo "   Set in /etc/wsl.conf:   [interop]  enabled=true"
       echo "   Then run in PowerShell: wsl --shutdown   and re-run: preflight configure"
