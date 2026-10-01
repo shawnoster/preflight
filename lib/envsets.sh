@@ -35,10 +35,9 @@ _op_envsets_ask() {
 
 # Names of existing sets, one per line.
 _op_envsets_names() {
-  local d f; d=$(_op_envsets_dir)
-  for f in "$d"/*.tsv; do
-    [[ -f "$f" ]] && basename "$f" .tsv
-  done
+  local d; d=$(_op_envsets_dir)
+  # find, not a glob: an unmatched *.tsv is an error in zsh (NOMATCH) on a fresh install.
+  find "$d" -maxdepth 1 -type f -name '*.tsv' 2>/dev/null | sed 's|.*/||; s|\.tsv$||' | sort
 }
 
 # Active sets, one per line. With no .active file, every existing set is active.
