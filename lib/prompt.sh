@@ -28,7 +28,15 @@ _pf_ask() {
   printf '%s' "$__prompt" >&2
   if [[ $__key -eq 1 ]]; then
     if [[ -n "${ZSH_VERSION:-}" ]]; then
-      IFS= read -r -k 1 __ans || __rc=1
+      # zsh's -k reads from the terminal unless -u names a descriptor. On a terminal that
+      # is what we want: it returns after one key. With redirected stdin or end of input
+      # it would wait on (or fail to open) the terminal instead, so read fd 0 then. -u 0
+      # is not used on a terminal because zsh then waits for Enter.
+      if [[ -t 0 ]]; then
+        IFS= read -r -k 1 __ans || __rc=1
+      else
+        IFS= read -r -k 1 -u 0 __ans || __rc=1
+      fi
     else
       IFS= read -r -n 1 __ans || __rc=1
     fi
