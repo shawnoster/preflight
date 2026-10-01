@@ -10,6 +10,7 @@
 #   preflight uninstall  - remove preflight and undo shell profile changes
 #   preflight configure        - interactively apply recommended settings (git globals, etc.)
 #   preflight configure --yes  - apply all without prompting
+#   preflight help       - show this usage (also -h / --help)
 
 preflight() {
   # Dispatch subcommands before doing anything else
@@ -17,6 +18,7 @@ preflight() {
     update)         _preflight_update;        return ;;
     uninstall)      _preflight_uninstall;     return ;;
     configure)      _preflight_configure "${@:2}";     return ;;
+    help|-h|--help) _preflight_help;          return ;;
   esac
 
   local check_updates=false
@@ -833,6 +835,30 @@ preflight() {
   fi
   printf "%s\n" "$_pf_rule"
   printf "\n"
+}
+
+_preflight_help() {
+  cat <<'EOF'
+preflight starts a session and checks the health of your environment.
+
+Usage:
+  preflight [-v] [-u] [--no-login]   Run the health check
+  preflight configure [--yes]        Apply recommended git/SSH settings
+  preflight update                   Pull latest changes from upstream
+  preflight uninstall                Remove preflight and shell profile changes
+  preflight help                     Show this help (also -h, --help)
+
+Options:
+  -v, --verbose   Show every check section
+  -u, --updates   Compare installed tools against latest stable versions
+  --no-login      Skip sign-in steps
+  --yes           (configure) Apply all without prompting
+
+Related:
+  op-env          Manage named env sets (guild, personal, ...) of 1Password refs
+  dev-help        All modules and commands
+  dev-commands    Flat command list
+EOF
 }
 
 # ── Git credential helper ─────────────────────────────────────────────────────
