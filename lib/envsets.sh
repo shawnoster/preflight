@@ -164,7 +164,7 @@ _op_env_rm() {
   awk -F'\t' -v n="$name" '$1 != n' "$file" > "$tmp" && chmod 600 "$tmp" && mv "$tmp" "$file" \
     || { rm -f "$tmp"; return 1; }
   echo "🗑️  Removed $name from $set"
-  echo "   It stays set in this shell until you run: unset $name"
+  echo "   It stays set in this shell until you run op-clear-env or: unset $name"
 }
 
 _op_env_use() {
@@ -215,6 +215,16 @@ op-env() {
 # Entries a previous merge added to OP_SECRETS, so the next merge can drop them.
 declare -p _OP_ENVSETS_INJECTED &>/dev/null || _OP_ENVSETS_INJECTED=()
 
+# Every variable name an env set has supplied in this shell. Unlike the list above
+# it is never pruned, so op-clear-env can still clear keys that were removed or
+# whose set was deactivated after they were loaded.
+declare -p _OP_ENVSETS_SEEN &>/dev/null || _OP_ENVSETS_SEEN=()
+
+_op_envsets_unset_seen() {
+  local n
+  for n in "${_OP_ENVSETS_SEEN[@]}"; do unset "$n"; done
+}
+
 # Rebuild OP_SECRETS to include the active sets' entries (names already supplied
 # by the base list win), so op-load-env and op-clear-env treat them like any other
 # secret. Safe to call repeatedly: entries from a previous merge are removed first,
@@ -245,6 +255,7 @@ _op_envsets_merge() {
         entry="$name"$'\t'"$ref"
         OP_SECRETS+=("$entry")
         _OP_ENVSETS_INJECTED+=("$entry")
+        _OP_ENVSETS_SEEN+=("$name")
       fi
     done < "$file"
   done < <(_op_envsets_active)
