@@ -29,6 +29,8 @@ mkdir -p "$HOME" "$PREFLIGHT_DIR/config" "$PREFLIGHT_DIR/lib"
 # whole batch if any reference mentions "broken"; `read` does the same per ref.
 # FAKE_OP_INJECT_EXTRA="X=y" appends that line to inject output (what a secret value
 # containing a newline looks like after substitution).
+# FAKE_OP_MULTILINE=field makes that field resolve to a value containing a newline and a
+# forged "SAFE=pwned" line.
 # FAKE_OP_SIGNED_OUT=1 makes `whoami` fail (and `signin` emit nothing useful).
 cat > "$OP_BIN" <<'STUB'
 #!/usr/bin/env bash
@@ -36,8 +38,13 @@ case "$1" in
   whoami) [[ -z "$FAKE_OP_SIGNED_OUT" ]] ;;
   signin) exit 1 ;;
   inject) in=$(cat); grep -q broken <<<"$in" && exit 1
-          sed -E 's/\{\{ op:\/\/[^}]*\/([^/ }]+) \}\}/val-of-\1/' <<<"$in"
-          [[ -n "$FAKE_OP_INJECT_EXTRA" ]] && printf '%s\n' "$FAKE_OP_INJECT_EXTRA" ;;
+          out=$(sed -E 's/\{\{ op:\/\/[^}]*\/([^/ }]+) \}\}/val-of-\1/' <<<"$in")
+          # FAKE_OP_MULTILINE=field: that field's value is "x<newline>SAFE=pwned"
+          if [[ -n "$FAKE_OP_MULTILINE" ]]; then out=${out//val-of-$FAKE_OP_MULTILINE/$'x\nSAFE=pwned'}; fi
+          printf '%s\n' "$out"
+          # (an if, not `[[ ]] && ...`: that would make inject exit 1 whenever the var is
+          # empty and silently push every load onto the per-secret fallback path)
+          if [[ -n "$FAKE_OP_INJECT_EXTRA" ]]; then printf '%s\n' "$FAKE_OP_INJECT_EXTRA"; fi ;;
   read)   ref="${@: -1}"; [[ "$ref" == *broken* ]] && exit 1; echo "val-of-${ref##*/}" ;;
 esac
 STUB
@@ -59,6 +66,14 @@ out=$(op-load-env 2>&1); rc=$?
 chk "empty load: rc 0 and hint" '[[ $rc -eq 0 && "$out" == *"op-env add"* ]]'
 out=$(FAKE_OP_SIGNED_OUT=1 op-load-env 2>&1); rc=$?
 chk "empty load never signs in" '[[ $rc -eq 0 ]]'
+
+# ── the happy path must be the single batch call, not the fallback ─────────────
+mkdir -p "$sets"
+printf 'BATCH1\top://v/i/b1\nBATCH2\top://v/i/b2\n' > "$sets/batch.tsv"
+out=$(op-load-env 2>&1)
+chk "batch: no fallback message on success" '[[ "$out" != *"falling back"* ]]'
+chk "batch: both loaded" '[[ "$out" == *"BATCH1"* && "$out" == *"BATCH2"* ]]'
+op-clear-env >/dev/null; rm -f "$sets"/*.tsv "$sets/.active"
 
 # ── add / list / load ─────────────────────────────────────────────────────────
 op-env add guild NPM_TOKEN 'op://Private/npmjs/credential' >/dev/null
@@ -199,14 +214,56 @@ out=$(op-env migrate 2>&1)
 chk "upgrade: migrate tells the user to delete the leftover file" '[[ "$out" == *"lib/1password.sh is a leftover"* ]]'
 rm -f "$PREFLIGHT_DIR/lib/1password.sh"
 
+# ── writes are all-or-nothing (Copilot review) ────────────────────────────────
+# An unwritable .active must stop a brand-new set before anything is created.
+# (chmod does not bind root, so this one is skipped there.)
+if [[ "$(id -u)" != 0 ]]; then
+  printf 'old\n' > "$sets/old.tsv.tmp" && rm -f "$sets/old.tsv.tmp"
+  printf 'O\top://v/i/o\n' > "$sets/old.tsv"; printf 'old\n' > "$sets/.active"; chmod 444 "$sets/.active"
+  OP_SECRETS=($'A1\top://v/i/a' $'A2\top://v/i/b')
+  out=$(op-env migrate newset 2>&1); rc=$?
+  chk "unwritable .active: migrate fails" '[[ $rc -ne 0 && "$out" == *"not writable"* ]]'
+  chk "unwritable .active: no half-created set" '[[ ! -e "$sets/newset.tsv" ]]'
+  chk "unwritable .active: no stray temp files" '[[ -z "$(find "$sets" -name ".tmp.*" 2>/dev/null)" ]]'
+  out=$(op-env add newset FOO op://v/i/f 2>&1); rc=$?
+  chk "unwritable .active: op-env add is all-or-nothing too" '[[ $rc -ne 0 && ! -e "$sets/newset.tsv" ]]'
+  unset OP_SECRETS
+  chk "unwritable .active: what loads is unchanged" '[[ "$(_op_env_entries | cut -f1 | tr "\n" " ")" == "O " ]]'
+  chmod 644 "$sets/.active"
+  # Once fixed, the same migrate works and activates the set.
+  OP_SECRETS=($'A1\top://v/i/a' $'A2\top://v/i/b')
+  op-env migrate newset >/dev/null 2>&1; rc=$?
+  chk "after fixing .active: migrate succeeds and activates the set" '[[ $rc -eq 0 ]] && grep -qx newset "$sets/.active" && grep -q "^A2" "$sets/newset.tsv"'
+  unset OP_SECRETS; rm -f "$sets"/*.tsv "$sets/.active"
+fi
+# A multi-key migrate writes every key together.
+OP_SECRETS=($'K1\top://v/i/1' $'K2\top://v/i/2' $'K3\top://v/i/3')
+op-env migrate multi >/dev/null 2>&1
+chk "migrate writes all keys in one go" '[[ "$(cut -f1 "$sets/multi.tsv" | sort | tr "\n" " ")" == "K1 K2 K3 " ]]'
+unset OP_SECRETS; rm -f "$sets"/*.tsv "$sets/.active"
+
 # ── a secret value with a newline must not set other variables ────────────────
+# A stray line after a record is part of that record's value, not a new variable.
 printf 'REAL\top://v/i/r\n' > "$sets/n.tsv"
 export FAKE_OP_INJECT_EXTRA='EVIL_PATH=/tmp/evil'
 op-load-env > "$T/out" 2>&1; rc=$?
 unset FAKE_OP_INJECT_EXTRA
-chk "newline injection: unrequested name not exported" '[[ -z "${EVIL_PATH:-}" ]]'
-chk "newline injection: reported as a failure" '[[ $rc -eq 1 && "$(cat "$T/out")" == *"unexpected output"* ]]'
-chk "newline injection: the real secret still loads" '[[ "$REAL" == val-of-r ]]'
+chk "newline value: unrequested name not exported" '[[ -z "${EVIL_PATH:-}" && $rc -eq 0 ]]'
+want_real=$'val-of-r\nEVIL_PATH=/tmp/evil'
+chk "newline value: kept intact inside its own secret" '[[ "$REAL" == "$want_real" ]]'
+op-clear-env >/dev/null; rm -f "$sets"/*.tsv "$sets/.active"
+
+# Copilot's case: a multi-line value forges "SAFE=..." where SAFE is ALSO a requested
+# secret. A name check alone can't tell them apart; the per-call record tag does.
+printf 'SAFE\top://v/i/safefield\nEVIL\top://v/i/evilfield\n' > "$sets/f.tsv"
+FAKE_OP_MULTILINE=evilfield op-load-env >/dev/null 2>&1
+chk "forged line cannot overwrite another requested secret" '[[ "$SAFE" == val-of-safefield ]]'
+want_evil=$'x\nSAFE=pwned'
+chk "the multi-line secret itself loads whole" '[[ "$EVIL" == "$want_evil" ]]'
+# the same, with the forging secret FIRST (order must not matter)
+printf 'EVIL\top://v/i/evilfield\nSAFE\top://v/i/safefield\n' > "$sets/f.tsv"
+FAKE_OP_MULTILINE=evilfield op-load-env >/dev/null 2>&1
+chk "forged line cannot overwrite a secret that comes later" '[[ "$SAFE" == val-of-safefield ]]'
 op-clear-env >/dev/null; rm -f "$sets"/*.tsv "$sets/.active"
 
 # ── set -u (no OP_SECRETS, OP_BIN unset): nothing may hit an unbound variable ──

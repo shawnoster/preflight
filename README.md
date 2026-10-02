@@ -21,12 +21,14 @@ After installing:
 ```bash
 # 1. Configure your accounts
 vim ~/.preflight/config/accounts.sh   # set OP_ACCOUNT, PROJ_DIRS, etc.
-op-env add                            # register your 1Password secrets (VAR -> op:// ref)
 
-# 2. Reload your shell
+# 2. Reload your shell (op-env and the other commands only exist after this)
 source ~/.bashrc   # or open a new terminal
 
-# 3. Run preflight to start your session
+# 3. Register your 1Password secrets (VAR -> op:// ref)
+op-env add
+
+# 4. Run preflight to start your session
 preflight
 ```
 
