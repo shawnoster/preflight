@@ -33,7 +33,8 @@ mkdir -p "$HOME" "$PREFLIGHT_DIR/config" "$PREFLIGHT_DIR/lib"
 # forged "SAFE=pwned" line.
 # FAKE_OP_SIGNED_OUT=1 signs every account out.
 # FAKE_OP_SIGNED_OUT_ACCT=<account> signs just that one out (the others still work).
-# FAKE_OP_SIGNIN_OK_ACCT=<account> makes `signin` succeed for that account only.
+# FAKE_OP_SIGNIN_OK_ACCT=<account> makes `signin` succeed for that account only, and
+#   leaves it signed in afterwards (a signed-in-<account> marker beside the stub).
 # FAKE_OP_SILENT_EMPTY_ACCT=<account> makes that account's `inject` exit 0 while
 #   substituting empty values (real op.exe behaviour against a secondary account),
 #   so the loader has to notice and re-read the account per secret.
@@ -45,9 +46,14 @@ acct_of() { local prev="" a="" x; for x in "$@"; do [[ "$prev" == "--account" ]]
 log_call() { [[ -n "$FAKE_OP_LOG" ]] && printf '%s --account %s\n' "$1" "$2" >> "$FAKE_OP_LOG"; return 0; }
 case "$1" in
   whoami) a=$(acct_of "$@")
+          [[ -e "$(dirname "$0")/signed-in-$a" ]] && exit 0
           [[ -n "$FAKE_OP_SIGNED_OUT_ACCT" && "$a" == "$FAKE_OP_SIGNED_OUT_ACCT" ]] && exit 1
           [[ -z "$FAKE_OP_SIGNED_OUT" ]] ;;
-  signin) a=$(acct_of "$@"); [[ "$a" == "$FAKE_OP_SIGNIN_OK_ACCT" ]] && exit 0; exit 1 ;;
+  # A successful signin leaves the account signed in, so the whoami that follows it
+  # passes — as it does for real.
+  signin) a=$(acct_of "$@"); log_call signin "$a"
+          [[ "$a" == "$FAKE_OP_SIGNIN_OK_ACCT" ]] && { : > "$(dirname "$0")/signed-in-$a"; exit 0; }
+          exit 1 ;;
   # op.exe's desktop unlock: `vault list` is what op-signin runs to trigger it.
   vault)  a=$(acct_of "$@"); log_call vault "$a"
           [[ -n "$FAKE_OP_SIGNED_OUT_ACCT" && "$a" == "$FAKE_OP_SIGNED_OUT_ACCT" ]] && exit 1
@@ -487,13 +493,20 @@ op-clear-env >/dev/null
 FAKE_OP_SIGNED_OUT_ACCT=work op-load-env >/dev/null 2>&1; rc=$?
 chk "unreachable account: rc 1" '[[ $rc -ne 0 ]]'
 chk "unreachable account: loaded-vars memory not advanced" '[[ -z "${_OP_LOADED_VARS}" && -z "${SESS:-}" ]]'
-# …and sign-in is attempted for that account, not just the default one.
-FAKE_OP_SIGNIN_OK_ACCT=work op-load-env >/dev/null 2>&1; rc=$?
-chk "sign-in is attempted for the named account" '[[ $rc -eq 0 && "$SESSA" == val-of-sa && "$SESS" == val-of-s ]]'
+# …and sign-in is attempted for that account, not just the default one. The account
+# stays signed out until `signin` runs (the stub flips it then), so a load that never
+# calls signin cannot pass this.
+: > "$FAKE_OP_LOG"
+FAKE_OP_SIGNED_OUT_ACCT=work FAKE_OP_SIGNIN_OK_ACCT=work op-load-env >/dev/null 2>&1; rc=$?
+chk "sign-in is attempted for the named account" 'grep -qx "signin --account work" "$FAKE_OP_LOG"'
+chk "sign-in is not attempted for an account that is already signed in" '! grep -qx "signin --account test" "$FAKE_OP_LOG"'
+chk "after that sign-in the whole set loads" '[[ $rc -eq 0 && "$SESSA" == val-of-sa && "$SESS" == val-of-s ]]'
+rm -f "$T"/signed-in-*
+op-clear-env >/dev/null
+
 # op.exe has no `signin`: op-signin unlocks via `vault list`. A second account that
 # cannot be unlocked must still fail the load before anything is exported, rather than
 # the first account's variables landing while the second quietly fails.
-op-clear-env >/dev/null
 mkdir -p "$T/winbin"; cp "$OP_BIN" "$T/winbin/op.exe"
 : > "$FAKE_OP_LOG"
 ( OP_BIN="$T/winbin/op.exe" FAKE_OP_SIGNED_OUT_ACCT=work; export FAKE_OP_SIGNED_OUT_ACCT
