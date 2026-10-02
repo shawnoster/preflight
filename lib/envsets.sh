@@ -40,16 +40,6 @@ _op_envsets_ref_of() {
 # Set names become file names, so restrict them to a safe alphabet.
 _op_envsets_valid_name() { [[ "$1" =~ ^[a-z0-9][a-z0-9_-]*$ ]]; }
 
-# Read one line from the terminal and print it. The prompt goes to stderr and the
-# builtin `read` takes no -p/-a, so this behaves the same in Bash and zsh.
-# Usage: reply=$(_op_envsets_ask "Prompt: ")
-_op_envsets_ask() {
-  local __reply
-  printf '%s' "$1" >&2
-  IFS= read -r __reply </dev/tty
-  printf '%s' "$__reply"
-}
-
 # Names of existing sets, one per line.
 _op_envsets_names() {
   local d; d=$(_op_envsets_dir)
@@ -78,7 +68,7 @@ _op_envsets_pick() {
     return
   fi
   printf '%s\n' "$choices" | awk '{ printf "  %d) %s\n", NR, $0 }' >&2
-  reply=$(_op_envsets_ask "  $prompt [number]: ")
+  _pf_ask reply "  $prompt [number]: " </dev/tty || return 1
   [[ "$reply" =~ ^[0-9]+$ ]] || return 1
   out=$(printf '%s\n' "$choices" | awk -v n="$reply" 'NR == n')
   [[ -n "$out" ]] || return 1
@@ -93,7 +83,7 @@ _op_envsets_choose_set() {
     choices+=$'\n'"+ new set..."
     set=$(printf '%s\n' "$choices" | _op_envsets_pick "Set:") || return 1
     if [[ "$set" == "+ new set..." ]]; then
-      set=$(_op_envsets_ask "  New set name: ")
+      _pf_ask set "  New set name: " </dev/tty || return 1
     fi
   fi
   if ! _op_envsets_valid_name "$set"; then
@@ -172,17 +162,17 @@ _op_env_add() {
   _op_envsets_ensure
   set=$(_op_envsets_choose_set "$set") || return 1
 
-  [[ -n "$name" ]] || name=$(_op_envsets_ask "  Env var name: ")
+  if [[ -z "$name" ]]; then _pf_ask name "  Env var name: " </dev/tty || return 1; fi
   if [[ ! "$name" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
     echo "❌ Invalid env var name '$name'" >&2; return 1
   fi
   if [[ "$name" == "GITHUB_TOKEN" || "$name" == "GH_TOKEN" ]]; then
     echo "⚠️  $name overrides gh CLI's stored auth for every gh call. Consider GH_PAT instead."
-    local ok; ok=$(_op_envsets_ask "  Use it anyway? [y/N] ")
+    local ok; _pf_ask ok "  Use it anyway? [y/N] " </dev/tty || ok=n
     [[ "$ok" =~ ^[Yy]$ ]] || return 1
   fi
 
-  [[ -n "$ref" ]] || ref=$(_op_envsets_ask "  1Password reference (op://vault/item/field): ")
+  if [[ -z "$ref" ]]; then _pf_ask ref "  1Password reference (op://vault/item/field): " </dev/tty || return 1; fi
   if ! _op_envsets_valid_ref "$ref"; then
     echo "❌ Reference must look like op://vault/item/field" >&2; return 1
   fi
@@ -248,7 +238,9 @@ _op_env_use() {
   elif command -v fzf &>/dev/null && [[ -t 2 ]]; then
     chosen=$(_op_envsets_names | fzf -m --prompt="Active sets (Tab to multi-select): " --height=40% --reverse)
   else
-    chosen=$(_op_envsets_ask "  Sets to activate (space-separated, available: $(_op_envsets_names | tr '\n' ' ')): " | tr -s ' ' '\n')
+    local answer=""
+    _pf_ask answer "  Sets to activate (space-separated, available: $(_op_envsets_names | tr '\n' ' ')): " </dev/tty || return 1
+    chosen=$(printf '%s\n' "$answer" | tr -s ' ' '\n')
   fi
   chosen=$(printf '%s\n' "$chosen" | awk 'NF')
   [[ -n "$chosen" ]] || { echo "No change."; return 0; }
