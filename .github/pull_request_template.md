@@ -2,6 +2,19 @@
 
 <!-- What changes and why, in a few lines. Lead with the user-visible effect. -->
 
+## Type of change
+
+<!-- Tick what applies. "Breaking" here means an existing install has to do something
+     after `preflight update`, or a command or behavior changed incompatibly (a rename,
+     a removed command, a template or config change that does not reach live files on
+     its own). If you tick it, fill in Upgrade notes below. -->
+
+- [ ] Bug fix
+- [ ] New feature
+- [ ] Breaking change
+- [ ] Refactor / tech debt
+- [ ] Docs / config only
+
 ## Changes
 
 <!-- Bullet the notable pieces. Name files/functions where it helps a reviewer. -->
@@ -27,6 +40,7 @@
 
 ## Checklist
 
+- [ ] If this is a breaking change, Upgrade notes say what an existing install must do
 - [ ] Tracked files stay generic: no secrets, work-specific account references, or machine-specific paths
 - [ ] Works when sourced from both Bash and zsh (`_pf_ask`, not `read -p`; no `read -a`, `mapfile`/`readarray`, or 0-based array indexes)
 - [ ] Edited the `*.template` files, not the generated live copies
