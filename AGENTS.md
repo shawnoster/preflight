@@ -17,7 +17,7 @@ There are two copies of this code on disk, and they serve different roles. Know 
 
 **No separate source checkout on this machine?** Check before assuming one exists — don't guess a path like `~/dev/code/preflight` and treat its absence as "must not apply here." If `~/.preflight` really is the only clone, it's still not a license to commit tracked-file changes straight to its local `main`: `git fetch origin` first (main may have moved — another machine or a prior session may have pushed since this clone last pulled), then branch off `origin/main` (not local `main`, which `fetch` alone does not update — fast-forward it too if you want it current, but branch from the remote ref regardless), commit there, push, and open a PR from that branch, exactly as if this were the source checkout. Never land a tracked-file change directly on local `main` in any checkout, single or not.
 
-Note that both `init.sh` (on every shell load) and `install.sh` (at install time) only copy a `*.template` into its live counterpart when the live file is **missing** *and* the template exists — e.g. for owl:
+Note that both `init.sh` (on every shell load) and `install.sh` (at install time) normally copy a `*.template` into its live counterpart only when the live file is **missing** *and* the template exists — e.g. for owl:
 
 ```bash
 if [[ ! -f "$PREFLIGHT_DIR/config/owl.sh" ]] && [[ -f "$PREFLIGHT_DIR/config/owl.sh.template" ]]; then
@@ -25,7 +25,7 @@ if [[ ! -f "$PREFLIGHT_DIR/config/owl.sh" ]] && [[ -f "$PREFLIGHT_DIR/config/owl
 fi
 ```
 
-Neither ever overwrites an existing live file. So a template change does not retroactively rewrite an already-generated live file — the user hand-merges the new template content into their live file (or deletes the live file to regenerate it from scratch).
+Missing-file copying is the normal behavior: it never overwrites an existing live file, so a template change does not retroactively rewrite an already-generated live file — the user hand-merges the new template content into their live file (or deletes the live file to regenerate it from scratch). The one exception is an explicit migration in `init.sh` (today, the `config/owl.sh` check), which replaces a live file only when it is byte-for-byte a previously shipped template; add the old template's sha256 there when you change that template, and say so in the PR's upgrade notes.
 
 ## Domains Covered
 
