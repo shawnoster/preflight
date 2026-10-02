@@ -10,18 +10,18 @@
 
 There are two copies of this code on disk, and they serve different roles. Know which one you're editing before you change anything.
 
-- **The template (source) repo** — wherever you cloned it (e.g. `~/dev/code/preflight`; the source checkout location is arbitrary — only the working install path is fixed by default). This is the git working tree people clone and install from. Tracked files live here: `lib/*.sh`, the `*.template` files (`lib/1password.sh.template`, `config/accounts.sh.template`, `config/owl.sh.template`), `init.sh`, `install.sh`, docs, and this `AGENTS.md`. Everything here must stay **generic** — no personal secrets, no work-specific account references, no machine-specific paths. **All tracked changes (and all PRs) are made here.**
-- **`~/.preflight` — the working install (`PREFLIGHT_DIR`).** This is what `init.sh` actually sources at shell startup. On first load it copies the committed `*.template` files into their **live, gitignored** counterparts (`lib/1password.sh`, `config/accounts.sh`, `config/owl.sh`). Those live files are where the user's **work-specific** bits live: real `op://` secret references, the `OP_ACCOUNT` sign-in address, AWS profile defaults, etc. They are git-ignored precisely so personal config never lands in the template.
+- **The template (source) repo** — wherever you cloned it (e.g. `~/dev/code/preflight`; the source checkout location is arbitrary — only the working install path is fixed by default). This is the git working tree people clone and install from. Tracked files live here: `lib/*.sh`, the `*.template` files (`config/accounts.sh.template`, `config/owl.sh.template`), `init.sh`, `install.sh`, docs, and this `AGENTS.md`. Everything here must stay **generic** — no personal secrets, no work-specific account references, no machine-specific paths. **All tracked changes (and all PRs) are made here.**
+- **`~/.preflight` — the working install (`PREFLIGHT_DIR`).** This is what `init.sh` actually sources at shell startup. On first load it copies the committed `*.template` files into their **live, gitignored** counterparts (`config/accounts.sh`, `config/owl.sh`). Those live files, plus the gitignored `config/envsets/*.tsv` env sets, are where the user's **work-specific** bits live: real `op://` secret references (in env sets), the `OP_ACCOUNT` sign-in address, AWS profile defaults, etc. They are git-ignored precisely so personal config never lands in the template.
 
 `~/.preflight` is itself a clone of the same repo, so its *tracked* files can be edited and committed — but doing so risks drift between the two checkouts and accidentally committing local config. **Default to editing tracked files in the source checkout and opening a PR;** treat `~/.preflight` as a runtime install whose only intentional local edits are the gitignored live files.
 
 **No separate source checkout on this machine?** Check before assuming one exists — don't guess a path like `~/dev/code/preflight` and treat its absence as "must not apply here." If `~/.preflight` really is the only clone, it's still not a license to commit tracked-file changes straight to its local `main`: `git fetch origin` first (main may have moved — another machine or a prior session may have pushed since this clone last pulled), then branch off `origin/main` (not local `main`, which `fetch` alone does not update — fast-forward it too if you want it current, but branch from the remote ref regardless), commit there, push, and open a PR from that branch, exactly as if this were the source checkout. Never land a tracked-file change directly on local `main` in any checkout, single or not.
 
-Note that both `init.sh` (on every shell load) and `install.sh` (at install time) only copy a `*.template` into its live counterpart when the live file is **missing** *and* the template exists — e.g. for 1Password:
+Note that both `init.sh` (on every shell load) and `install.sh` (at install time) only copy a `*.template` into its live counterpart when the live file is **missing** *and* the template exists — e.g. for owl:
 
 ```bash
-if [[ ! -f "$PREFLIGHT_DIR/lib/1password.sh" ]] && [[ -f "$PREFLIGHT_DIR/lib/1password.sh.template" ]]; then
-  cp "$PREFLIGHT_DIR/lib/1password.sh.template" "$PREFLIGHT_DIR/lib/1password.sh"
+if [[ ! -f "$PREFLIGHT_DIR/config/owl.sh" ]] && [[ -f "$PREFLIGHT_DIR/config/owl.sh.template" ]]; then
+  cp "$PREFLIGHT_DIR/config/owl.sh.template" "$PREFLIGHT_DIR/config/owl.sh"
 fi
 ```
 
@@ -34,7 +34,8 @@ Neither ever overwrites an existing live file. So a template change does not ret
 - **Git** — `lib/git.sh`: fuzzy branch checkout (`gco`), pretty log (`glog`), stash management (`gstash` — pops by default, `--apply` to keep), WIP commits (`gwip`), GH PR creation (`gpr`)
 - **Docker** — `lib/docker.sh`: container/image management utilities (`dex` tries bash first, falls back to sh)
 - **PostgreSQL** — `lib/postgres.sh`: cluster start/stop (`pg-up`, `pg-down`) for clusters set to `manual` in `start.conf`. Goes through `pg_ctlcluster`, which self-redirects to `systemctl` when systemd is running and the caller is root, so one code path covers systemd and non-systemd hosts. Debian/Ubuntu only — needs `postgresql-common`.
-- **1Password** — `lib/1password.sh.template`: sign-in, sign-out, secret fetching (`op-status`, `op-signin`). On first load `init.sh` copies the template to `lib/1password.sh` — the committed file is the template, not the live one.
+- **1Password** — `lib/onepassword.sh`: generic, data-agnostic helpers (`op-status`, `op-signin`, `op-load-env`, `op-clear-env`, `op-new`, `op-import-csv`). It is a plain tracked file and must never name a specific secret; after-load side effects register through `_OP_AFTER_LOAD_HOOKS` (e.g. `lib/nanoleaf.sh`).
+- **Env sets** — `lib/envsets.sh`: `op-env add|list|rm|use|migrate`. The only place that defines which secrets load: named sets of `VAR → op://` refs in gitignored `config/envsets/<set>.tsv`. `_op_env_entries` is the contract between it and `op-load-env`/`op-clear-env`. A legacy `OP_SECRETS` array in an older `config/accounts.sh` is still honored until `op-env migrate` moves it.
 - **Project navigation** — `lib/project.sh`: workspace/project switching helpers
 - **Prompting** — `lib/prompt.sh`: `_pf_ask`, the Bash/zsh-portable replacement for `read -p`
 - **OOO Theme Engine** — `lib/owl.sh`: shell MOTD splash (`_owl_splash`) and Oh My Posh theme switcher (`owl-theme`). 8 themes, each with a name, color palette for the splash, and hex palette for OMP. Theme state persists in `$PREFLIGHT_DIR/state/owl/current`. OMP integration is optional — configured via `config/owl.sh` (auto-copied from `config/owl.sh.template` on first load).
@@ -54,7 +55,7 @@ Read this repo when working on:
 - **AWS SSO profile workflow issues** — `lib/aws.sh` has the profile switching and SSO login flow; `AWS_PROFILE_DEFAULT` in `config/accounts.sh` sets the session default
 - **WSL SSH setup with 1Password** — `docs/wsl-ssh-setup.md` covers prerequisites; `preflight configure` installs the systemd + npiperelay agent bridge and migrates off the old `ssh.exe` aliases
 - **Adding new shell utilities for all engineers** — add a new `lib/<domain>.sh` file
-- **1Password CLI integration for secrets** — `lib/1password.sh.template` has the sign-in flow for WSL/headless environments
+- **1Password CLI integration for secrets** — `lib/onepassword.sh` has the sign-in flow for WSL/headless environments; `lib/envsets.sh` has the list of secrets
 - **Shell MOTD or theme customization** — `lib/owl.sh` has the theme engine and splash; `config/owl.sh.template` controls `OWL_OMP_CONFIG` and `OWL_THEME_DIR`
 
 **Skip this repo when**: You need CI/CD automation, GitHub Actions, deployed tooling, or anything that runs outside a developer's local shell.
@@ -70,10 +71,12 @@ Read this repo when working on:
 | AWS utilities | `lib/aws.sh` |
 | Git utilities | `lib/git.sh` |
 | PostgreSQL cluster control | `lib/postgres.sh` |
-| 1Password utilities | `lib/1password.sh.template` (auto-copied to `lib/1password.sh` on first load) |
+| 1Password utilities | `lib/onepassword.sh` |
+| Which secrets load (`op-env`) | `lib/envsets.sh` (data in gitignored `config/envsets/*.tsv`) |
 | Account/env config | `config/accounts.sh.template` (auto-copied to `config/accounts.sh` on first load) |
 | Owl theme + OMP config | `config/owl.sh.template` (auto-copied to `config/owl.sh` on first load) |
 | WSL SSH setup guide | `docs/wsl-ssh-setup.md` |
+| Tests (env sets, `op-load-env`; bash + zsh, fake `op`) | `tests/op-env.sh` |
 
 ## Upstream / Downstream
 
