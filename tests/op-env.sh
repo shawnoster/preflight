@@ -543,8 +543,7 @@ chk "op-clear-env clears a secret defined with an account" '[[ -z "${SAME_TOKEN:
 # existing install's set files churn on the next edit.
 clean_sets
 op-env add guild PLAIN 'op://v/i/p' >/dev/null
-chk "add without an account still writes two columns" '[[ "$(cut -f1-2 "$sets/guild.tsv" | tail -1)" == "$(printf "PLAIN\top://v/i/p")" && "$(wc -l < "$sets/guild.tsv")" -eq 1 ]]'
-chk "a two-column line has no trailing tab" '! grep -q "$(printf "\t$")" "$sets/guild.tsv"'
+chk "add without an account still writes exactly the two-column line" '[[ "$(cat "$sets/guild.tsv"; echo x)" == "$(printf "PLAIN\top://v/i/p\nx")" ]]'
 unset FAKE_OP_LOG; clean_sets; op-clear-env >/dev/null
 
 # ── hooks ─────────────────────────────────────────────────────────────────────
