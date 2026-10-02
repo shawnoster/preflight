@@ -4,7 +4,7 @@
 # Intended for team/company environments: AWS, NPM, SAM, full toolchain.
 # Selected on first-time setup, or copy manually:
 #   cp config/accounts.company.sh config/accounts.sh
-# Then edit accounts.sh with your real op:// references and values.
+# Then edit accounts.sh with your real values, and register secrets with `op-env add`.
 
 # ── 1Password account reference ──────────────────────────────────────────────
 # See lib/onepassword.sh for the auth model. Examples: "my.1password.com", "work".
