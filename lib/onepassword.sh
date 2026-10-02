@@ -231,17 +231,16 @@ op-load-env() {
   _op_accts=$(printf '%s\n' "$_op_entries" | awk -F'\t' -v def="$OP_ACCOUNT" \
     '{ a = ($3 == "" ? def : $3); if (!(a in seen)) { seen[a] = 1; print a } }')
 
-  # op.exe self-authorizes on first read (desktop unlock). Native op needs an
-  # explicit session per account first, or every read for that account fails
-  # silently. Every account is established up front rather than lazily inside the
-  # loop below: a sign-in that fails after some accounts loaded would leave the
-  # loaded-vars memory describing secrets that only half resolved.
+  # Every account needs a session before anything is exported. Native op fails
+  # every read silently without one; op.exe needs its desktop unlock triggered
+  # (op-signin does that with `vault list`). Each account is established up front
+  # rather than lazily inside the loop below: a sign-in that fails after some
+  # accounts loaded would leave the loaded-vars memory describing secrets that
+  # only half resolved.
   local _op_acct
   while IFS= read -r _op_acct; do
     [[ -n "$_op_acct" ]] || continue
-    if [[ "$OP_BIN" != *op.exe ]]; then
-      "$OP_BIN" whoami --account "$_op_acct" >/dev/null 2>&1 || op-signin "$_op_acct" || return 1
-    fi
+    "$OP_BIN" whoami --account "$_op_acct" >/dev/null 2>&1 || op-signin "$_op_acct" || return 1
   done <<< "$_op_accts"
 
   # Only now record what this load manages. If sign-in failed above, the

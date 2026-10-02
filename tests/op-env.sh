@@ -48,6 +48,10 @@ case "$1" in
           [[ -n "$FAKE_OP_SIGNED_OUT_ACCT" && "$a" == "$FAKE_OP_SIGNED_OUT_ACCT" ]] && exit 1
           [[ -z "$FAKE_OP_SIGNED_OUT" ]] ;;
   signin) a=$(acct_of "$@"); [[ "$a" == "$FAKE_OP_SIGNIN_OK_ACCT" ]] && exit 0; exit 1 ;;
+  # op.exe's desktop unlock: `vault list` is what op-signin runs to trigger it.
+  vault)  a=$(acct_of "$@"); log_call vault "$a"
+          [[ -n "$FAKE_OP_SIGNED_OUT_ACCT" && "$a" == "$FAKE_OP_SIGNED_OUT_ACCT" ]] && exit 1
+          exit 0 ;;
   inject) log_call inject "$(acct_of "$@")"
           in=$(cat); grep -q broken <<<"$in" && exit 1
           # FAKE_OP_SILENT_EMPTY_ACCT=<account>: this account's batch exits 0 but
@@ -486,6 +490,20 @@ chk "unreachable account: loaded-vars memory not advanced" '[[ -z "${_OP_LOADED_
 # …and sign-in is attempted for that account, not just the default one.
 FAKE_OP_SIGNIN_OK_ACCT=work op-load-env >/dev/null 2>&1; rc=$?
 chk "sign-in is attempted for the named account" '[[ $rc -eq 0 && "$SESSA" == val-of-sa && "$SESS" == val-of-s ]]'
+# op.exe has no `signin`: op-signin unlocks via `vault list`. A second account that
+# cannot be unlocked must still fail the load before anything is exported, rather than
+# the first account's variables landing while the second quietly fails.
+op-clear-env >/dev/null
+mkdir -p "$T/winbin"; cp "$OP_BIN" "$T/winbin/op.exe"
+: > "$FAKE_OP_LOG"
+( OP_BIN="$T/winbin/op.exe" FAKE_OP_SIGNED_OUT_ACCT=work; export FAKE_OP_SIGNED_OUT_ACCT
+  op-load-env >/dev/null 2>&1; rc=$?
+  echo "$rc|${SESS:-}|${SESSA:-}|${_OP_LOADED_VARS}" > "$T/exe-result" )
+IFS='|' read -r exe_rc exe_sess exe_sessa exe_memory < "$T/exe-result"
+chk "op.exe: every account is checked up front (unlock tried for the second)" 'grep -qx "vault --account work" "$FAKE_OP_LOG"'
+chk "op.exe: a second account that cannot unlock fails the load" '[[ $exe_rc -ne 0 ]]'
+chk "op.exe: nothing from the first account was exported" '[[ -z "$exe_sess" && -z "$exe_sessa" && -z "$exe_memory" ]]'
+chk "op.exe: no inject ran before the failure" '! grep -q "^inject " "$FAKE_OP_LOG"'
 unset FAKE_OP_SIGNED_OUT_ACCT FAKE_OP_SIGNIN_OK_ACCT
 
 # ── add / list / rm with an account ────────────────────────────────────────────
