@@ -1,6 +1,6 @@
 # Config layout and settings file
 
-Status: proposal. Nothing here is implemented.
+Status: proposal, decisions settled (see Decisions). Nothing here is implemented.
 
 ## Problem
 
@@ -36,14 +36,17 @@ what any setting means.
 `XDG_CONFIG_HOME` defaults to `~/.config` and `XDG_STATE_HOME` to `~/.local/state`. Overrides, in
 priority order: `PREFLIGHT_CONFIG_DIR` / `PREFLIGHT_STATE_DIR`, then the XDG variables, then the defaults.
 
-Renaming the tracked `config/` directory to `defaults/` keeps "config" meaning only "the user's live
-config".
+The tracked `config/` directory is renamed to `defaults/` in Phase 1, so "config" means only "the user's
+live config" from the first release that has the new layout.
 
 ## Phase 1: move (no format change)
 
 Resolve the directories once, in `init.sh`, through one function, and export the result. Everything that
 builds a path from `$PREFLIGHT_DIR/config` or `$PREFLIGHT_DIR/state` uses it instead:
 
+- `git mv config defaults`, and every path that names it: `init.sh`, `install.sh`, `.gitignore`, `AGENTS.md`,
+  `README.md`, `lib/help.sh`, the profile and template comments, and the owl theme file
+  (`config/theme-catppuccin.omp.json`).
 - `init.sh`: profile picker, template copy, `source` of `accounts.sh` and `owl.sh`.
 - `install.sh`: first-run copy.
 - `lib/envsets.sh`: `_op_envsets_dir`.
@@ -142,20 +145,43 @@ fields give editors hover help and validation.
 
 `preflight config migrate` sources the old `accounts.sh` and `owl.sh` in a subshell and reads the known
 variables, instead of parsing text. It writes `config.json` and reports any variable the file set that is
-not in the table above. `EDITOR` and `VISUAL` are two such: nothing in the repo reads them, so they are
-shell environment setup, not preflight config, and belong in `lib/local.sh` or the user's rc file. The old
-files are kept. While `config.json` is absent, `accounts.sh` is still sourced (legacy mode).
+not in the table above. `EDITOR` and `VISUAL` are dropped from the shipped templates and profiles: nothing
+in the repo reads them, so they are shell environment setup, not preflight config. If an existing
+`accounts.sh` sets them, `config migrate` reports that they were not carried over and suggests `lib/local.sh`
+or the user's rc file. The old files are kept. While `config.json` is absent, `accounts.sh` is still sourced (legacy mode).
 
 The profiles (`accounts.general.sh`, `accounts.company.sh`) become `defaults/config.general.json` and
 `defaults/config.company.json`. The first-run picker copies the chosen one.
 
 The `init.sh` sha256 migration for `config/owl.sh` stays while legacy mode exists, then goes with it.
 
-### PowerShell
+### PowerShell (in scope for this phase)
 
-Out of scope here. The schema avoids anything PowerShell cannot read with `ConvertFrom-Json`, so
-`pwsh/` can drop `accounts.ps1` for the shared file in a follow-up. This is the strongest reason to use
-JSON, so it should follow soon after.
+`pwsh/` moves to the shared file in Phase 2, so the two implementations stop keeping separate copies.
+
+What it reads today (`pwsh/Preflight.psm1`, `pwsh/config/accounts.ps1.template`):
+
+- `OP_ACCOUNT`, defaulting to `change-me`. It already lets a preset environment variable win, which matches
+  the rule above.
+- `$script:OpEnvMap`, the `VAR -> op://` secret map, also defined in `accounts.ps1`. This is the env-set
+  data, not a setting. Sharing the settings file alone would leave PowerShell with a second, hand-maintained
+  list of secrets.
+
+So Phase 2 covers both:
+
+- PowerShell reads `config.json` with `ConvertFrom-Json`, through the same key table and the same
+  environment-wins and `~` rules.
+- PowerShell reads the same `envsets/*.tsv` and `.active`, with the same first-definition-wins and
+  validation rules as `_op_env_entries`, and builds `OpEnvMap` from them. `accounts.ps1` and its template go
+  away, with a legacy fallback like the bash side.
+- That makes the `.tsv` format a cross-language contract. It gets a short spec in `docs/config.md`, and a
+  shared fixture (one set of input files and the expected merged output) that both test suites check, so the
+  implementations cannot drift.
+- The per-secret account column being added on `feat/op-env-per-secret-account` has to land first, or
+  PowerShell would implement the old format and then change.
+
+Risk: PowerShell cannot be tested on the machine this was written on, so the PowerShell half needs a
+Windows or `pwsh` run before merge. Say so in that PR's test plan rather than claiming it.
 
 ## Verified before writing this
 
@@ -205,13 +231,22 @@ Two PRs, in order:
 
 1. Phase 1: layout, resolver, legacy mode, `migrate-config`, `uninstall`. Breaking for anyone who scripts
    against `~/.preflight/config`, so the PR is marked breaking and carries upgrade notes.
-2. Phase 2: `config.json`, loader, `preflight config`, schema, `docs/config.md`.
+2. Phase 2: `config.json`, loader, `preflight config`, schema, `docs/config.md`, and the `pwsh/` port
+   (settings and env sets, with the shared fixture).
 
-## Open questions
+Phase 2 may split into bash and PowerShell PRs if it gets large; the shared fixture lands with the first.
 
-1. Environment wins for every key, including `OP_ACCOUNT`? (Proposed: yes, with the migration warning.)
-2. Drop `EDITOR` and `VISUAL` from the templates entirely? (Proposed: yes.)
-3. Rename `config/` to `defaults/` in Phase 1, or leave it until Phase 2?
-4. `pwsh/` in Phase 2, or the follow-up?
-5. Is `preflight config` too much CLI for one PR? `get`/`set` are needed by the AWS picker; `edit`/`path`
-   are convenience.
+## Decisions
+
+1. **Environment wins for every key, including `OP_ACCOUNT`**, with the migration warning when the file and
+   the environment disagree.
+2. **`EDITOR` and `VISUAL` are dropped** from the templates and profiles.
+3. **`config/` is renamed to `defaults/` in Phase 1.**
+4. **`pwsh/` is included in Phase 2**, covering settings and env sets (above).
+5. **`preflight config` ships in full** in Phase 2 (`path`, `get`, `set`, `edit`, `migrate`), not trimmed to
+   the subcommands the AWS picker needs.
+
+## Still open
+
+- The set format: Phase 1 and 2 assume the per-secret account column from `feat/op-env-per-secret-account`
+  lands first. If its final format differs, the table in Phase 2 and the shared fixture change with it.
