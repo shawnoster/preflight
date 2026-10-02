@@ -354,10 +354,6 @@ printf 'REAL\top://v/i/r\n' > "$sets/n.tsv"
 export FAKE_OP_INJECT_EXTRA='EVIL_PATH=/tmp/evil'
 op-load-env > "$T/out" 2>&1; rc=$?
 unset FAKE_OP_INJECT_EXTRA
-chk "newline injection: unrequested name not exported" '[[ -z "${EVIL_PATH:-}" ]]'
-chk "newline injection: reported as a failure" '[[ $rc -eq 1 && "$(cat "$T/out")" == *"unexpected output"* ]]'
-chk "newline injection: the real secret still loads" '[[ "$REAL" == val-of-r ]]'
-op-clear-env >/dev/null; clean_sets
 chk "newline value: unrequested name not exported" '[[ -z "${EVIL_PATH:-}" && $rc -eq 0 ]]'
 want_real=$'val-of-r\nEVIL_PATH=/tmp/evil'
 chk "newline value: kept intact inside its own secret" '[[ "$REAL" == "$want_real" ]]'
