@@ -31,13 +31,34 @@ mkdir -p "$HOME" "$PREFLIGHT_DIR/config" "$PREFLIGHT_DIR/lib"
 # containing a newline looks like after substitution).
 # FAKE_OP_MULTILINE=field makes that field resolve to a value containing a newline and a
 # forged "SAFE=pwned" line.
-# FAKE_OP_SIGNED_OUT=1 makes `whoami` fail (and `signin` emit nothing useful).
+# FAKE_OP_SIGNED_OUT=1 signs every account out.
+# FAKE_OP_SIGNED_OUT_ACCT=<account> signs just that one out (the others still work).
+# FAKE_OP_SIGNIN_OK_ACCT=<account> makes `signin` succeed for that account only.
+# FAKE_OP_SILENT_EMPTY_ACCT=<account> makes that account's `inject` exit 0 while
+#   substituting empty values (real op.exe behaviour against a secondary account),
+#   so the loader has to notice and re-read the account per secret.
+# FAKE_OP_LOG=<file> records one "<verb> --account <account>" line per op call, so a
+# test can assert which account each read was made against.
 cat > "$OP_BIN" <<'STUB'
 #!/usr/bin/env bash
+acct_of() { local prev="" a="" x; for x in "$@"; do [[ "$prev" == "--account" ]] && a="$x"; prev="$x"; done; printf '%s' "$a"; }
+log_call() { [[ -n "$FAKE_OP_LOG" ]] && printf '%s --account %s\n' "$1" "$2" >> "$FAKE_OP_LOG"; return 0; }
 case "$1" in
-  whoami) [[ -z "$FAKE_OP_SIGNED_OUT" ]] ;;
-  signin) exit 1 ;;
-  inject) in=$(cat); grep -q broken <<<"$in" && exit 1
+  whoami) a=$(acct_of "$@")
+          [[ -n "$FAKE_OP_SIGNED_OUT_ACCT" && "$a" == "$FAKE_OP_SIGNED_OUT_ACCT" ]] && exit 1
+          [[ -z "$FAKE_OP_SIGNED_OUT" ]] ;;
+  signin) a=$(acct_of "$@"); [[ "$a" == "$FAKE_OP_SIGNIN_OK_ACCT" ]] && exit 0; exit 1 ;;
+  inject) log_call inject "$(acct_of "$@")"
+          in=$(cat); grep -q broken <<<"$in" && exit 1
+          # FAKE_OP_SILENT_EMPTY_ACCT=<account>: this account's batch exits 0 but
+          # substitutes nothing — which real op.exe does for a reference in a second
+          # account under desktop integration, where `op read --account` still works.
+          if [[ -n "$FAKE_OP_SILENT_EMPTY_ACCT" && "$(acct_of "$@")" == "$FAKE_OP_SILENT_EMPTY_ACCT" ]]; then
+            # Collapse "{{ ref }}" to nothing, so each record comes back NAME= with
+            # an empty value — exit 0, no diagnostic, no secret.
+            sed -E 's/=\{\{[^}]*\}\}/=/' <<<"$in"
+            exit 0
+          fi
           out=$(sed -E 's/\{\{ op:\/\/[^}]*\/([^/ }]+) \}\}/val-of-\1/' <<<"$in")
           # FAKE_OP_MULTILINE=field: that field's value is "x<newline>SAFE=pwned"
           if [[ -n "$FAKE_OP_MULTILINE" ]]; then out=${out//val-of-$FAKE_OP_MULTILINE/$'x\nSAFE=pwned'}; fi
@@ -45,7 +66,8 @@ case "$1" in
           # (an if, not `[[ ]] && ...`: that would make inject exit 1 whenever the var is
           # empty and silently push every load onto the per-secret fallback path)
           if [[ -n "$FAKE_OP_INJECT_EXTRA" ]]; then printf '%s\n' "$FAKE_OP_INJECT_EXTRA"; fi ;;
-  read)   ref="${@: -1}"; [[ "$ref" == *broken* ]] && exit 1; echo "val-of-${ref##*/}" ;;
+  read)   log_call read "$(acct_of "$@")"
+          ref="${@: -1}"; [[ "$ref" == *broken* ]] && exit 1; echo "val-of-${ref##*/}" ;;
 esac
 STUB
 chmod +x "$OP_BIN"
@@ -384,6 +406,115 @@ su=$( ( set -u
 chk "set -u: no unbound-variable errors" '[[ "$su" != *"unbound variable"* && "$su" != *"parameter not set"* ]]'
 chk "set -u: op-load-env still loads from the set" '[[ "$su" != *"SU-NOT-LOADED"* && "$su" != *"No secrets configured"* ]]'
 clean_sets; OP_SECRETS=()
+
+# ── per-secret account: one set spanning two 1Password accounts ────────────────
+# `op` resolves a reference against exactly one account per call, so entries naming
+# different accounts cannot share one `op inject`. op-load-env groups by account and
+# issues one batch each. A line with no third column means $OP_ACCOUNT, so the
+# two-column lines every install already has are unaffected.
+op-clear-env >/dev/null; clean_sets
+export FAKE_OP_LOG="$T/oplog"
+
+printf 'DEF\top://v/i/d\nALT\top://v/i/a\twork\n' > "$sets/acct.tsv"
+: > "$FAKE_OP_LOG"
+op-load-env > "$T/out" 2>&1; rc=$?
+out=$(cat "$T/out")
+chk "two accounts: both secrets load" '[[ $rc -eq 0 && "$DEF" == val-of-d && "$ALT" == val-of-a ]]'
+chk "two accounts: one inject per account" '[[ $(grep -c "^inject " "$FAKE_OP_LOG") -eq 2 ]]'
+chk "two accounts: a two-column line uses \$OP_ACCOUNT" 'grep -qx "inject --account test" "$FAKE_OP_LOG"'
+chk "two accounts: a third column selects its own account" 'grep -qx "inject --account work" "$FAKE_OP_LOG"'
+chk "two accounts: neither batch went through per-secret reads" '! grep -q "^read " "$FAKE_OP_LOG"'
+chk "two accounts: output says where each secret came from" '[[ "$out" == *"DEF (via test)"* && "$out" == *"ALT (via work)"* ]]'
+
+# Accounts are visited in order of first appearance, so a single-account load is
+# still exactly one call and its output carries no "(via ...)" decoration.
+clean_sets; printf 'ONE\top://v/i/o\n' > "$sets/one.tsv"
+: > "$FAKE_OP_LOG"
+op-load-env > "$T/out" 2>&1
+out=$(cat "$T/out")
+chk "one account: still a single inject" '[[ $(grep -c "^inject " "$FAKE_OP_LOG") -eq 1 ]]'
+chk "one account: output is unchanged (no account decoration)" '[[ "$out" == *"✅ ONE"* && "$out" != *"(via"* ]]'
+
+# A bad reference only poisons its own account's batch. The other account must still
+# resolve through the fast path, and the fallback reads must target the account that
+# actually failed.
+clean_sets
+printf 'DEF_BAD\top://v/broken/d\nALT\top://v/i/a\twork\n' > "$sets/acct.tsv"
+: > "$FAKE_OP_LOG"
+op-load-env > "$T/out" 2>&1; rc=$?
+out=$(cat "$T/out")
+chk "one account broken: the other still loads" '[[ "$ALT" == val-of-a && -z "${DEF_BAD:-}" ]]'
+chk "one account broken: rc 1" '[[ $rc -eq 1 ]]'
+chk "one account broken: the good account still used the batch path" 'grep -qx "inject --account work" "$FAKE_OP_LOG"'
+chk "one account broken: fallback reads targeted the failing account" 'grep -qx "read --account test" "$FAKE_OP_LOG" && ! grep -qx "read --account work" "$FAKE_OP_LOG"'
+chk "one account broken: the message names the account" '[[ "$out" == *"Batch resolve failed for test"* && "$out" == *"DEF_BAD (failed to load, via test)"* ]]'
+op-clear-env >/dev/null
+
+# An `op inject` that exits 0 while substituting an empty value is a failed batch, not
+# a secret that resolved to nothing — real op.exe does this against a second account
+# under desktop integration, where the per-secret read for the same reference works.
+# Without this the value is silently treated as absent, and (worse) a genuinely empty
+# secret and an unresolvable one are indistinguishable.
+clean_sets
+printf 'SILENT\top://v/i/s\twork\nQUIET\top://v/i/q\twork\n' > "$sets/acct.tsv"
+: > "$FAKE_OP_LOG"
+FAKE_OP_SILENT_EMPTY_ACCT=work op-load-env > "$T/out" 2>&1; rc=$?
+out=$(cat "$T/out")
+chk "silent empty batch: fell back to per-secret reads" 'grep -qx "read --account work" "$FAKE_OP_LOG"'
+chk "silent empty batch: both secrets still load" '[[ "$SILENT" == val-of-s && "$QUIET" == val-of-q ]]'
+chk "silent empty batch: rc 0 (recovered, nothing actually failed)" '[[ $rc -eq 0 ]]'
+chk "silent empty batch: says it fell back" '[[ "$out" == *"Batch resolve failed"* ]]'
+chk "silent empty batch: does not report a failure for a secret it recovered" '[[ "$out" != *"SILENT (failed to load"* && "$out" != *"QUIET (failed to load"* ]]'
+op-clear-env >/dev/null
+
+# A malformed account column is dropped rather than passed to op as a flag value, and
+# a line with more columns than the format allows is dropped too.
+clean_sets
+printf 'BADACCT\top://v/i/z\tnot a valid acct!\nEXTRA\top://v/i/x\twork\tsurplus\nGOOD\top://v/i/g\nNAMED\top://v/i/n\twork\n' > "$sets/acct.tsv"
+chk "malformed account column is dropped" '[[ "$(_op_env_entries)" != *BADACCT* ]]'
+chk "an over-long line is dropped" '[[ "$(_op_env_entries)" != *EXTRA* ]]'
+chk "the well-formed lines survive, account column and all" '[[ "$(_op_env_entries)" == *"GOOD"$'"'"'\t'"'"'"op://v/i/g"* && "$(_op_env_entries)" == *"NAMED"$'"'"'\t'"'"'"op://v/i/n"$'"'"'\t'"'"'"work" ]]'
+
+# Each account needs its own session on native op. If one cannot be established the
+# load must fail *before* recording anything, so op-clear-env still knows what is set.
+clean_sets
+printf 'SESS\top://v/i/s\nSESSA\top://v/i/sa\twork\n' > "$sets/acct.tsv"
+op-clear-env >/dev/null
+FAKE_OP_SIGNED_OUT_ACCT=work op-load-env >/dev/null 2>&1; rc=$?
+chk "unreachable account: rc 1" '[[ $rc -ne 0 ]]'
+chk "unreachable account: loaded-vars memory not advanced" '[[ -z "${_OP_LOADED_VARS}" && -z "${SESS:-}" ]]'
+# …and sign-in is attempted for that account, not just the default one.
+FAKE_OP_SIGNIN_OK_ACCT=work op-load-env >/dev/null 2>&1; rc=$?
+chk "sign-in is attempted for the named account" '[[ $rc -eq 0 && "$SESSA" == val-of-sa && "$SESS" == val-of-s ]]'
+unset FAKE_OP_SIGNED_OUT_ACCT FAKE_OP_SIGNIN_OK_ACCT
+
+# ── add / list / rm with an account ────────────────────────────────────────────
+clean_sets; op-clear-env >/dev/null
+op-env add guild WORK_TOKEN 'op://Other/Item/credential' work >/dev/null
+chk "add writes the account as a third column" 'grep -qx "WORK_TOKEN$(printf "\t")op://Other/Item/credential$(printf "\t")work" "$sets/guild.tsv"'
+chk "list shows the account when it is not the default" '[[ "$(op-env list)" == *"WORK_TOKEN"* && "$(op-env list)" == *"[account: work]"* ]]'
+# Re-adding without an account must keep the one already on the line: silently falling
+# back to $OP_ACCOUNT would move the secret to a different account.
+op-env add guild WORK_TOKEN 'op://Other/Item/credential2' >/dev/null
+chk "re-adding without an account keeps the existing account" 'grep -qx "WORK_TOKEN$(printf "\t")op://Other/Item/credential2$(printf "\t")work" "$sets/guild.tsv"'
+# Naming the default account explicitly is not decoration, and is not shown as one.
+op-env add guild SAME_TOKEN 'op://Other/Item/c' test >/dev/null
+chk "an account equal to \$OP_ACCOUNT is stored but not displayed" '[[ "$(op-env list)" == *SAME_TOKEN* && "$(op-env list)" != *"[account: test]"* ]]'
+out=$(op-env add guild NOPE 'op://Other/Item/c' 'bad account!' 2>&1); rc=$?
+chk "add rejects a malformed account" '[[ $rc -ne 0 && "$out" == *"Invalid account"* ]]'
+chk "a rejected add writes nothing" '! grep -q NOPE "$sets/guild.tsv"'
+chk "rm removes a key that carries an account" 'op-env rm guild WORK_TOKEN >/dev/null && ! grep -q WORK_TOKEN "$sets/guild.tsv"'
+# op-clear-env only cares about names, so the account column must not confuse it.
+op-clear-env >/dev/null
+chk "op-clear-env clears a secret defined with an account" '[[ -z "${SAME_TOKEN:-}" ]]'
+
+# Two-column lines must come out of op-env add exactly as they always did, or every
+# existing install's set files churn on the next edit.
+clean_sets
+op-env add guild PLAIN 'op://v/i/p' >/dev/null
+chk "add without an account still writes two columns" '[[ "$(cut -f1-2 "$sets/guild.tsv" | tail -1)" == "$(printf "PLAIN\top://v/i/p")" && "$(wc -l < "$sets/guild.tsv")" -eq 1 ]]'
+chk "a two-column line has no trailing tab" '! grep -q "$(printf "\t$")" "$sets/guild.tsv"'
+unset FAKE_OP_LOG; clean_sets; op-clear-env >/dev/null
 
 # ── hooks ─────────────────────────────────────────────────────────────────────
 source "$R/lib/nanoleaf.sh"; source "$R/lib/onepassword.sh"

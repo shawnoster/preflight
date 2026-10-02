@@ -10,8 +10,14 @@
 # config/envsets/.active (absent = every set is active). Hand-editing a .tsv
 # is fine.
 #
+# A line may carry a third column naming the 1Password account that holds the
+# reference, so one set can span accounts (`op` resolves a reference against
+# exactly one account per call, so the loader batches per account). The column
+# is optional and defaults to $OP_ACCOUNT, which is why two-column lines — every
+# line written before this existed — keep working untouched.
+#
 # Usage:
-#   op-env add [set] [VAR] [op://ref]   add/update a key (prompts for what's missing)
+#   op-env add [set] [VAR] [op://ref] [account]   add/update a key (prompts for what's missing)
 #   op-env list [set]                   show sets and their keys
 #   op-env rm [set] [VAR]               remove a key (fzf picker if omitted)
 #   op-env use [set...]                 choose which sets op-load-env loads
@@ -30,11 +36,49 @@ _op_envsets_ensure() {
 _OP_REF_RE='^op://[^/]+/[^/]+/.+'
 _op_envsets_valid_ref() { [[ "$1" =~ $_OP_REF_RE ]]; }
 
-# First valid reference a set file gives VAR ("" if none).
+# An account is a sign-in address ("my-team.1password.com") under WSL desktop
+# integration, or an `op account add` shorthand ("work") on native op — either way
+# an unquoted word of letters, digits, dots, dashes and underscores.
+_OP_ACCT_RE='^[A-Za-z0-9][A-Za-z0-9._-]*$'
+_op_envsets_valid_acct() { [[ "$1" =~ $_OP_ACCT_RE ]]; }
+
+# A "reference<TAB>account" pair as it actually resolves. An absent account column
+# means the default, so a hand-written two-column line and one that spells out the
+# default have to compare equal — migrate refuses rather than silently switch a
+# credential, so comparing the raw text instead would refuse harmless no-ops.
+# Usage: _op_envsets_pair REF [ACCOUNT]
+_op_envsets_pair() { printf '%s\t%s' "$1" "${2:-${OP_ACCOUNT:-}}"; }
+
+# Render a pair for a human: the reference, plus the account only when it is not
+# the one already in force.
+_op_envsets_show() {
+  local ref="$1" acct=""
+  if [[ "$1" == *$'\t'* ]]; then
+    ref="${1%%$'\t'*}"; acct="${1#*$'\t'}"
+  fi
+  if [[ -n "$acct" && "$acct" != "${OP_ACCOUNT:-}" ]]; then
+    printf '%s [account: %s]' "$ref" "$acct"
+  else
+    printf '%s' "$ref"
+  fi
+}
+
+# First valid "reference<TAB>account" pair a set file gives VAR ("" if none), with
+# the account resolved so an absent column means the default.
 # Usage: _op_envsets_ref_of FILE VAR
 _op_envsets_ref_of() {
   [[ -f "$1" ]] || return 0
-  tr -d '\r' < "$1" | awk -F'\t' -v n="$2" -v re="$_OP_REF_RE" '$1 == n && $2 ~ re { print $2; exit }'
+  tr -d '\r' < "$1" | awk -F'\t' -v n="$2" -v re="$_OP_REF_RE" -v def="${OP_ACCOUNT:-}" \
+    '$1 == n && $2 ~ re { print $2 "\t" ($3 == "" ? def : $3); exit }'
+}
+
+# The account column of the first line a set file gives VAR, verbatim — "" both when
+# there is no line and when the line has no account column, which are different
+# situations: "keep the default" versus "do not touch what is already there".
+# Usage: _op_envsets_acct_of FILE VAR
+_op_envsets_acct_of() {
+  [[ -f "$1" ]] || return 0
+  tr -d '\r' < "$1" | awk -F'\t' -v n="$2" '$1 == n { print $3; exit }'
 }
 
 # Set names become file names, so restrict them to a safe alphabet.
@@ -151,14 +195,18 @@ _op_envsets_write() {
   rm -f "$bak"
 }
 
-# Write (or replace) one VAR -> ref line in a set, creating the set if needed.
-# Usage: _op_envsets_put set VAR ref
+# Write (or replace) one VAR -> ref line in a set, creating the set if needed. The
+# account column is written only when given, so updating a reference never rewrites
+# a two-column line into three.
+# Usage: _op_envsets_put set VAR ref [account]
 _op_envsets_put() {
-  printf '%s\t%s\n' "$2" "$3" | _op_envsets_write "$1"
+  local line="$2"$'\t'"$3"
+  if [[ -n "${4:-}" ]]; then line+=$'\t'"$4"; fi
+  printf '%s\n' "$line" | _op_envsets_write "$1"
 }
 
 _op_env_add() {
-  local set="${1:-}" name="${2:-}" ref="${3:-}"
+  local set="${1:-}" name="${2:-}" ref="${3:-}" acct="${4:-}"
   _op_envsets_ensure
   set=$(_op_envsets_choose_set "$set") || return 1
 
@@ -177,8 +225,21 @@ _op_env_add() {
     echo "❌ Reference must look like op://vault/item/field" >&2; return 1
   fi
 
-  _op_envsets_put "$set" "$name" "$ref" || return 1
+  # The account is an optional 4th argument and is never prompted for: it is rare
+  # enough that a prompt would make every add cost an extra Enter, and `add` does
+  # no 1Password I/O to infer it from. Left out on an update, it keeps whatever the
+  # line already said — changing a reference must not quietly move the secret to
+  # another account, or to the default one.
+  if [[ -z "$acct" ]]; then
+    acct=$(_op_envsets_acct_of "$(_op_envsets_dir)/$set.tsv" "$name")
+  fi
+  if [[ -n "$acct" ]] && ! _op_envsets_valid_acct "$acct"; then
+    echo "❌ Invalid account '$acct' (letters, digits, dots, dashes and underscores)" >&2; return 1
+  fi
+
+  _op_envsets_put "$set" "$name" "$ref" "$acct" || return 1
   echo "✅ [$set] $name -> $ref"
+  [[ -n "$acct" ]] && echo "   account: $acct"
   echo "   Load it now: op-load-env"
 }
 
@@ -190,9 +251,17 @@ _op_env_list() {
     found=1
     file="$(_op_envsets_dir)/$set.tsv"
     if grep -qxF "$set" <<< "$active"; then echo "● $set (active)"; else echo "○ $set (inactive)"; fi
-    while IFS=$'\t' read -r line ref; do
+    while IFS=$'\t' read -r line ref acct; do
       ref=${ref%$'\r'}
-      [[ -n "$line" ]] && printf '    %-28s %s\n' "$line" "$ref"
+      acct=${acct%$'\r'}
+      [[ -n "$line" ]] || continue
+      # The account only when it differs from the default, so a single-account
+      # install's output is unchanged by this feature.
+      if [[ -n "$acct" && "$acct" != "${OP_ACCOUNT:-}" ]]; then
+        printf '    %-28s %s  [account: %s]\n' "$line" "$ref" "$acct"
+      else
+        printf '    %-28s %s\n' "$line" "$ref"
+      fi
     done < "$file"
   done < <(_op_envsets_names)
   local legacy; legacy=$(_op_legacy_secrets)
@@ -263,7 +332,7 @@ _op_env_use() {
 #   - an existing set that is not active is refused (its keys would stop loading)
 # Usage: op-env migrate [set] [--force]
 _op_env_migrate() {
-  local force=0 set="" arg legacy valid entries line name ref file dir order s r
+  local force=0 set="" arg legacy valid entries line name ref refpair file dir order s r
   local dest_def winner_set winner_ref dest_conf="" shadow="" moved=0 same=0
   for arg in "$@"; do
     case "$arg" in
@@ -309,24 +378,30 @@ _op_env_migrate() {
   order=$( { _op_envsets_active; [[ -f "$file" ]] || printf '%s\n' "$set"; } | awk 'NF && !seen[$0]++')
   [[ -f "$dir/.active" ]] || order=$(printf '%s\n' "$order" | sort)
 
+  # Compare by what a definition resolves to, not by how it is spelled: an entry
+  # with no account column means the default. So a legacy entry (which has no
+  # account column either) is held as a pair too. The pair is only ever compared —
+  # what lands in the set file is the bare reference, so migrating does not stamp
+  # the current default account onto lines that never named one.
   while IFS= read -r line; do
     name="${line%%$'\t'*}"; ref="${line#*$'\t'}"
+    refpair=$(_op_envsets_pair "$ref")
     dest_def=$(_op_envsets_ref_of "$file" "$name")
-    if [[ -n "$dest_def" && "$dest_def" != "$ref" && $force -eq 0 ]]; then
-      dest_conf+="   $name: [$set] has $dest_def, the legacy list has $ref"$'\n'
+    if [[ -n "$dest_def" && "$dest_def" != "$refpair" && $force -eq 0 ]]; then
+      dest_conf+="   $name: [$set] has $(_op_envsets_show "$dest_def"), the legacy list has $(_op_envsets_show "$refpair")"$'\n'
     fi
     winner_set=""; winner_ref=""
     while IFS= read -r s; do
       [[ -n "$s" ]] || continue
       if [[ "$s" == "$set" ]]; then
-        if [[ -n "$dest_def" && $force -eq 0 ]]; then r="$dest_def"; else r="$ref"; fi
+        if [[ -n "$dest_def" && $force -eq 0 ]]; then r="$dest_def"; else r="$refpair"; fi
       else
         r=$(_op_envsets_ref_of "$dir/$s.tsv" "$name")
       fi
       if [[ -n "$r" ]]; then winner_set="$s"; winner_ref="$r"; break; fi
     done <<< "$order"
-    if [[ -n "$winner_set" && "$winner_set" != "$set" && "$winner_ref" != "$ref" ]]; then
-      shadow+="   $name: set [$winner_set] defines it as $winner_ref and would override $ref"$'\n'
+    if [[ -n "$winner_set" && "$winner_set" != "$set" && "$winner_ref" != "$refpair" ]]; then
+      shadow+="   $name: set [$winner_set] defines it as $(_op_envsets_show "$winner_ref") and would override $(_op_envsets_show "$refpair")"$'\n'
     fi
   done <<< "$entries"
 
@@ -349,7 +424,7 @@ _op_env_migrate() {
   local to_write=""
   while IFS= read -r line; do
     name="${line%%$'\t'*}"; ref="${line#*$'\t'}"
-    if [[ "$(_op_envsets_ref_of "$file" "$name")" == "$ref" ]]; then
+    if [[ "$(_op_envsets_ref_of "$file" "$name")" == "$(_op_envsets_pair "$ref")" ]]; then
       echo "   $name already in [$set] with the same reference"; same=$((same + 1)); continue
     fi
     to_write+="$name"$'\t'"$ref"$'\n'
@@ -378,7 +453,7 @@ _op_env_help() {
   cat <<'EOF'
 op-env manages named env sets backed by 1Password references.
 
-  op-env add [set] [VAR] [op://ref]   Add or update a key (prompts for the rest)
+  op-env add [set] [VAR] [op://ref] [account]   Add or update a key (prompts for the rest)
   op-env list [set]                   Show sets and keys (● active, ○ inactive)
   op-env rm [set] [VAR]               Remove a key
   op-env use [set...]                 Choose active sets (fzf multi-select if omitted)
@@ -388,6 +463,16 @@ op-env manages named env sets backed by 1Password references.
 Sets (e.g. guild, personal) are stored in config/envsets/<set>.tsv, one
 `VAR<TAB>op://vault/item/field` per line, and are the only list of secrets
 op-load-env and op-clear-env use.
+
+A line may add a third TAB-separated column: the 1Password account that holds the
+reference (a sign-in address like my-team.1password.com, or an `op account add`
+shorthand). Leave it out to use $OP_ACCOUNT. Use it when a reference lives in a
+different account than your other secrets — op resolves each reference against one
+account per call, so op-load-env batches one `op inject` per account:
+
+  op-env add guild ATLASSIAN_TOKEN op://Employee/Some\ Item/credential my-team.1password.com
+
+Re-adding a key without an account keeps the one already on the line.
 EOF
 }
 
@@ -413,12 +498,18 @@ _op_legacy_secrets() {
 }
 
 # Everything op-load-env / op-clear-env need to know: one `VAR<TAB>op://ref` line
-# per secret, from the active sets. An OP_SECRETS array still defined by an older
-# config/accounts.sh is honored too (and wins on a name clash) until it is moved
-# with `op-env migrate`. The first definition of a name wins (sets are read in the
-# order of config/envsets/.active, or alphabetically when that file is absent);
-# anything that isn't a valid variable name or an op:// reference is dropped.
-# CRs are stripped so a set edited on Windows (CRLF) still resolves.
+# per secret, from the active sets, carrying an optional third `TABaccount` column
+# when the set names one (otherwise $OP_ACCOUNT). An OP_SECRETS array still defined
+# by an older config/accounts.sh is honored too (and wins on a name clash) until it
+# is moved with `op-env migrate`. The first definition of a name wins (sets are read
+# in the order of config/envsets/.active, or alphabetically when that file is absent);
+# anything that isn't a valid variable name, an op:// reference, or a well-formed
+# account is dropped. CRs are stripped so a set edited on Windows (CRLF) still
+# resolves.
+#
+# Lines are passed through as written, so a two-column line stays two columns: the
+# loader distinguishes the shapes, and a set with no account column reads exactly as
+# it did before this existed.
 _op_env_entries() {
   local set file
   {
@@ -428,5 +519,6 @@ _op_env_entries() {
       file="$(_op_envsets_dir)/$set.tsv"
       [[ -f "$file" ]] && awk 1 "$file"
     done < <(_op_envsets_active)
-  } | tr -d '\r' | awk -F'\t' -v re="$_OP_REF_RE" '$1 ~ /^[A-Za-z_][A-Za-z0-9_]*$/ && $2 ~ re && !seen[$1]++'
+  } | tr -d '\r' | awk -F'\t' -v re="$_OP_REF_RE" -v acre="$_OP_ACCT_RE" \
+      'NF <= 3 && $1 ~ /^[A-Za-z_][A-Za-z0-9_]*$/ && $2 ~ re && ($3 == "" || $3 ~ acre) && !seen[$1]++'
 }

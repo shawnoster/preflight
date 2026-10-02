@@ -189,8 +189,12 @@ declare -p _OP_AFTER_LOAD_HOOKS &>/dev/null || _OP_AFTER_LOAD_HOOKS=()
 # Load secrets into environment variables.
 #
 # This function is data-agnostic: _op_env_entries (lib/envsets.sh) supplies the
-# list, one `VAR<TAB>op://vault/item/field` line per secret. Nothing here names
-# a particular secret.
+# list, one `VAR<TAB>op://ref` line per secret, optionally followed by a
+# `TABaccount` column. Nothing here names a particular secret.
+#
+# `op` resolves a reference against exactly one account per call, so entries are
+# grouped by the account they resolve against (their own column, else
+# $OP_ACCOUNT) and each group becomes one `op inject` call.
 op-load-env() {
   if ! declare -f _op_env_entries >/dev/null; then
     echo "❌ No env source loaded (lib/envsets.sh is missing)"
@@ -219,11 +223,26 @@ op-load-env() {
 
   _op_resolve_bin || { echo "❌ 1Password CLI not found (need op.exe or op on PATH)"; return 1; }
 
+  # `op` resolves a reference against exactly one account per call, so a set that
+  # names more than one account is resolved as one batch per account. An entry with
+  # no account column belongs to $OP_ACCOUNT. First-appearance order, so a
+  # single-account set resolves in one call exactly as it always did.
+  local _op_accts
+  _op_accts=$(printf '%s\n' "$_op_entries" | awk -F'\t' -v def="$OP_ACCOUNT" \
+    '{ a = ($3 == "" ? def : $3); if (!(a in seen)) { seen[a] = 1; print a } }')
+
   # op.exe self-authorizes on first read (desktop unlock). Native op needs an
-  # explicit session first, or every read fails silently.
-  if [[ "$OP_BIN" != *op.exe ]] && ! "$OP_BIN" whoami --account "$OP_ACCOUNT" >/dev/null 2>&1; then
-    op-signin "$OP_ACCOUNT" || return 1
-  fi
+  # explicit session per account first, or every read for that account fails
+  # silently. Every account is established up front rather than lazily inside the
+  # loop below: a sign-in that fails after some accounts loaded would leave the
+  # loaded-vars memory describing secrets that only half resolved.
+  local _op_acct
+  while IFS= read -r _op_acct; do
+    [[ -n "$_op_acct" ]] || continue
+    if [[ "$OP_BIN" != *op.exe ]]; then
+      "$OP_BIN" whoami --account "$_op_acct" >/dev/null 2>&1 || op-signin "$_op_acct" || return 1
+    fi
+  done <<< "$_op_accts"
 
   # Only now record what this load manages. If sign-in failed above, the
   # previous list stays, so op-clear-env still knows what is in the environment.
@@ -233,8 +252,8 @@ op-load-env() {
   # "--- Secrets ---" section header. Standalone callers still get the
   # per-secret ✅/⚠️ lines below.
 
-  # Batch resolve every secret in ONE `op inject` call instead of one read per
-  # secret. Each op invocation pays a fixed startup + auth round-trip cost (and,
+  # Batch resolve each account's secrets in ONE `op inject` call instead of one read
+  # per secret. Each op invocation pays a fixed startup + auth round-trip cost (and,
   # under WSL with op.exe, a WSL→Windows process-spawn cost on top), so
   # collapsing N invocations into 1 is the bulk of the speedup. `op inject`
   # reads a template from stdin and substitutes {{ op://… }} references inline.
@@ -248,71 +267,109 @@ op-load-env() {
   # newline (even one that looks like `OTHER=x`) stays inside its own record: it
   # cannot forge a boundary, because it can't know the tag, and multi-line values
   # load intact. (A fixed `VAR=` framing let such a value overwrite another secret.)
-  local _op_tag _op_template=""
+  # The tag spans the whole load, so the per-account split cannot be used to forge
+  # a boundary either.
+  local _op_tag
   _op_tag="@@pf$(od -An -N8 -tx1 /dev/urandom 2>/dev/null | tr -d ' \n')${RANDOM}${RANDOM}@@"
-  while IFS= read -r _op_line; do
-    [[ -n "$_op_line" ]] || continue
-    _op_template+="${_op_tag}${_op_line%%$'\t'*}={{ ${_op_line#*$'\t'} }}"$'\n'
-  done <<< "$_op_entries"
 
-  local _op_resolved _op_failed=0
-  if ! _op_resolved=$(printf '%s' "$_op_template" \
-        | "$OP_BIN" inject --account "$OP_ACCOUNT" 2>/dev/null); then
-    # `op inject` is all-or-nothing: one unresolvable reference fails the whole
-    # batch. Fall back to per-secret reads so we can report exactly which
-    # reference broke (and still load the rest). Slower, but only on the error
-    # path — the happy path stays a single invocation.
-    echo "⚠️  Batch resolve failed — falling back to per-secret reads"
-    local _op_name2 _op_ref2 _op_val2
+  local _op_resolved _op_failed=0 _op_lines _op_label _op_rest _op_ref _op_template
+  local _op_name="" _op_val="" _op_have=0 _op_rec
+  # Only say which account a secret came from when the load actually spans more than
+  # one, so a single-account install's output is unchanged by all of this.
+  local _op_multi=0
+  if [[ $(printf '%s\n' "$_op_accts" | awk 'NF' | wc -l) -gt 1 ]]; then _op_multi=1; fi
+
+  # Split the output into tagged records (see the framing note above) and export
+  # each. _op_pf_flush applies the record collected so far.
+  _op_pf_flush() {
+    [[ $_op_have -eq 1 ]] || return 0
+    if [[ -n "$_op_val" ]]; then
+      export "$_op_name"="$_op_val"
+      echo "✅ $_op_name${_op_label:+ (via $_op_label)}"
+    else
+      # Clear any value left from a prior load so a stale/rotated token isn't
+      # silently reused (or re-persisted by an after-load hook).
+      unset "$_op_name"
+      echo "⚠️  $_op_name (failed to load${_op_label:+, via $_op_label})"
+      _op_failed=$((_op_failed + 1))
+    fi
+    _op_have=0; _op_name=""; _op_val=""
+  }
+
+  while IFS= read -r _op_acct; do
+    [[ -n "$_op_acct" ]] || continue
+    # Re-derive this account's entries instead of grouping in the shell: the counts
+    # are tiny, and awk keeps the grouping in one readable place (and works the
+    # same in bash and zsh, which do not agree on associative arrays).
+    _op_lines=$(printf '%s\n' "$_op_entries" | awk -F'\t' -v def="$OP_ACCOUNT" -v want="$_op_acct" \
+      '($3 == "" ? def : $3) == want')
+    _op_label=""; if [[ $_op_multi -eq 1 ]]; then _op_label="$_op_acct"; fi
+
+    _op_template=""
     while IFS= read -r _op_line; do
       [[ -n "$_op_line" ]] || continue
-      _op_name2="${_op_line%%$'\t'*}"
-      _op_ref2="${_op_line#*$'\t'}"
-      # </dev/null: op must not swallow the entries this loop is reading.
-      _op_val2="$("$OP_BIN" read --account "$OP_ACCOUNT" "$_op_ref2" 2>/dev/null </dev/null)"
-      if [[ -n "$_op_val2" ]]; then
-        export "$_op_name2"="$_op_val2"
-        echo "✅ $_op_name2"
-      else
-        # Clear any value left from a prior load so a stale/rotated token isn't
-        # silently reused (or re-persisted by an after-load hook).
-        unset "$_op_name2"
-        echo "⚠️  $_op_name2 (failed to load)"
-        ((_op_failed++))
-      fi
-    done <<< "$_op_entries"
-  else
-    # Split the output into tagged records (see the framing note above) and export
-    # each. _op_pf_flush applies the record collected so far.
-    local _op_name="" _op_val="" _op_have=0 _op_rec
-    _op_pf_flush() {
-      [[ $_op_have -eq 1 ]] || return 0
-      if [[ -n "$_op_val" ]]; then
-        export "$_op_name"="$_op_val"
-        echo "✅ $_op_name"
-      else
-        # Clear any value left from a prior load so a stale/rotated token isn't
-        # silently reused (or re-persisted by an after-load hook).
-        unset "$_op_name"
-        echo "⚠️  $_op_name (failed to load)"
-        ((_op_failed++))
-      fi
-      _op_have=0; _op_name=""; _op_val=""
-    }
-    while IFS= read -r _op_rec; do
-      if [[ "$_op_rec" == "$_op_tag"* ]]; then
-        _op_pf_flush
-        _op_rec="${_op_rec#"$_op_tag"}"
-        _op_name="${_op_rec%%=*}"
-        _op_val="${_op_rec#*=}"
-        _op_have=1
-      elif [[ $_op_have -eq 1 ]]; then
-        _op_val+=$'\n'"$_op_rec"
-      fi
-    done <<< "$_op_resolved"
-    _op_pf_flush
-    unset -f _op_pf_flush
-  fi
+      # Everything after the first tab is ref, then an optional account column.
+      # A two-column line has no second tab, and %% leaves it untouched.
+      _op_rest="${_op_line#*$'\t'}"
+      _op_ref="${_op_rest%%$'\t'*}"
+      _op_template+="${_op_tag}${_op_line%%$'\t'*}={{ ${_op_ref} }}"$'\n'
+    done <<< "$_op_lines"
+
+    # `op inject` is all-or-nothing per account: one unresolvable reference fails that
+    # account's whole batch. It also exits 0 while substituting an EMPTY value for a
+    # reference it could not resolve — seen with --account against a second account
+    # under the desktop app, where `op read --account` for the same reference
+    # succeeds. So an empty record counts as a failed batch, not as a secret that
+    # legitimately resolved to nothing: it sends this account down the per-secret
+    # fallback, which re-reads it and reports the broken reference by name. (The
+    # other accounts are unaffected — their batches still run.)
+    local _op_batch_failed=0 _op_empty=0
+    if ! _op_resolved=$(printf '%s' "$_op_template" \
+          | "$OP_BIN" inject --account "$_op_acct" 2>/dev/null); then
+      _op_batch_failed=1
+    else
+      _op_empty=$(printf '%s\n' "$_op_resolved" | awk -v t="$_op_tag" \
+        'substr($0, 1, length(t)) == t && substr($0, length(t) + 1) ~ /^[^=]*=$/ { c++ } END { print c + 0 }')
+      [[ "$_op_empty" -gt 0 ]] && _op_batch_failed=1
+    fi
+
+    if [[ $_op_batch_failed -eq 1 ]]; then
+      echo "⚠️  Batch resolve failed${_op_label:+ for $_op_label} — falling back to per-secret reads"
+      local _op_name2 _op_val2
+      while IFS= read -r _op_line; do
+        [[ -n "$_op_line" ]] || continue
+        _op_name2="${_op_line%%$'\t'*}"
+        _op_rest="${_op_line#*$'\t'}"
+        _op_ref="${_op_rest%%$'\t'*}"
+        # </dev/null: op must not swallow the entries this loop is reading.
+        _op_val2="$("$OP_BIN" read --account "$_op_acct" "$_op_ref" 2>/dev/null </dev/null)"
+        if [[ -n "$_op_val2" ]]; then
+          export "$_op_name2"="$_op_val2"
+          echo "✅ $_op_name2${_op_label:+ (via $_op_label)}"
+        else
+          # Clear any value left from a prior load so a stale/rotated token isn't
+          # silently reused (or re-persisted by an after-load hook).
+          unset "$_op_name2"
+          echo "⚠️  $_op_name2 (failed to load${_op_label:+, via $_op_label})"
+          _op_failed=$((_op_failed + 1))
+        fi
+      done <<< "$_op_lines"
+    else
+      while IFS= read -r _op_rec; do
+        if [[ "$_op_rec" == "$_op_tag"* ]]; then
+          _op_pf_flush
+          _op_rec="${_op_rec#"$_op_tag"}"
+          _op_name="${_op_rec%%=*}"
+          _op_val="${_op_rec#*=}"
+          _op_have=1
+        elif [[ $_op_have -eq 1 ]]; then
+          _op_val+=$'\n'"$_op_rec"
+        fi
+      done <<< "$_op_resolved"
+      _op_pf_flush
+    fi
+  done <<< "$_op_accts"
+  unset -f _op_pf_flush
 
   local _op_hook
   for _op_hook in "${_OP_AFTER_LOAD_HOOKS[@]}"; do

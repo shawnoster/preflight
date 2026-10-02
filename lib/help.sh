@@ -52,7 +52,8 @@ Quick Reference:
 Load secrets:
   op-load-env              # Load secrets from 1Password
   op-env add               # Add a VAR -> op:// ref to a set (guild, personal, ...);
-                           # sets are the only list of secrets op-load-env uses
+                           # sets are the only list of secrets op-load-env uses;
+                           # pass a 4th arg for a ref in another 1Password account
   op-env use               # Choose which sets load
 
 Switch AWS profile:
