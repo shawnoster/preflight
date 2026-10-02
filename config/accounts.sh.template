@@ -15,6 +15,9 @@
 # See https://github.com/shawnoster/preflight for full documentation.
 
 # ── 1Password account reference ──────────────────────────────────────────────
+#   The DEFAULT account: used by every env-set entry that doesn't name one of its
+#   own. To keep a secret in a second account, give that entry a third column
+#   instead of changing this value — see the secrets section below.
 #   • WSL + Windows desktop op.exe → use the sign-in ADDRESS (the desktop-fed
 #     op.exe does not carry a manual `op account add` shorthand).
 #     Examples: "my.1password.com", "my-team.1password.com"
@@ -27,6 +30,9 @@ export OP_ACCOUNT="my.1password.com"
 # with `op-env add`; they are stored in config/envsets/<set>.tsv and loaded by
 # op-load-env. For example:
 #   op-env add default NPM_TOKEN 'op://Private/npmjs/credential'
+# A reference in a different account takes an optional 4th argument (a sign-in
+# address under WSL, a shorthand on native op):
+#   op-env add default WORK_TOKEN 'op://Employee/Item/credential' my-team.1password.com
 # Run `op-env help` for the rest. (A legacy OP_SECRETS=( ... ) array here still
 # works; `op-env migrate` moves it into a set.)
 

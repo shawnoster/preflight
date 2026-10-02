@@ -89,7 +89,7 @@ source ~/.bashrc
 │   ├── aws.sh           # AWS profile management
 │   ├── docker.sh        # Docker utilities
 │   ├── git.sh           # Git shortcuts
-│   ├── envsets.sh       # op-env: named sets of VAR -> op:// refs (the list of secrets)
+│   ├── envsets.sh       # op-env: named sets of VAR -> op:// refs (+ optional account)
 │   ├── help.sh          # Unified help system (dev-help / devhelp)
 │   ├── nanoleaf.sh      # op-load-env hook: hands NANOLEAF_TOKEN to the nanoleaf-* scripts
 │   ├── owl.sh           # OOO theme engine + MOTD splash
@@ -98,7 +98,7 @@ source ~/.bashrc
 │   └── project.sh       # Build tool wrappers
 ├── config/
 │   ├── accounts.sh      # Non-secret configuration (gitignored, from template)
-│   ├── envsets/         # <set>.tsv: VAR -> op:// refs, per install (gitignored)
+│   ├── envsets/         # <set>.tsv: VAR -> op:// refs (+ optional account column), per install (gitignored)
 │   └── owl.sh           # Owl/OMP config — OWL_OMP_CONFIG path (gitignored, from template)
 ├── pwsh/                # PowerShell sibling — see pwsh/README.md
 │   ├── Preflight.psd1   # Module manifest
@@ -146,12 +146,21 @@ When something is behind, the suggested upgrade command is derived from **how th
 | `op-status` | Check if signed in to 1Password |
 | `op-signin [account]` | Sign in to 1Password |
 | `op-load-env` | Load the active sets' secrets from 1Password into env vars |
-| `op-env add [set] [VAR] [ref]` | Add a VAR → `op://` reference to a named set (`guild`, `personal`, ...); prompts for anything omitted |
+| `op-env add [set] [VAR] [ref] [account]` | Add a VAR → `op://` reference to a named set (`guild`, `personal`, ...); prompts for an omitted set, variable or reference (never the optional account) |
 | `op-env list [set]` / `rm` / `use` | Show sets, remove a key, choose which sets are active (fzf pickers) |
 | `op-env migrate [set] [--force]` | Move a legacy `OP_SECRETS` array (from an older `config/accounts.sh`) into a set. Skips malformed refs, and stops without changing anything if the set already holds a different ref for a variable, if another active set would override it, or if the set exists but is not active (`--force` overwrites the set's conflicting refs with the legacy ones) |
 | `op-clear-env` | Unset every variable `op-load-env` set |
 
 **Which secrets load (`lib/envsets.sh`):** `lib/onepassword.sh` is generic and names no secret. The list lives in env sets: `op-env` keeps named groups of `VAR → op://` references in `config/envsets/<set>.tsv` (gitignored, one `VAR<TAB>op://vault/item/field` per line, safe to hand-edit). `op-load-env` and `op-clear-env` use the active sets (`op-env use`; with no `config/envsets/.active`, every set is active). Once `.active` exists, a `.tsv` you create by hand is **not** loaded until you add it with `op-env use` (`op-env list` shows it as `○ inactive`); `op-env add` to a new set activates it for you. If two sets define the same variable, the first one wins: sets are read in the order listed in `config/envsets/.active` (what `op-env use` writes), or alphabetically when that file does not exist. With no secrets configured, `op-load-env` does nothing and does not sign in. A variable removed from a set, or a set that is deactivated, is unset on the next `op-load-env`.
+
+**Secrets in more than one account:** a line may carry an optional third TAB-separated column naming the account that holds that reference, so a set can span accounts:
+
+```
+ATLASSIAN_TOKEN<TAB>op://Employee/Some Item/credential<TAB>my-team.1password.com
+NPM_TOKEN<TAB>op://Private/Item/credential
+```
+
+Leave the column out to use `$OP_ACCOUNT` (the default from `config/accounts.sh`), which is why two-column lines — every line written before this existed — keep working untouched. `op-env add` takes the account as an optional 4th argument and never prompts for it; re-adding a key without one keeps whatever the line already said, so changing a reference can't quietly move the secret to another account. `op` resolves a reference against exactly one account per call, so `op-load-env` groups the entries by account and runs one `op inject` per account (a set that stays single-account still resolves in one call, as before). Every account is signed in up front, so a sign-in failure aborts before any variable is set rather than leaving a half-loaded environment; a batch that fails falls back to per-secret reads so the broken reference is named. With more than one account in play, `op-load-env` labels each secret with the account it came from.
 
 To run extra code after a load (for example `lib/nanoleaf.sh` copying `NANOLEAF_TOKEN` for cron jobs), add a function name to `_OP_AFTER_LOAD_HOOKS`.
 
