@@ -40,6 +40,7 @@
 
 ## Checklist
 
+- [ ] PR title follows [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) (`type(scope): subject`, e.g. `fix(preflight): ...`); PRs are squash-merged, so the title becomes the commit message
 - [ ] If this is a breaking change, Upgrade notes say what an existing install must do
 - [ ] Tracked files stay generic: no secrets, work-specific account references, or machine-specific paths
 - [ ] Works when sourced from both Bash and zsh (`_pf_ask`, not `read -p`; no `read -a`, `mapfile`/`readarray`, or 0-based array indexes)
