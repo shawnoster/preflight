@@ -25,7 +25,7 @@ if [[ ! -f "$PREFLIGHT_DIR/config/owl.sh" ]] && [[ -f "$PREFLIGHT_DIR/config/owl
 fi
 ```
 
-Neither ever overwrites an existing live file. So a template change does not retroactively rewrite an already-generated live file — the user hand-merges the new template content into their live file (or deletes the live file to regenerate it from scratch).
+Missing-file copying is the normal behavior: it never overwrites an existing live file, so a template change does not retroactively rewrite an already-generated live file — the user hand-merges the new template content into their live file (or deletes the live file to regenerate it from scratch). The one exception is an explicit migration in `init.sh` (today, the `config/owl.sh` check), which replaces a live file only when it is byte-for-byte a previously shipped template; add the old template's sha256 there when you change that template, and say so in the PR's upgrade notes.
 
 ## Domains Covered
 

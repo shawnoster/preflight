@@ -11,9 +11,13 @@
 ## Upgrade notes
 
 <!-- Delete this section if nothing here affects an existing install.
-     init.sh and install.sh only copy a *.template into its live counterpart when the
-     live file is missing, and never overwrite one. So if you change a template, or
-     rename/move a tracked or gitignored file, say what an existing install must do. -->
+     init.sh and install.sh normally copy a *.template into its live counterpart only
+     when the live file is missing, so a template change does not reach an existing
+     install on its own. The exception is an explicit migration in init.sh (today, the
+     config/owl.sh check), which replaces a live file only when it is byte-for-byte a
+     previously shipped template. So if you change a template, add or change such a
+     migration, or rename/move a tracked or gitignored file, say what an existing
+     install must do. -->
 
 ## Test plan
 
