@@ -105,9 +105,10 @@ op-import-csv <csv-path> [--vault <vault>] [--tag <tag>] [--dry-run]
 
 op-load-env
   Load the active env sets' secrets from 1Password into environment variables.
-  Resolves all secrets in a single `op inject` call; the first call triggers
-  the desktop unlock (WSL) or uses the cached session (native). Falls back to
-  per-secret reads if the batch fails.
+  Signs in to every account the active sets name, then resolves each account's
+  secrets in one `op inject` call (a single-account set is a single call). Under
+  WSL the sign-in step triggers the desktop unlock; native op uses the cached
+  session. Falls back to per-secret reads for an account whose batch fails.
 
 op-env [add|list|rm|use|migrate]
   Manage named env sets (guild, personal, ...) of VAR -> op:// references.
