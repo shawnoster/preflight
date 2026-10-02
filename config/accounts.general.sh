@@ -7,7 +7,7 @@
 # Then edit accounts.sh with your real op:// references and values.
 
 # ── 1Password account reference ──────────────────────────────────────────────
-# See lib/1password.sh for the auth model. Examples: "my.1password.com", "my".
+# See lib/onepassword.sh for the auth model. Examples: "my.1password.com", "my".
 export OP_ACCOUNT="my.1password.com"
 
 # ── 1Password secrets ────────────────────────────────────────────────────────

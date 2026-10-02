@@ -34,7 +34,7 @@ Neither ever overwrites an existing live file. So a template change does not ret
 - **Git** — `lib/git.sh`: fuzzy branch checkout (`gco`), pretty log (`glog`), stash management (`gstash` — pops by default, `--apply` to keep), WIP commits (`gwip`), GH PR creation (`gpr`)
 - **Docker** — `lib/docker.sh`: container/image management utilities (`dex` tries bash first, falls back to sh)
 - **PostgreSQL** — `lib/postgres.sh`: cluster start/stop (`pg-up`, `pg-down`) for clusters set to `manual` in `start.conf`. Goes through `pg_ctlcluster`, which self-redirects to `systemctl` when systemd is running and the caller is root, so one code path covers systemd and non-systemd hosts. Debian/Ubuntu only — needs `postgresql-common`.
-- **1Password** — `lib/1password.sh`: generic, data-agnostic helpers (`op-status`, `op-signin`, `op-load-env`, `op-clear-env`, `op-new`, `op-import-csv`). It is a plain tracked file and must never name a specific secret; after-load side effects register through `_OP_AFTER_LOAD_HOOKS` (e.g. `lib/nanoleaf.sh`).
+- **1Password** — `lib/onepassword.sh`: generic, data-agnostic helpers (`op-status`, `op-signin`, `op-load-env`, `op-clear-env`, `op-new`, `op-import-csv`). It is a plain tracked file and must never name a specific secret; after-load side effects register through `_OP_AFTER_LOAD_HOOKS` (e.g. `lib/nanoleaf.sh`).
 - **Env sets** — `lib/envsets.sh`: `op-env add|list|rm|use|migrate`. The only place that defines which secrets load: named sets of `VAR → op://` refs in gitignored `config/envsets/<set>.tsv`. `_op_env_entries` is the contract between it and `op-load-env`/`op-clear-env`. A legacy `OP_SECRETS` array in an older `config/accounts.sh` is still honored until `op-env migrate` moves it.
 - **Project navigation** — `lib/project.sh`: workspace/project switching helpers
 - **Prompting** — `lib/prompt.sh`: `_pf_ask`, the Bash/zsh-portable replacement for `read -p`
@@ -55,7 +55,7 @@ Read this repo when working on:
 - **AWS SSO profile workflow issues** — `lib/aws.sh` has the profile switching and SSO login flow; `AWS_PROFILE_DEFAULT` in `config/accounts.sh` sets the session default
 - **WSL SSH setup with 1Password** — `docs/wsl-ssh-setup.md` covers prerequisites; `preflight configure` installs the systemd + npiperelay agent bridge and migrates off the old `ssh.exe` aliases
 - **Adding new shell utilities for all engineers** — add a new `lib/<domain>.sh` file
-- **1Password CLI integration for secrets** — `lib/1password.sh` has the sign-in flow for WSL/headless environments; `lib/envsets.sh` has the list of secrets
+- **1Password CLI integration for secrets** — `lib/onepassword.sh` has the sign-in flow for WSL/headless environments; `lib/envsets.sh` has the list of secrets
 - **Shell MOTD or theme customization** — `lib/owl.sh` has the theme engine and splash; `config/owl.sh.template` controls `OWL_OMP_CONFIG` and `OWL_THEME_DIR`
 
 **Skip this repo when**: You need CI/CD automation, GitHub Actions, deployed tooling, or anything that runs outside a developer's local shell.
@@ -71,11 +71,12 @@ Read this repo when working on:
 | AWS utilities | `lib/aws.sh` |
 | Git utilities | `lib/git.sh` |
 | PostgreSQL cluster control | `lib/postgres.sh` |
-| 1Password utilities | `lib/1password.sh` |
+| 1Password utilities | `lib/onepassword.sh` |
 | Which secrets load (`op-env`) | `lib/envsets.sh` (data in gitignored `config/envsets/*.tsv`) |
 | Account/env config | `config/accounts.sh.template` (auto-copied to `config/accounts.sh` on first load) |
 | Owl theme + OMP config | `config/owl.sh.template` (auto-copied to `config/owl.sh` on first load) |
 | WSL SSH setup guide | `docs/wsl-ssh-setup.md` |
+| Tests (env sets, `op-load-env`; bash + zsh, fake `op`) | `tests/op-env.sh` |
 
 ## Upstream / Downstream
 

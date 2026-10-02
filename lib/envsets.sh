@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ~/.preflight/lib/envsets.sh - Named sets of env vars backed by 1Password refs
 #
-# This is the only place that says WHICH secrets get loaded; lib/1password.sh
+# This is the only place that says WHICH secrets get loaded; lib/onepassword.sh
 # just resolves whatever _op_env_entries hands it.
 #
 # A "set" is a named group of VAR -> op:// references (guild, personal, ...).
@@ -49,7 +49,7 @@ _op_envsets_names() {
 _op_envsets_active() {
   local d; d=$(_op_envsets_dir)
   if [[ -f "$d/.active" ]]; then
-    grep -v '^[[:space:]]*$' "$d/.active"
+    tr -d '\r' < "$d/.active" | grep -v '^[[:space:]]*$'
   else
     _op_envsets_names
   fi
@@ -147,12 +147,13 @@ _op_env_list() {
     file="$(_op_envsets_dir)/$set.tsv"
     if grep -qxF "$set" <<< "$active"; then echo "● $set (active)"; else echo "○ $set (inactive)"; fi
     while IFS=$'\t' read -r line ref; do
+      ref=${ref%$'\r'}
       [[ -n "$line" ]] && printf '    %-28s %s\n' "$line" "$ref"
     done < "$file"
   done < <(_op_envsets_names)
   if [[ -z "$only" && ${#OP_SECRETS[@]} -gt 0 ]]; then
     found=1
-    echo "◆ OP_SECRETS array (legacy, from config/accounts.sh) — move it with: op-env migrate"
+    echo "◆ OP_SECRETS array (legacy, from config/accounts.sh or lib/1password.sh) — move it with: op-env migrate"
     for line in "${OP_SECRETS[@]}"; do
       printf '    %-28s %s\n' "${line%%$'\t'*}" "${line#*$'\t'}"
     done
@@ -204,7 +205,7 @@ _op_env_use() {
   echo "✅ Active sets: $(printf '%s\n' "$chosen" | paste -sd' ' -)"
 }
 
-# Move a legacy OP_SECRETS array (config/accounts.sh, or the old per-install
+# Move a legacy OP_SECRETS array (config/accounts.sh, or a leftover per-install
 # lib/1password.sh) into a set. Keys the set already has are left alone.
 _op_env_migrate() {
   local set="${1:-default}" line name ref file moved=0
@@ -227,8 +228,12 @@ _op_env_migrate() {
     moved=$((moved + 1))
   done
   echo ""
-  echo "Moved $moved key(s). Now delete the OP_SECRETS=( ... ) block from config/accounts.sh"
-  echo "so the set is the only source."
+  echo "Moved $moved key(s). Now remove the old list so the set is the only source:"
+  echo "  - an OP_SECRETS=( ... ) block in config/accounts.sh: delete the block"
+  if [[ -f "${PREFLIGHT_DIR:-$HOME/.preflight}/lib/1password.sh" ]]; then
+    echo "  - lib/1password.sh is a leftover from before the rename to lib/onepassword.sh:"
+    echo "    delete it (${PREFLIGHT_DIR:-$HOME/.preflight}/lib/1password.sh) if it holds nothing else you need"
+  fi
 }
 
 _op_env_help() {
@@ -263,8 +268,10 @@ op-env() {
 # Everything op-load-env / op-clear-env need to know: one `VAR<TAB>op://ref` line
 # per secret, from the active sets. An OP_SECRETS array still defined by an older
 # config/accounts.sh is honored too (and wins on a name clash) until it is moved
-# with `op-env migrate`. The first definition of a name wins; anything that isn't a
-# valid variable name or an op:// reference is dropped.
+# with `op-env migrate`. The first definition of a name wins (sets are read in the
+# order of config/envsets/.active, or alphabetically when that file is absent);
+# anything that isn't a valid variable name or an op:// reference is dropped.
+# CRs are stripped so a set edited on Windows (CRLF) still resolves.
 _op_env_entries() {
   local set file
   {
@@ -274,5 +281,5 @@ _op_env_entries() {
       file="$(_op_envsets_dir)/$set.tsv"
       [[ -f "$file" ]] && awk 1 "$file"
     done < <(_op_envsets_active)
-  } | awk -F'\t' '$1 ~ /^[A-Za-z_][A-Za-z0-9_]*$/ && $2 ~ /^op:\/\// && !seen[$1]++'
+  } | tr -d '\r' | awk -F'\t' '$1 ~ /^[A-Za-z_][A-Za-z0-9_]*$/ && $2 ~ /^op:\/\// && !seen[$1]++'
 }

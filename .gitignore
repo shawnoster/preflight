@@ -2,6 +2,9 @@
 config/accounts.sh
 config/owl.sh
 config/envsets/
+# Pre-rename per-install copy of lib/onepassword.sh; left in place so an old OP_SECRETS
+# list in it keeps working until `op-env migrate` (then delete it).
+lib/1password.sh
 pwsh/config/accounts.ps1
 
 # Runtime state

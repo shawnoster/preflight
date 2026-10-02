@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ~/.preflight/lib/1password.sh - 1Password CLI utilities
+# ~/.preflight/lib/onepassword.sh - 1Password CLI utilities
 #
 # Generic helpers only: this file knows how to talk to 1Password, not which
 # secrets you use. The VAR -> op:// reference lists live in env sets
@@ -196,14 +196,17 @@ op-load-env() {
   _op_names=$(printf '%s\n' "$_op_entries" | cut -f1 | awk 'NF')
 
   # Anything a previous load set that the sets no longer define is stale: unset
-  # it so a removed or deactivated secret can't outlive its definition.
+  # it so a removed or deactivated secret can't outlive its definition. This is
+  # safe before signing in, since it depends only on the definitions.
   while IFS= read -r _op_stale; do
     [[ -n "$_op_stale" ]] || continue
     grep -qxF -- "$_op_stale" <<< "$_op_names" || unset "$_op_stale"
   done <<< "$_OP_LOADED_VARS"
-  _OP_LOADED_VARS="$_op_names"
 
+  # Nothing to load: return before resolving `op` or signing in, so a machine
+  # with no secrets configured never triggers a desktop unlock.
   if [[ -z "$_op_names" ]]; then
+    _OP_LOADED_VARS=""
     echo "ℹ️  No secrets configured — add one with: op-env add"
     return 0
   fi
@@ -215,6 +218,10 @@ op-load-env() {
   if [[ "$OP_BIN" != *op.exe ]] && ! "$OP_BIN" whoami --account "$OP_ACCOUNT" >/dev/null 2>&1; then
     op-signin "$OP_ACCOUNT" || return 1
   fi
+
+  # Only now record what this load manages. If sign-in failed above, the
+  # previous list stays, so op-clear-env still knows what is in the environment.
+  _OP_LOADED_VARS="$_op_names"
 
   # No header here — when run under `preflight` the orchestrator prints the
   # "--- Secrets ---" section header. Standalone callers still get the

@@ -47,7 +47,7 @@ preflight update
 
 Pulls the latest changes from the upstream repo, shows incoming commits, and warns if any tracked files have local modifications. Gitignored files (`config/accounts.sh`, `config/owl.sh`, `config/envsets/`) are never touched.
 
-> **Upgrading from a version where `lib/1password.sh` was a per-install copy:** it is a tracked file now, so the update overwrites your copy. If you kept an `OP_SECRETS=( ... )` list in it, move the entries first: `for p in "${OP_SECRETS[@]}"; do op-env add default "${p%%$'\t'*}" "${p#*$'\t'}"; done`. A list in `config/accounts.sh` is untouched and keeps working; `op-env migrate` moves it into a set.
+> **Upgrading from a version where `lib/1password.sh` was a per-install copy:** the generic helpers are now the tracked file `lib/onepassword.sh`, so `preflight update` does not touch your old `lib/1password.sh` (it is gitignored and still loaded). An `OP_SECRETS=( ... )` list in it, or in `config/accounts.sh`, keeps working. Run `op-env migrate` to move it into a set, then delete the old list (and `lib/1password.sh` if it holds nothing else).
 
 After updating, reload your shell:
 
@@ -83,7 +83,7 @@ source ~/.bashrc
 │   ├── nanoleaf-streak  # Per-panel streak via Nanoleaf direct API
 │   └── nanoleaf-kitt    # KITT-style scanner with comet trail
 ├── lib/
-│   ├── 1password.sh     # 1Password CLI utilities (generic; holds no secret names)
+│   ├── onepassword.sh  # 1Password CLI utilities (generic; holds no secret names)
 │   ├── aws.sh           # AWS profile management
 │   ├── docker.sh        # Docker utilities
 │   ├── git.sh           # Git shortcuts
@@ -137,7 +137,7 @@ When something is behind, the suggested upgrade command is derived from **how th
 | `dev-help` / `devhelp` | Unified help menu for all modules |
 | `dev-commands` | Flat searchable list of all commands |
 
-### 1Password (`lib/1password.sh`)
+### 1Password (`lib/onepassword.sh`)
 
 | Command | Description |
 |---------|-------------|
@@ -149,7 +149,7 @@ When something is behind, the suggested upgrade command is derived from **how th
 | `op-env migrate [set]` | Move a legacy `OP_SECRETS` array (from an older `config/accounts.sh`) into a set |
 | `op-clear-env` | Unset every variable `op-load-env` set |
 
-**Which secrets load (`lib/envsets.sh`):** `lib/1password.sh` is generic and names no secret. The list lives in env sets: `op-env` keeps named groups of `VAR → op://` references in `config/envsets/<set>.tsv` (gitignored, one `VAR<TAB>op://vault/item/field` per line, safe to hand-edit). `op-load-env` and `op-clear-env` use the active sets (`op-env use`; with no `config/envsets/.active`, every set is active). If two sets define the same variable, the first one wins. A variable removed from a set, or a set that is deactivated, is unset on the next `op-load-env`.
+**Which secrets load (`lib/envsets.sh`):** `lib/onepassword.sh` is generic and names no secret. The list lives in env sets: `op-env` keeps named groups of `VAR → op://` references in `config/envsets/<set>.tsv` (gitignored, one `VAR<TAB>op://vault/item/field` per line, safe to hand-edit). `op-load-env` and `op-clear-env` use the active sets (`op-env use`; with no `config/envsets/.active`, every set is active). If two sets define the same variable, the first one wins: sets are read in the order listed in `config/envsets/.active` (what `op-env use` writes), or alphabetically when that file does not exist. With no secrets configured, `op-load-env` does nothing and does not sign in. A variable removed from a set, or a set that is deactivated, is unset on the next `op-load-env`.
 
 To run extra code after a load (for example `lib/nanoleaf.sh` copying `NANOLEAF_TOKEN` for cron jobs), add a function name to `_OP_AFTER_LOAD_HOOKS`.
 

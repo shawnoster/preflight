@@ -13,7 +13,7 @@ WSL shell ──> op.exe (Windows) ──> 1Password desktop app (Windows)
                                         └─ Windows Hello / desktop unlock
 ```
 
-`lib/1password.sh` resolves the binary automatically: it prefers `op.exe` and falls back to the native `op` only when `op.exe` isn't found.
+`lib/onepassword.sh` resolves the binary automatically: it prefers `op.exe` and falls back to the native `op` only when `op.exe` isn't found.
 
 ## Prerequisites
 
@@ -41,7 +41,7 @@ Find your address with:
 op.exe account list
 ```
 
-Then register your items with `op-env add` (for example `op-env add default NPM_TOKEN 'op://Private/npmjs/credential'`). Each is a per-secret `op read`; the first triggers the desktop unlock and the rest are authorized automatically.
+Then register your items with `op-env add` (for example `op-env add default NPM_TOKEN 'op://Private/npmjs/credential'`). `op-load-env` resolves them all in one `op inject` call; the first triggers the desktop unlock.
 
 ## Verify
 
@@ -59,7 +59,8 @@ op-signin && "$OP_BIN" read --account "$OP_ACCOUNT" "op://<Vault>/<Item>/<field>
 ## Notes and gotchas
 
 - **Account reference:** use the sign-in address (`my-team.1password.com`) under desktop integration, not a shorthand. A stale `op account add` shorthand silently fails every read (errors are swallowed, vars come back empty).
-- **No batch `op run`:** the efficient `op run --env-file -- bash -c …` trick does **not** work with `op.exe` — being a Windows binary, its `-- bash -c` child is a Windows process, not WSL bash. `op-load-env` therefore uses per-secret reads. With the app unlocked they are authorized without re-prompting.
+- **`op inject`, not `op run`:** the `op run --env-file -- bash -c …` trick does **not** work with `op.exe` — being a Windows binary, its `-- bash -c` child is a Windows process, not WSL bash. `op-load-env` batches every secret into one `op inject` call instead (no child process). If one reference is bad the whole batch fails, so it falls back to per-secret `op read` calls to report which one; with the app unlocked those are authorized without re-prompting.
+- **Editing sets from Windows:** CRLF line endings in `config/envsets/*.tsv` are tolerated.
 - **First-read prompt:** the desktop app prompts on the first authorized call per session; subsequent reads are silent per the app's "remember" policy.
 - **op.exe not on PATH:** the resolver also globs the WinGet package and `Program Files` locations, so PATH setup is optional.
 

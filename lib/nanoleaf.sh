@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ~/.preflight/lib/nanoleaf.sh - Nanoleaf token hand-off for the bin/nanoleaf-* scripts
 #
-# Hooks into op-load-env (lib/1password.sh) so the generic loader stays free of
+# Hooks into op-load-env (lib/onepassword.sh) so the generic loader stays free of
 # secret-specific logic. Nothing happens unless NANOLEAF_TOKEN is in the
 # environment, i.e. an active env set maps it to an op:// reference.
 
@@ -15,22 +15,23 @@
 # copy+delete from /tmp (which could leave a truncated file with
 # partial secret content if interrupted). chmod 600 is applied to the
 # tempfile before the rename so the secret is never world-readable.
-# RETURN trap removes the tempfile on any early exit.
+# The tempfile is removed on any failure path (no `trap ... RETURN`: zsh has no
+# RETURN pseudo-signal, and this file is sourced from both shells).
 _op_sync_nanoleaf_env() {
-  if [ -n "$NANOLEAF_TOKEN" ]; then
-    local nl_env=~/.config/nanoleaf-direct/env
-    local nl_dir
-    nl_dir=$(dirname "$nl_env")
-    mkdir -p "$nl_dir" || return 1
-    local nl_tmp
-    nl_tmp=$(mktemp "$nl_dir/.env.tmp.XXXXXX") || return 1
-    trap 'rm -f "$nl_tmp"' RETURN
-    { [ -f "$nl_env" ] && grep -v '^NANOLEAF_TOKEN=' "$nl_env"; \
-      printf 'NANOLEAF_TOKEN=%s\n' "$NANOLEAF_TOKEN"; } > "$nl_tmp" || return 1
-    chmod 600 "$nl_tmp" || return 1
-    mv -f "$nl_tmp" "$nl_env" || return 1
-    trap - RETURN
+  [ -n "$NANOLEAF_TOKEN" ] || return 0
+  local nl_env=~/.config/nanoleaf-direct/env
+  local nl_dir nl_tmp
+  nl_dir=$(dirname "$nl_env")
+  mkdir -p "$nl_dir" || return 1
+  nl_tmp=$(mktemp "$nl_dir/.env.tmp.XXXXXX") || return 1
+  if { [ -f "$nl_env" ] && grep -v '^NANOLEAF_TOKEN=' "$nl_env"; \
+       printf 'NANOLEAF_TOKEN=%s\n' "$NANOLEAF_TOKEN"; } > "$nl_tmp" \
+     && chmod 600 "$nl_tmp" \
+     && mv -f "$nl_tmp" "$nl_env"; then
+    return 0
   fi
+  rm -f "$nl_tmp"
+  return 1
 }
 
 # Run after every op-load-env (registered once, even if this file is re-sourced).
