@@ -17,10 +17,13 @@ Status: proposal, decisions settled (see Decisions). Nothing here is implemented
 
 1. Code and user data live in different places. `~/.preflight` becomes a disposable clone.
 2. Settings become data (JSON), readable by both the bash and PowerShell implementations.
-3. Existing installs keep working with no action, and can migrate when they choose to.
 
-Non-goals: changing the env set file format (`envsets/*.tsv`, `.active`), moving `pwsh/` config, changing
-what any setting means.
+Non-goals:
+
+- Migrating existing installs. There is one install today; it is moved by hand. No legacy mode, no migrate
+  command, no fallback to the old locations.
+- Changing the env set file format (`envsets/*.tsv`, `.active`), moving `pwsh/` config, or changing what any
+  setting means.
 
 ## Layout
 
@@ -36,41 +39,41 @@ what any setting means.
 `XDG_CONFIG_HOME` defaults to `~/.config` and `XDG_STATE_HOME` to `~/.local/state`. Overrides, in
 priority order: `PREFLIGHT_CONFIG_DIR` / `PREFLIGHT_STATE_DIR`, then the XDG variables, then the defaults.
 
-The tracked `config/` directory is renamed to `defaults/` in Phase 1, so "config" means only "the user's
-live config" from the first release that has the new layout.
+The tracked `config/` directory is renamed to `defaults/`, so "config" means only "the user's live config".
+Nothing user-owned lives inside the repo afterwards, so `.gitignore` drops its `config/` and `state/` entries.
 
 ## Phase 1: move (no format change)
 
-Resolve the directories once, in `init.sh`, through one function, and export the result. Everything that
-builds a path from `$PREFLIGHT_DIR/config` or `$PREFLIGHT_DIR/state` uses it instead:
+Resolve the directories once, in `init.sh`, through one function, and export `PREFLIGHT_CONFIG_DIR` and
+`PREFLIGHT_STATE_DIR`. Everything that builds a path from `$PREFLIGHT_DIR/config` or `$PREFLIGHT_DIR/state`
+uses them instead:
 
-- `git mv config defaults`, and every path that names it: `init.sh`, `install.sh`, `.gitignore`, `AGENTS.md`,
-  `README.md`, `lib/help.sh`, the profile and template comments, and the owl theme file
-  (`config/theme-catppuccin.omp.json`).
-- `init.sh`: profile picker, template copy, `source` of `accounts.sh` and `owl.sh`.
+- `git mv config defaults`, and every path that names it. Find them with `grep -rn 'config/'` rather than from
+  this list, which is the known set: `init.sh`, `install.sh` (including the profile listing at the end),
+  `.gitignore`, `AGENTS.md`, `README.md`, the profile and template comments, the owl theme file
+  (`config/theme-catppuccin.omp.json`), and the user-facing messages that say "set in config/accounts.sh" in
+  `lib/help.sh`, `lib/aws.sh`, `lib/project.sh`, `lib/onepassword.sh`, `lib/envsets.sh` and
+  `lib/preflight.sh`. `pwsh/config/` is a separate directory and is not renamed.
+- `init.sh`: profile picker, template copy, `source` of `accounts.sh` and `owl.sh`. The sha256 block that
+  refreshes an untouched `owl.sh` is deleted; it only exists to upgrade old installs.
 - `install.sh`: first-run copy.
 - `lib/envsets.sh`: `_op_envsets_dir`.
-- `lib/owl.sh`: `OWL_THEME_DIR` default.
+- `lib/owl.sh`: `OWL_THEME_DIR` default becomes the resolved state directory.
+- `defaults/owl.sh.template`: `OWL_OMP_CONFIG` is hard-coded to `$PREFLIGHT_DIR/state/owl/theme-catppuccin.omp.json`
+  today. It becomes `$PREFLIGHT_STATE_DIR/owl/theme-catppuccin.omp.json`.
 - `lib/preflight.sh`: the AWS profile setter writes `accounts.sh` today, and `uninstall` (below).
 - `tests/op-env.sh`: 8 `PREFLIGHT_DIR` references.
 
-**Legacy mode.** If the new config directory has no config and `$PREFLIGHT_DIR/config/accounts.sh` exists,
-the resolver returns the old locations. An existing install therefore behaves exactly as before until it
-migrates. This is temporary, like the `lib/1password.sh` handling in #42: mark it in code and drop it after
-a release cycle.
-
-**`preflight migrate-config`.** Copies `accounts.sh`, `owl.sh`, `envsets/` and `state/owl/` to the new
-locations, verifies the copies, and leaves the originals in place. It prints what to delete and does not
-delete it. It is idempotent and refuses to overwrite an existing destination file without `--force`.
-Nothing migrates automatically.
-
 **`preflight uninstall`.** Removes code only. It prints where config, state and cache live, and removes
-them only with `--purge`. In legacy mode the config is inside the directory being removed, so `uninstall`
-must say so and ask first.
+them only with `--purge`. Every `rm -rf` here goes through the guard in `lib/cache.sh` (refuse empty, `/` and
+`$HOME`), extended to also refuse `$XDG_CONFIG_HOME`, `$XDG_STATE_HOME` and `$XDG_CACHE_HOME` themselves, so a
+`PREFLIGHT_CONFIG_DIR=~/.config` typo cannot purge every application's config. Today `uninstall` runs a bare
+`rm -rf "$dir"` (`lib/preflight.sh`), and `--purge` must not be the first path that deletes something outside
+the clone.
 
 **Collision to fix.** The README documents `PREFLIGHT_DIR=~/.config/preflight` as an install location. That
-would put code and config in one directory. Change the example, and treat `PREFLIGHT_DIR` equal to the
-config directory as legacy mode with a warning.
+would put code and config in one directory. Change the example, and have the resolver refuse to run when
+`PREFLIGHT_DIR` equals the config directory, with a message saying so.
 
 ## Phase 2: `config.json` for settings
 
@@ -86,7 +89,7 @@ config directory as legacy mode with a warning.
   "gitea":    { "username": "", "host": "" },
   "checks":   { "aws": true, "gh": true, "ssh": true, "git_config": true },
   "optional_env_vars": ["NPM_TOKEN"],
-  "owl":      { "omp_config": "" }
+  "owl":      { "omp_config": "$PREFLIGHT_STATE_DIR/owl/theme-catppuccin.omp.json" }
 }
 ```
 
@@ -100,6 +103,8 @@ config directory as legacy mode with a warning.
 | `checks.*` (true/false to 1/0) | `_CHECK_AWS`, `_CHECK_GH`, `_CHECK_SSH`, `_CHECK_GIT_CONFIG` | `lib/preflight.sh` |
 | `optional_env_vars` (joined with space) | `_OPTIONAL_ENV_VARS` | `lib/preflight.sh` |
 | `owl.omp_config` | `OWL_OMP_CONFIG` | `init.sh`, `lib/owl.sh` |
+
+An empty `owl.omp_config` means Oh My Posh integration is off; the shipped value above is the bundled theme.
 
 The shell variable names do not change, so no library needs editing beyond the loader.
 
@@ -120,11 +125,28 @@ Rules:
   Prototyped and checked: user-set values stay put across reloads, loader-set values follow the file. The
   indirect lookup must be portable (`eval "[ -n \"\${$name+x}\" ]"`, not bash's `${!name+x}`, which zsh
   rejects). Known limit: a nested shell inherits the exported values but not the list, so it treats them as
-  yours until you open a new terminal.
-- **`~` expansion.** A leading `~/` or `$HOME/` in a path value becomes `$HOME/`. Nothing else is expanded.
-- **A bad file never aborts the shell.** Invalid JSON, or `jq` missing, prints one warning (path and `jq`'s
-  error), falls back to built-in defaults, and `preflight` reports it as an issue.
+  yours until you open a new terminal. Tmux panes, `bash -l` and `zsh -i` child shells all hit this, so
+  `tests/config.sh` covers a nested shell explicitly: after editing the file, the child keeps the inherited
+  value, and a fresh login shell picks up the new one. The behavior is documented in `docs/config.md`, not
+  only here.
+- **Path expansion.** A leading `~/` or `$HOME/` in a path value becomes `$HOME/`, and a leading
+  `$PREFLIGHT_STATE_DIR/` or `$PREFLIGHT_CONFIG_DIR/` becomes the resolved directory. Nothing else is expanded.
+- **A bad file never aborts the shell.** Invalid JSON prints one warning (path and `jq`'s error) and falls
+  back to built-in defaults, and `preflight` reports it as a failed check.
+- **`jq` is required.** It is an optional tool today (`lib/preflight.sh` tool list) and `install.sh` does not
+  check for it, so Phase 2 promotes it: `install.sh` fails with an install hint when `jq` is missing (the same
+  way it does for `git`), and the README moves it from the optional list to prerequisites. If `jq` goes
+  missing afterwards, the loader prints one warning that no settings were loaded, uses built-in defaults, and
+  `preflight` reports a failed check, not a note. The defaults include the placeholder
+  `OP_ACCOUNT=my.1password.com`, so the warning must not be silent.
 - **Unknown keys** are ignored with a warning in `preflight`, so a typo is visible.
+
+### First run
+
+The first-run picker copies `defaults/config.general.json` or `defaults/config.company.json` (the two profiles,
+formerly `accounts.general.sh` and `accounts.company.sh`) to `$PREFLIGHT_CONFIG_DIR/config.json`. `EDITOR` and
+`VISUAL` are not in the shipped files: nothing in the repo reads them, so they belong in the user's rc file or
+`lib/local.sh`.
 
 ### Writers
 
@@ -132,28 +154,14 @@ Rules:
 `preflight config set aws.default_profile NAME`, which writes through `jq` to a temp file in the same
 directory and renames it into place.
 
-A small `preflight config` command: `path`, `get KEY`, `set KEY VALUE`, `edit`, `migrate`. No more than that
-in this phase.
+A small `preflight config` command: `path`, `get KEY`, `set KEY VALUE`, `edit`. No more than that in this
+phase.
 
 ### Documentation without comments
 
 JSON has no comments, and the templates carry a lot of documentation in theirs. That moves to
 `docs/config.md`, `preflight config --help`, and a `defaults/config.schema.json` whose `description`
 fields give editors hover help and validation.
-
-### Migrating `accounts.sh`
-
-`preflight config migrate` sources the old `accounts.sh` and `owl.sh` in a subshell and reads the known
-variables, instead of parsing text. It writes `config.json` and reports any variable the file set that is
-not in the table above. `EDITOR` and `VISUAL` are dropped from the shipped templates and profiles: nothing
-in the repo reads them, so they are shell environment setup, not preflight config. If an existing
-`accounts.sh` sets them, `config migrate` reports that they were not carried over and suggests `lib/local.sh`
-or the user's rc file. The old files are kept. While `config.json` is absent, `accounts.sh` is still sourced (legacy mode).
-
-The profiles (`accounts.general.sh`, `accounts.company.sh`) become `defaults/config.general.json` and
-`defaults/config.company.json`. The first-run picker copies the chosen one.
-
-The `init.sh` sha256 migration for `config/owl.sh` stays while legacy mode exists, then goes with it.
 
 ### PowerShell (in scope for this phase)
 
@@ -170,10 +178,10 @@ What it reads today (`pwsh/Preflight.psm1`, `pwsh/config/accounts.ps1.template`)
 So Phase 2 covers both:
 
 - PowerShell reads `config.json` with `ConvertFrom-Json`, through the same key table and the same
-  environment-wins and `~` rules.
+  environment-wins and path rules.
 - PowerShell reads the same `envsets/*.tsv` and `.active`, with the same first-definition-wins and
   validation rules as `_op_env_entries`, and builds `OpEnvMap` from them. `accounts.ps1` and its template go
-  away, with a legacy fallback like the bash side.
+  away.
 - That makes the `.tsv` format a cross-language contract. It gets a short spec in `docs/config.md`, and a
   shared fixture (one set of input files and the expected merged output) that both test suites check, so the
   implementations cannot drift.
@@ -191,14 +199,8 @@ Windows or `pwsh` run before merge. Say so in that PR's test plan rather than cl
   space, and expands a leading `~/`.
 
 Not verified: the loader under zsh (not installed on the machine this was written on), and any of the
-migration or `preflight config` behavior, which does not exist yet.
-
-## Behavior changes
-
-Only one is visible to existing users: `OP_ACCOUNT` from `accounts.sh` today overrides the environment,
-and under "environment wins" it would not. Someone with `OP_ACCOUNT` exported in their rc file and a
-different value in `accounts.sh` would start resolving against a different account after migrating.
-`preflight config migrate` compares the two and warns when they differ.
+`preflight config` behavior, which does not exist yet. The repo has no CI workflows, so zsh coverage is a
+manual run: each implementation PR states the zsh version it ran `tests/config.sh` under, or says it did not.
 
 ## What stays out of `config.json`
 
@@ -217,34 +219,37 @@ atomic rename.
 
 A `tests/config.sh`, run under bash and zsh like `tests/op-env.sh`:
 
-- directory resolution order, and `PREFLIGHT_DIR` equal to the config directory
-- legacy fallback, and no files written in legacy mode
-- `migrate-config` is idempotent, keeps originals, refuses to overwrite without `--force`
-- environment wins over the file, `~` expansion, boolean and list mapping
-- invalid JSON and missing `jq` warn and continue
+- directory resolution order, and the refusal when `PREFLIGHT_DIR` equals the config directory
+- first run creates `config.json` from the chosen profile, and the state directory and base theme
+- environment wins over the file, path expansion, boolean and list mapping
+- a nested shell keeps an inherited value and a fresh shell picks up an edited file
+- invalid JSON warns and continues; missing `jq` uses built-in defaults and warns
 - `config set` is atomic and preserves other keys
-- `uninstall` keeps config without `--purge`
+- `uninstall` keeps config without `--purge`, and `--purge` refuses `$HOME` and the bare XDG directories
 
 ## Rollout
 
 Two PRs, in order:
 
-1. Phase 1: layout, resolver, legacy mode, `migrate-config`, `uninstall`. Breaking for anyone who scripts
-   against `~/.preflight/config`, so the PR is marked breaking and carries upgrade notes.
+1. Phase 1: layout, resolver, `defaults/` rename, `uninstall`. Breaking for anyone who scripts against
+   `~/.preflight/config`, so the PR is marked breaking and says the one existing install is moved by hand.
 2. Phase 2: `config.json`, loader, `preflight config`, schema, `docs/config.md`, and the `pwsh/` port
    (settings and env sets, with the shared fixture).
+
+With no migration path there is no reason to hold a release between them. Phase 1 still writes a sourced
+`accounts.sh` to the new location, and Phase 2 replaces it with the JSON profiles.
 
 Phase 2 may split into bash and PowerShell PRs if it gets large; the shared fixture lands with the first.
 
 ## Decisions
 
-1. **Environment wins for every key, including `OP_ACCOUNT`**, with the migration warning when the file and
-   the environment disagree.
+1. **Environment wins for every key, including `OP_ACCOUNT`.**
 2. **`EDITOR` and `VISUAL` are dropped** from the templates and profiles.
 3. **`config/` is renamed to `defaults/` in Phase 1.**
 4. **`pwsh/` is included in Phase 2**, covering settings and env sets (above).
-5. **`preflight config` ships in full** in Phase 2 (`path`, `get`, `set`, `edit`, `migrate`), not trimmed to
-   the subcommands the AWS picker needs.
+5. **`preflight config` ships in full** in Phase 2 (`path`, `get`, `set`, `edit`), not trimmed to the
+   subcommands the AWS picker needs.
+6. **No migration path.** No legacy mode, no `migrate` command, no fallback to the old locations.
 
 ## Still open
 
