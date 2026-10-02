@@ -4,6 +4,10 @@
 # Hooks into op-load-env (lib/onepassword.sh) so the generic loader stays free of
 # secret-specific logic. Nothing happens unless NANOLEAF_TOKEN is in the
 # environment, i.e. an active env set maps it to an op:// reference.
+#
+# The copy is deliberately not removed again: if NANOLEAF_TOKEN later leaves the
+# env sets, ~/.config/nanoleaf-direct/env keeps the last token so cron jobs that
+# run without a 1Password session still work. Delete that line by hand to revoke it.
 
 # Sync NANOLEAF_TOKEN to ~/.config/nanoleaf-direct/env so cron jobs
 # (light-remind --tone streak-pan / kitt-pan, etc.) can read it
@@ -18,7 +22,7 @@
 # The tempfile is removed on any failure path (no `trap ... RETURN`: zsh has no
 # RETURN pseudo-signal, and this file is sourced from both shells).
 _op_sync_nanoleaf_env() {
-  [ -n "$NANOLEAF_TOKEN" ] || return 0
+  [ -n "${NANOLEAF_TOKEN:-}" ] || return 0
   local nl_env=~/.config/nanoleaf-direct/env
   local nl_dir nl_tmp
   nl_dir=$(dirname "$nl_env")
@@ -35,7 +39,7 @@ _op_sync_nanoleaf_env() {
 }
 
 # Run after every op-load-env (registered once, even if this file is re-sourced).
-case " ${_OP_AFTER_LOAD_HOOKS[*]} " in
+case " ${_OP_AFTER_LOAD_HOOKS[*]:-} " in
   *" _op_sync_nanoleaf_env "*) ;;
   *) _OP_AFTER_LOAD_HOOKS+=(_op_sync_nanoleaf_env) ;;
 esac

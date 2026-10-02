@@ -141,12 +141,13 @@ _op_env_list() {
       [[ -n "$line" ]] && printf '    %-28s %s\n' "$line" "$ref"
     done < "$file"
   done < <(_op_envsets_names)
-  if [[ -z "$only" && ${#OP_SECRETS[@]} -gt 0 ]]; then
+  local legacy; legacy=$(_op_legacy_secrets)
+  if [[ -z "$only" && -n "$legacy" ]]; then
     found=1
     echo "◆ OP_SECRETS array (legacy, from config/accounts.sh or lib/1password.sh) — move it with: op-env migrate"
-    for line in "${OP_SECRETS[@]}"; do
+    while IFS= read -r line; do
       printf '    %-28s %s\n' "${line%%$'\t'*}" "${line#*$'\t'}"
-    done
+    done <<< "$legacy"
   fi
   if [[ $found -eq 0 ]]; then
     [[ -n "$only" ]] && { echo "❌ No such set: $only" >&2; return 1; }
@@ -200,14 +201,15 @@ _op_env_use() {
 # Move a legacy OP_SECRETS array (config/accounts.sh, or a leftover per-install
 # lib/1password.sh) into a set. Keys the set already has are left alone.
 _op_env_migrate() {
-  local set="${1:-default}" line name ref file moved=0
-  if [[ ${#OP_SECRETS[@]} -eq 0 ]]; then
+  local set="${1:-default}" line name ref file moved=0 legacy
+  legacy=$(_op_legacy_secrets)
+  if [[ -z "$legacy" ]]; then
     echo "Nothing to migrate: no OP_SECRETS array is defined."
     return 0
   fi
   _op_envsets_valid_name "$set" || { echo "❌ Invalid set name '$set'" >&2; return 1; }
   file="$(_op_envsets_dir)/$set.tsv"
-  for line in "${OP_SECRETS[@]}"; do
+  while IFS= read -r line; do
     name="${line%%$'\t'*}"; ref="${line#*$'\t'}"
     if [[ ! "$name" =~ ^[A-Za-z_][A-Za-z0-9_]*$ || "$ref" != op://* ]]; then
       echo "⚠️  Skipped malformed entry: $name"; continue
@@ -218,7 +220,7 @@ _op_env_migrate() {
     _op_envsets_put "$set" "$name" "$ref" || return 1
     echo "✅ [$set] $name -> $ref"
     moved=$((moved + 1))
-  done
+  done <<< "$legacy"
   echo ""
   echo "Moved $moved key(s). Now remove the old list so the set is the only source:"
   echo "  - an OP_SECRETS=( ... ) block in config/accounts.sh: delete the block"
@@ -257,6 +259,15 @@ op-env() {
   esac
 }
 
+# The legacy OP_SECRETS array, one entry per line (nothing if it is unset or empty).
+# Checks with declare -p first: since this PR nothing defines the array by default,
+# and reading an unset array aborts a shell running `set -u`.
+_op_legacy_secrets() {
+  declare -p OP_SECRETS &>/dev/null || return 0
+  [[ ${#OP_SECRETS[@]} -gt 0 ]] || return 0
+  printf '%s\n' "${OP_SECRETS[@]}"
+}
+
 # Everything op-load-env / op-clear-env need to know: one `VAR<TAB>op://ref` line
 # per secret, from the active sets. An OP_SECRETS array still defined by an older
 # config/accounts.sh is honored too (and wins on a name clash) until it is moved
@@ -267,7 +278,7 @@ op-env() {
 _op_env_entries() {
   local set file
   {
-    if [[ ${#OP_SECRETS[@]} -gt 0 ]]; then printf '%s\n' "${OP_SECRETS[@]}"; fi
+    _op_legacy_secrets
     while IFS= read -r set; do
       _op_envsets_valid_name "$set" || continue
       file="$(_op_envsets_dir)/$set.tsv"

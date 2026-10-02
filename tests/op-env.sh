@@ -27,6 +27,8 @@ mkdir -p "$HOME" "$PREFLIGHT_DIR/config" "$PREFLIGHT_DIR/lib"
 
 # Stub op: `inject` resolves {{ op://v/item/field }} to val-of-field and fails the
 # whole batch if any reference mentions "broken"; `read` does the same per ref.
+# FAKE_OP_INJECT_EXTRA="X=y" appends that line to inject output (what a secret value
+# containing a newline looks like after substitution).
 # FAKE_OP_SIGNED_OUT=1 makes `whoami` fail (and `signin` emit nothing useful).
 cat > "$OP_BIN" <<'STUB'
 #!/usr/bin/env bash
@@ -34,7 +36,8 @@ case "$1" in
   whoami) [[ -z "$FAKE_OP_SIGNED_OUT" ]] ;;
   signin) exit 1 ;;
   inject) in=$(cat); grep -q broken <<<"$in" && exit 1
-          sed -E 's/\{\{ op:\/\/[^}]*\/([^/ }]+) \}\}/val-of-\1/' <<<"$in" ;;
+          sed -E 's/\{\{ op:\/\/[^}]*\/([^/ }]+) \}\}/val-of-\1/' <<<"$in"
+          [[ -n "$FAKE_OP_INJECT_EXTRA" ]] && printf '%s\n' "$FAKE_OP_INJECT_EXTRA" ;;
   read)   ref="${@: -1}"; [[ "$ref" == *broken* ]] && exit 1; echo "val-of-${ref##*/}" ;;
 esac
 STUB
@@ -46,6 +49,8 @@ sets="$PREFLIGHT_DIR/config/envsets"
 # find, not a glob: an unmatched glob is an error in zsh.
 clean_sets() { find "$sets" -maxdepth 1 -type f \( -name '*.tsv' -o -name .active \) -delete 2>/dev/null; }
 any_sets() { [ -n "$(find "$sets" -maxdepth 1 -type f -name '*.tsv' 2>/dev/null)" ]; }
+# GNU stat first, BSD/macOS stat as the fallback.
+mode() { stat -c %a "$1" 2>/dev/null || stat -f %Lp "$1"; }
 
 # Load the libs the way init.sh does: by glob, in order.
 load_libs() { local f; for f in "$R"/lib/*.sh; do source "$f" || echo "SOURCE FAIL $f"; done; }
@@ -67,8 +72,8 @@ op-load-env >/dev/null
 chk "loads a plain ref" '[[ "$NPM_TOKEN" == val-of-credential ]]'
 chk "loads a ref containing spaces" '[[ "$GITEA_TOKEN" == val-of-pat ]]'
 chk "nanoleaf hook wrote the token" 'grep -q "NANOLEAF_TOKEN=val-of-token" "$HOME/.config/nanoleaf-direct/env"'
-chk "nanoleaf env file is mode 600" '[[ $(stat -c %a "$HOME/.config/nanoleaf-direct/env") == 600 ]]'
-chk "set files are mode 600" '[[ $(stat -c %a "$sets/guild.tsv") == 600 ]]'
+chk "nanoleaf env file is mode 600" '[[ $(mode "$HOME/.config/nanoleaf-direct/env") == 600 ]]'
+chk "set files are mode 600" '[[ $(mode "$sets/guild.tsv") == 600 ]]'
 
 # ── use / rm / stale handling ─────────────────────────────────────────────────
 op-env use guild >/dev/null; op-load-env >/dev/null
@@ -215,6 +220,28 @@ if command -v python3 >/dev/null 2>&1; then
   out=$(op-env add </dev/null 2>&1); rc=$?
   chk "prompts: no tty -> fails, writes nothing" '[[ $rc -ne 0 ]] && ! any_sets'
 fi
+# ── a secret value with a newline must not set other variables ────────────────
+printf 'REAL\top://v/i/r\n' > "$sets/n.tsv"
+export FAKE_OP_INJECT_EXTRA='EVIL_PATH=/tmp/evil'
+op-load-env > "$T/out" 2>&1; rc=$?
+unset FAKE_OP_INJECT_EXTRA
+chk "newline injection: unrequested name not exported" '[[ -z "${EVIL_PATH:-}" ]]'
+chk "newline injection: reported as a failure" '[[ $rc -eq 1 && "$(cat "$T/out")" == *"unexpected output"* ]]'
+chk "newline injection: the real secret still loads" '[[ "$REAL" == val-of-r ]]'
+op-clear-env >/dev/null; clean_sets
+
+# ── set -u (no OP_SECRETS, OP_BIN unset): nothing may hit an unbound variable ──
+# OP_SECRETS is unset on a fresh install, so these paths must not read it bare.
+printf 'SU\top://v/i/su\n' > "$sets/su.tsv"
+unset OP_SECRETS
+su=$( ( set -u
+        op-load-env 2>&1
+        [ "${SU:-}" = val-of-su ] || echo "SU-NOT-LOADED"
+        op-env list 2>&1; op-env migrate 2>&1; op-clear-env 2>&1
+        OP_BIN= ; op-status 2>&1 ) 2>&1 )
+chk "set -u: no unbound-variable errors" '[[ "$su" != *"unbound variable"* && "$su" != *"parameter not set"* ]]'
+chk "set -u: op-load-env still loads from the set" '[[ "$su" != *"SU-NOT-LOADED"* && "$su" != *"No secrets configured"* ]]'
+clean_sets; OP_SECRETS=()
 
 # ── hooks ─────────────────────────────────────────────────────────────────────
 source "$R/lib/nanoleaf.sh"; source "$R/lib/onepassword.sh"

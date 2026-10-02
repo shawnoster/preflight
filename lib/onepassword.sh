@@ -6,6 +6,10 @@
 # (lib/envsets.sh, config/envsets/<set>.tsv); op-load-env asks _op_env_entries
 # for them. Nothing here needs editing per install.
 #
+# Load order: init.sh sources lib/*.sh by glob, and this file relies on sorting after
+# a leftover pre-rename lib/1password.sh (digits sort before letters), so that the
+# functions below replace that file's same-named ones. Don't rename it to sort earlier.
+#
 # ── Auth model ───────────────────────────────────────────────────────────────
 # These helpers resolve an `op` binary (memoized in OP_BIN) and prefer the
 # Windows op.exe when running under WSL. That lets secret reads be authorized by
@@ -26,6 +30,8 @@
 #     desktop-fed op.exe does not carry a manual `op account add` shorthand.
 #   • Native op → the shorthand you created with `op account add --shorthand`.
 OP_ACCOUNT="${OP_ACCOUNT:-my.1password.com}"
+# Initialised (not left unset) so these libs also work in a shell running `set -u`.
+OP_BIN="${OP_BIN:-}"
 
 # Resolve the op binary once (memoized in OP_BIN). Under WSL, prefer the Windows
 # op.exe for desktop-app integration; otherwise use the native op. op.exe is
@@ -34,7 +40,7 @@ OP_ACCOUNT="${OP_ACCOUNT:-my.1password.com}"
 _op_resolve_bin() {
   [[ -n "$OP_BIN" ]] && return 0
   local p
-  if [[ -n "$WSL_DISTRO_NAME" ]] || grep -qiE 'microsoft|wsl' /proc/version 2>/dev/null; then
+  if [[ -n "${WSL_DISTRO_NAME:-}" ]] || grep -qiE 'microsoft|wsl' /proc/version 2>/dev/null; then
     if command -v op.exe >/dev/null 2>&1; then
       OP_BIN="$(command -v op.exe)"
     else
@@ -278,6 +284,14 @@ op-load-env() {
       [[ -z "$_op_rec" ]] && continue
       _op_name="${_op_rec%%=*}"
       _op_val="${_op_rec#*=}"
+      # A secret value that itself contains a newline would leave a stray line
+      # here that reads like `NAME=value`. Only ever touch a name we asked for,
+      # so such a value cannot set (say) PATH or LD_PRELOAD.
+      if ! grep -qxF -- "$_op_name" <<< "$_op_names"; then
+        echo "⚠️  Ignored unexpected output from op inject (a secret value may contain a newline)"
+        ((_op_failed++))
+        continue
+      fi
       if [[ -n "$_op_val" ]]; then
         export "$_op_name"="$_op_val"
         echo "✅ $_op_name"
