@@ -97,14 +97,28 @@ chk "op-clear-env clears everything loaded" '[[ -z "${NPM_TOKEN:-}${NANOLEAF_TOK
 op-load-env >/dev/null; rm "$sets/guild.tsv"; op-clear-env >/dev/null
 chk "op-clear-env works after the definition is gone" '[[ -z "${NPM_TOKEN:-}" ]]'
 
-# ── failed sign-in keeps the previous list ────────────────────────────────────
-printf 'KEEP_ME\top://v/i/k\n' > "$sets/x.tsv"; clean_sets
+# ── failed sign-in ────────────────────────────────────────────────────────────
+# Start from a clean dir *before* creating the fixture, so KEEP_ME really loads.
+clean_sets; printf 'KEEP_ME\top://v/i/k\n' > "$sets/x.tsv"
 op-load-env >/dev/null
-printf 'OTHER\top://v/i/o\n' > "$sets/x.tsv"
+chk "failed sign-in: precondition, KEEP_ME loaded" '[[ "$KEEP_ME" == val-of-k ]]'
+
+# Definition unchanged: a failed sign-in must not disturb what is still defined.
 FAKE_OP_SIGNED_OUT=1 op-load-env >/dev/null 2>&1; rc=$?
 chk "failed sign-in: rc 1" '[[ $rc -ne 0 ]]'
-chk "failed sign-in: old list remembered, so clear still works" 'op-clear-env >/dev/null; [[ -z "${KEEP_ME:-}" ]]'
-clean_sets
+chk "failed sign-in: a still-defined variable stays set" '[[ "$KEEP_ME" == val-of-k ]]'
+op-clear-env >/dev/null
+chk "failed sign-in: op-clear-env then clears it" '[[ -z "${KEEP_ME:-}" ]]'
+
+# List changed, then sign-in fails: the new list must not be recorded as loaded
+# (nothing from it was), and the variable the old list set must still be cleared.
+clean_sets; printf 'KEEP_ME\top://v/i/k\n' > "$sets/x.tsv"; op-load-env >/dev/null
+chk "failed sign-in: precondition, memory holds the loaded list" '[[ "$_OP_LOADED_VARS" == KEEP_ME ]]'
+printf 'OTHER\top://v/i/o\n' > "$sets/x.tsv"
+FAKE_OP_SIGNED_OUT=1 op-load-env >/dev/null 2>&1
+chk "failed sign-in: memory not advanced to a list that never loaded" '[[ "$_OP_LOADED_VARS" == KEEP_ME && -z "${OTHER:-}" ]]'
+chk "failed sign-in: the removed variable was unset" '[[ -z "${KEEP_ME:-}" ]]'
+op-clear-env >/dev/null; clean_sets
 
 # ── CRLF edits (WSL users editing from Windows) ───────────────────────────────
 printf 'CRLF_VAR\top://v/i/f\r\n' > "$sets/w.tsv"
@@ -262,10 +276,36 @@ if command -v python3 >/dev/null 2>&1; then
   chk "prompts: confirming the GITHUB_TOKEN warning adds it" 'grep -q "^GITHUB_TOKEN" "$sets/x.tsv" 2>/dev/null'
   clean_sets
 
-  # No terminal at all: must fail cleanly, not hang or write anything.
-  out=$(op-env add </dev/null 2>&1); rc=$?
-  chk "prompts: no tty -> fails, writes nothing" '[[ $rc -ne 0 ]] && ! any_sets'
+  # No terminal at all: must fail cleanly, not hang or write anything. Redirecting
+  # stdin is not enough: the process would still have a controlling terminal, /dev/tty
+  # would open, and fzf would run because stderr is a tty. So start a new session with
+  # stdin/stdout/stderr detached, which is what a cron job or a pipe has.
+  notty_run() {
+    PF_SNIP="$1" PF_SHELL="${ZSH_VERSION:+zsh}" PF_LIBS="$R/lib" python3 - <<'PY'
+import os, subprocess, sys
+sh = os.environ["PF_SHELL"] or "bash"
+snip = 'for f in "$PF_LIBS"/*.sh; do source "$f"; done; ' + os.environ["PF_SNIP"]
+try:
+    r = subprocess.run([sh, "-c", snip], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                       stderr=subprocess.STDOUT, start_new_session=True, timeout=15)
+    sys.stdout.write(r.stdout.decode(errors="replace") + "\nNOTTY_RC=%d\n" % r.returncode)
+except subprocess.TimeoutExpired:
+    sys.stdout.write("\nNOTTY_RC=TIMEOUT\n")
+PY
+  }
+  out=$(notty_run 'op-env add; echo "cmd_rc=$?"')
+  chk "no tty: op-env add does not hang" '[[ "$out" != *NOTTY_RC=TIMEOUT* ]]'
+  chk "no tty: op-env add fails" '[[ "$out" == *"cmd_rc=1"* ]]'
+  chk "no tty: writes nothing" '! any_sets'
+  out=$(notty_run 'op-env add x FOO; echo "cmd_rc=$?"')
+  chk "no tty: a missing ref is not invented" '[[ "$out" == *"cmd_rc=1"* ]] && ! any_sets'
+  printf 'A1\top://v/i/a\n' > "$sets/one.tsv"
+  out=$(notty_run 'op-env use; echo "cmd_rc=$?"')
+  chk "no tty: op-env use fails without changing the active sets" '[[ "$out" == *"cmd_rc=1"* && ! -e "$sets/.active" ]]'
+  clean_sets
 fi
+
+
 # ── a secret value with a newline must not set other variables ────────────────
 printf 'REAL\top://v/i/r\n' > "$sets/n.tsv"
 export FAKE_OP_INJECT_EXTRA='EVIL_PATH=/tmp/evil'
