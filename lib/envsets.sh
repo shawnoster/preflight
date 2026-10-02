@@ -15,7 +15,7 @@
 #   op-env list [set]                   show sets and their keys
 #   op-env rm [set] [VAR]               remove a key (fzf picker if omitted)
 #   op-env use [set...]                 choose which sets op-load-env loads
-#   op-env migrate [set]                move a legacy OP_SECRETS array into a set
+#   op-env migrate [set] [--force]      move a legacy OP_SECRETS array into a set
 #   op-env help
 
 _op_envsets_dir() { printf '%s' "${PREFLIGHT_DIR:-$HOME/.preflight}/config/envsets"; }
@@ -23,6 +23,18 @@ _op_envsets_dir() { printf '%s' "${PREFLIGHT_DIR:-$HOME/.preflight}/config/envse
 _op_envsets_ensure() {
   local d; d=$(_op_envsets_dir)
   [[ -d "$d" ]] || { mkdir -p "$d" && chmod 700 "$d"; }
+}
+
+# A reference must look like op://vault/item/field (an item may have a section, so
+# more segments are fine). One definition, used by add, migrate and the loader.
+_OP_REF_RE='^op://[^/]+/[^/]+/.+'
+_op_envsets_valid_ref() { [[ "$1" =~ $_OP_REF_RE ]]; }
+
+# First valid reference a set file gives VAR ("" if none).
+# Usage: _op_envsets_ref_of FILE VAR
+_op_envsets_ref_of() {
+  [[ -f "$1" ]] || return 0
+  tr -d '\r' < "$1" | awk -F'\t' -v n="$2" -v re="$_OP_REF_RE" '$1 == n && $2 ~ re { print $2; exit }'
 }
 
 # Set names become file names, so restrict them to a safe alphabet.
@@ -129,7 +141,7 @@ _op_env_add() {
   fi
 
   [[ -n "$ref" ]] || ref=$(_op_envsets_ask "  1Password reference (op://vault/item/field): ")
-  if [[ ! "$ref" =~ ^op://[^/]+/[^/]+/.+ ]]; then
+  if ! _op_envsets_valid_ref "$ref"; then
     echo "❌ Reference must look like op://vault/item/field" >&2; return 1
   fi
 
@@ -207,30 +219,109 @@ _op_env_use() {
 }
 
 # Move a legacy OP_SECRETS array (config/accounts.sh, or a leftover per-install
-# lib/1password.sh) into a set. Keys the set already has are left alone.
+# lib/1password.sh) into a set. The legacy array wins over sets today, so the move
+# must not change which reference a variable resolves to once the array is deleted.
+# Everything is checked before anything is written; on a problem nothing changes.
+#   - malformed entries (bad name, or a ref that is not op://vault/item/field) are skipped
+#   - a name the set already holds with a DIFFERENT ref stops the move; --force overwrites
+#     the set's ref with the legacy one (what loads today)
+#   - a different active set that would still override the moved value stops the move
+#   - an existing set that is not active is refused (its keys would stop loading)
+# Usage: op-env migrate [set] [--force]
 _op_env_migrate() {
-  local set="${1:-default}" line name ref file moved=0 legacy
+  local force=0 set="" arg legacy valid entries line name ref file dir order s r
+  local dest_def winner_set winner_ref dest_conf="" shadow="" moved=0 same=0
+  for arg in "$@"; do
+    case "$arg" in
+      --force|-f) force=1 ;;
+      -*) echo "❌ Unknown option: $arg" >&2; return 1 ;;
+      *)  set="$arg" ;;
+    esac
+  done
+  set="${set:-default}"
   legacy=$(_op_legacy_secrets)
   if [[ -z "$legacy" ]]; then
     echo "Nothing to migrate: no OP_SECRETS array is defined."
     return 0
   fi
   _op_envsets_valid_name "$set" || { echo "❌ Invalid set name '$set'" >&2; return 1; }
-  file="$(_op_envsets_dir)/$set.tsv"
+  dir=$(_op_envsets_dir); file="$dir/$set.tsv"
+
+  if [[ -f "$file" ]] && ! _op_envsets_active | grep -qxF -- "$set"; then
+    echo "❌ Set '$set' exists but is not active, so the migrated keys would stop loading" >&2
+    echo "   once the legacy list is deleted. Activate it first (op-env use <sets...>, keeping" >&2
+    echo "   the ones already active) or pick another set. Nothing was changed." >&2
+    return 1
+  fi
+
+  # Valid entries only, first definition of a name winning (as the loader does).
+  valid=""
+  while IFS= read -r line; do
+    [[ -n "$line" ]] || continue
+    name="${line%%$'\t'*}"; ref="${line#*$'\t'}"
+    if [[ ! "$name" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || ! _op_envsets_valid_ref "$ref"; then
+      echo "⚠️  Skipped malformed entry: $name ($ref)"; continue
+    fi
+    valid+="$name"$'\t'"$ref"$'\n'
+  done <<< "$legacy"
+  entries=$(printf '%s' "$valid" | awk -F'\t' 'NF && !seen[$1]++')
+  if [[ -z "$entries" ]]; then
+    echo "Nothing to migrate: no valid entries in OP_SECRETS."
+    return 0
+  fi
+
+  # The order sets are read in once the legacy list is gone: the active list, or
+  # alphabetical when there is no .active file. A brand-new set joins it too.
+  order=$( { _op_envsets_active; [[ -f "$file" ]] || printf '%s\n' "$set"; } | awk 'NF && !seen[$0]++')
+  [[ -f "$dir/.active" ]] || order=$(printf '%s\n' "$order" | sort)
+
   while IFS= read -r line; do
     name="${line%%$'\t'*}"; ref="${line#*$'\t'}"
-    if [[ ! "$name" =~ ^[A-Za-z_][A-Za-z0-9_]*$ || "$ref" != op://* ]]; then
-      echo "⚠️  Skipped malformed entry: $name"; continue
+    dest_def=$(_op_envsets_ref_of "$file" "$name")
+    if [[ -n "$dest_def" && "$dest_def" != "$ref" && $force -eq 0 ]]; then
+      dest_conf+="   $name: [$set] has $dest_def, the legacy list has $ref"$'\n'
     fi
-    if [[ -f "$file" ]] && cut -f1 "$file" | grep -qxF "$name"; then
-      echo "   $name already in [$set], left as is"; continue
+    winner_set=""; winner_ref=""
+    while IFS= read -r s; do
+      [[ -n "$s" ]] || continue
+      if [[ "$s" == "$set" ]]; then
+        if [[ -n "$dest_def" && $force -eq 0 ]]; then r="$dest_def"; else r="$ref"; fi
+      else
+        r=$(_op_envsets_ref_of "$dir/$s.tsv" "$name")
+      fi
+      if [[ -n "$r" ]]; then winner_set="$s"; winner_ref="$r"; break; fi
+    done <<< "$order"
+    if [[ -n "$winner_set" && "$winner_set" != "$set" && "$winner_ref" != "$ref" ]]; then
+      shadow+="   $name: set [$winner_set] defines it as $winner_ref and would override $ref"$'\n'
+    fi
+  done <<< "$entries"
+
+  if [[ -n "$shadow" ]]; then
+    echo "❌ Another active set would override the legacy value for:" >&2
+    printf '%s' "$shadow" >&2
+    echo "   Remove or change that entry (op-env rm <set> <VAR>), then run migrate again." >&2
+    echo "   Nothing was changed." >&2
+    return 1
+  fi
+  if [[ -n "$dest_conf" ]]; then
+    echo "❌ [$set] already has different references for:" >&2
+    printf '%s' "$dest_conf" >&2
+    echo "   The legacy list is what loads today, so deleting it would switch these credentials." >&2
+    echo "   Re-run with --force to overwrite [$set] with the legacy values. Nothing was changed." >&2
+    return 1
+  fi
+
+  while IFS= read -r line; do
+    name="${line%%$'\t'*}"; ref="${line#*$'\t'}"
+    if [[ "$(_op_envsets_ref_of "$file" "$name")" == "$ref" ]]; then
+      echo "   $name already in [$set] with the same reference"; same=$((same + 1)); continue
     fi
     _op_envsets_put "$set" "$name" "$ref" || return 1
     echo "✅ [$set] $name -> $ref"
     moved=$((moved + 1))
-  done <<< "$legacy"
+  done <<< "$entries"
   echo ""
-  echo "Moved $moved key(s). Now remove the old list so the set is the only source:"
+  echo "Moved $moved key(s) ($same already there). Now remove the old list so the set is the only source:"
   echo "  - an OP_SECRETS=( ... ) block in config/accounts.sh: delete the block"
   if [[ -f "${PREFLIGHT_DIR:-$HOME/.preflight}/lib/1password.sh" ]]; then
     echo "  - lib/1password.sh is a leftover from before the rename to lib/onepassword.sh:"
@@ -246,7 +337,7 @@ op-env manages named env sets backed by 1Password references.
   op-env list [set]                   Show sets and keys (● active, ○ inactive)
   op-env rm [set] [VAR]               Remove a key
   op-env use [set...]                 Choose active sets (fzf multi-select if omitted)
-  op-env migrate [set]                Move a legacy OP_SECRETS array into a set
+  op-env migrate [set] [--force]      Move a legacy OP_SECRETS array into a set (stops on conflicts)
   op-env help                         This message
 
 Sets (e.g. guild, personal) are stored in config/envsets/<set>.tsv, one
@@ -292,5 +383,5 @@ _op_env_entries() {
       file="$(_op_envsets_dir)/$set.tsv"
       [[ -f "$file" ]] && awk 1 "$file"
     done < <(_op_envsets_active)
-  } | tr -d '\r' | awk -F'\t' '$1 ~ /^[A-Za-z_][A-Za-z0-9_]*$/ && $2 ~ /^op:\/\// && !seen[$1]++'
+  } | tr -d '\r' | awk -F'\t' -v re="$_OP_REF_RE" '$1 ~ /^[A-Za-z_][A-Za-z0-9_]*$/ && $2 ~ re && !seen[$1]++'
 }

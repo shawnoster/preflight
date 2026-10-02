@@ -136,6 +136,52 @@ unset OP_SECRETS; op-load-env >/dev/null
 chk "loads from the set once the array is gone" '[[ "$LEGACY_A" == val-of-a ]]'
 rm -f "$sets"/*.tsv "$sets/.active"
 
+# ── migrate safety (Copilot review) ───────────────────────────────────────────
+# A: malformed refs are skipped, not migrated (op://broken is not op://vault/item/field)
+OP_SECRETS=($'OKREF\top://v/i/f' $'SHORT\top://broken' $'NOSLASH\top://v/i/')
+out=$(op-env migrate m1 2>&1)
+chk "migrate: valid ref moved" 'grep -q "^OKREF	op://v/i/f" "$sets/m1.tsv"'
+chk "migrate: op://broken and op://v/i/ skipped" '! grep -q "SHORT\|NOSLASH" "$sets/m1.tsv"'
+chk "loader drops a malformed ref too" '[[ "$(printf "SHORT\top://broken\n" > "$sets/bad.tsv"; _op_env_entries)" != *SHORT* ]]'
+unset OP_SECRETS; rm -f "$sets"/*.tsv "$sets/.active"
+
+# B: a different ref already in the set -> stop, change nothing, --force overwrites
+OP_SECRETS=($'API\top://v/legacy/key')
+printf 'API\top://v/other/key\n' > "$sets/m2.tsv"
+before=$(cat "$sets/m2.tsv")
+out=$(op-env migrate m2 2>&1); rc=$?
+chk "conflict: migrate refuses" '[[ $rc -ne 0 && "$out" == *"different references"* && "$out" == *API* ]]'
+chk "conflict: the set file is untouched" '[[ "$(cat "$sets/m2.tsv")" == "$before" ]]'
+chk "conflict: what loads is still the legacy value" '[[ "$(_op_env_entries)" == *v/legacy/key* ]]'
+out=$(op-env migrate m2 --force 2>&1); rc=$?
+chk "conflict: --force takes the legacy ref" '[[ $rc -eq 0 ]] && grep -q "^API	op://v/legacy/key" "$sets/m2.tsv"'
+unset OP_SECRETS
+chk "conflict: after --force, deleting the legacy array changes nothing" '[[ "$(_op_env_entries)" == *v/legacy/key* ]]'
+rm -f "$sets"/*.tsv "$sets/.active"
+
+# B2: same ref already there is fine, and re-running is idempotent
+OP_SECRETS=($'SAME\top://v/i/s')
+op-env migrate m3 >/dev/null 2>&1; out=$(op-env migrate m3 2>&1); rc=$?
+chk "re-running migrate is a no-op success" '[[ $rc -eq 0 && "$out" == *"same reference"* ]]'
+unset OP_SECRETS; rm -f "$sets"/*.tsv "$sets/.active"
+
+# C: an existing destination that is not active would silently drop the keys
+printf 'LIVE\top://v/i/l\n' > "$sets/live.tsv"; printf 'DEST\top://v/i/d\n' > "$sets/dest.tsv"; printf 'live\n' > "$sets/.active"
+OP_SECRETS=($'LEG\top://v/i/leg')
+out=$(op-env migrate dest 2>&1); rc=$?
+chk "inactive destination: migrate refuses" '[[ $rc -ne 0 && "$out" == *"not active"* ]]'
+chk "inactive destination: nothing written" '! grep -q LEG "$sets/dest.tsv"'
+out=$(op-env migrate live 2>&1); rc=$?
+chk "active destination: migrate works" '[[ $rc -eq 0 ]] && grep -q "^LEG" "$sets/live.tsv"'
+unset OP_SECRETS; rm -f "$sets"/*.tsv "$sets/.active"
+
+# D: another active set would override the migrated value once the legacy list is gone
+printf 'SH\top://v/other/sh\n' > "$sets/a.tsv"; printf 'a\nnew\n' > "$sets/.active"
+OP_SECRETS=($'SH\top://v/legacy/sh')
+out=$(op-env migrate new 2>&1); rc=$?
+chk "shadowed by an earlier set: migrate refuses" '[[ $rc -ne 0 && "$out" == *"would override"* && ! -e "$sets/new.tsv" ]]'
+unset OP_SECRETS; rm -f "$sets"/*.tsv "$sets/.active"
+
 # ── upgrade: a leftover pre-rename lib/1password.sh must keep working ──────────
 # Old file: defined its own op-load-env and an OP_SECRETS array. It sorts before
 # onepassword.sh, so the new functions must win while its array is still honored.

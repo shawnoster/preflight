@@ -47,7 +47,7 @@ preflight update
 
 Pulls the latest changes from the upstream repo, shows incoming commits, and warns if any tracked files have local modifications. Gitignored files (`config/accounts.sh`, `config/owl.sh`, `config/envsets/`) are never touched.
 
-> **Upgrading from a version where `lib/1password.sh` was a per-install copy:** the generic helpers are now the tracked file `lib/onepassword.sh`, so `preflight update` does not touch your old `lib/1password.sh` (it is gitignored and still loaded). An `OP_SECRETS=( ... )` list in it, or in `config/accounts.sh`, keeps working. Run `op-env migrate` to move it into a set, then delete the old list (and `lib/1password.sh` if it holds nothing else).
+> **Upgrading from a version where `lib/1password.sh` was a per-install copy:** the generic helpers are now the tracked file `lib/onepassword.sh`, so `preflight update` does not touch your old `lib/1password.sh` (it is gitignored and still loaded). An `OP_SECRETS=( ... )` list in it, or in `config/accounts.sh`, keeps working. Run `op-env migrate` to move it into a set (it refuses rather than silently switch a credential; see the command table), then delete the old list (and `lib/1password.sh` if it holds nothing else).
 
 After updating, reload your shell:
 
@@ -146,7 +146,7 @@ When something is behind, the suggested upgrade command is derived from **how th
 | `op-load-env` | Load the active sets' secrets from 1Password into env vars |
 | `op-env add [set] [VAR] [ref]` | Add a VAR → `op://` reference to a named set (`guild`, `personal`, ...); prompts for anything omitted |
 | `op-env list [set]` / `rm` / `use` | Show sets, remove a key, choose which sets are active (fzf pickers) |
-| `op-env migrate [set]` | Move a legacy `OP_SECRETS` array (from an older `config/accounts.sh`) into a set |
+| `op-env migrate [set] [--force]` | Move a legacy `OP_SECRETS` array (from an older `config/accounts.sh`) into a set. Skips malformed refs, and stops without changing anything if the set already holds a different ref for a variable, if another active set would override it, or if the set exists but is not active (`--force` overwrites the set's conflicting refs with the legacy ones) |
 | `op-clear-env` | Unset every variable `op-load-env` set |
 
 **Which secrets load (`lib/envsets.sh`):** `lib/onepassword.sh` is generic and names no secret. The list lives in env sets: `op-env` keeps named groups of `VAR → op://` references in `config/envsets/<set>.tsv` (gitignored, one `VAR<TAB>op://vault/item/field` per line, safe to hand-edit). `op-load-env` and `op-clear-env` use the active sets (`op-env use`; with no `config/envsets/.active`, every set is active). Once `.active` exists, a `.tsv` you create by hand is **not** loaded until you add it with `op-env use` (`op-env list` shows it as `○ inactive`); `op-env add` to a new set activates it for you. If two sets define the same variable, the first one wins: sets are read in the order listed in `config/envsets/.active` (what `op-env use` writes), or alphabetically when that file does not exist. With no secrets configured, `op-load-env` does nothing and does not sign in. A variable removed from a set, or a set that is deactivated, is unset on the next `op-load-env`.
