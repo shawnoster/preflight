@@ -146,7 +146,7 @@ When something is behind, the suggested upgrade command is derived from **how th
 | `op-status` | Check if signed in to 1Password |
 | `op-signin [account]` | Sign in to 1Password |
 | `op-load-env` | Load the active sets' secrets from 1Password into env vars |
-| `op-env add [set] [VAR] [ref] [account]` | Add a VAR → `op://` reference to a named set (`guild`, `personal`, ...); prompts for anything omitted |
+| `op-env add [set] [VAR] [ref] [account]` | Add a VAR → `op://` reference to a named set (`guild`, `personal`, ...); prompts for an omitted set, variable or reference (never the optional account) |
 | `op-env list [set]` / `rm` / `use` | Show sets, remove a key, choose which sets are active (fzf pickers) |
 | `op-env migrate [set] [--force]` | Move a legacy `OP_SECRETS` array (from an older `config/accounts.sh`) into a set. Skips malformed refs, and stops without changing anything if the set already holds a different ref for a variable, if another active set would override it, or if the set exists but is not active (`--force` overwrites the set's conflicting refs with the legacy ones) |
 | `op-clear-env` | Unset every variable `op-load-env` set |
