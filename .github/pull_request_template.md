@@ -23,7 +23,8 @@
 
 ## Upgrade notes
 
-<!-- Delete this section if nothing here affects an existing install.
+<!-- Keep this section so every PR has the same shape. If nothing here affects an
+     existing install, write "None".
      init.sh and install.sh normally copy a *.template into its live counterpart only
      when the live file is missing, so a template change does not reach an existing
      install on its own. The exception is an explicit migration in init.sh (today, the
@@ -40,7 +41,7 @@
 
 ## Checklist
 
-- [ ] PR title follows [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) (`type(scope): subject`, e.g. `fix(preflight): ...`); PRs are squash-merged, so the title becomes the commit message
+- [ ] PR title follows [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) (`type(scope): subject` or `type: subject`, e.g. `fix(preflight): ...` or `chore: ...`; the scope is optional); PRs are squash-merged, so the title becomes the commit message
 - [ ] If this is a breaking change, Upgrade notes say what an existing install must do
 - [ ] Tracked files stay generic: no secrets, work-specific account references, or machine-specific paths
 - [ ] Works when sourced from both Bash and zsh (`_pf_ask`, not `read -p`; no `read -a`, `mapfile`/`readarray`, or 0-based array indexes)
