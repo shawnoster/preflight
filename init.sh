@@ -76,12 +76,6 @@ if [[ ! -f "$PREFLIGHT_DIR/config/accounts.sh" ]]; then
   unset _pf_profiles _pf_file _pf_base _pf_idx _pf_label _pf_choice
 fi
 
-if [[ ! -f "$PREFLIGHT_DIR/lib/1password.sh" ]] && [[ -f "$PREFLIGHT_DIR/lib/1password.sh.template" ]]; then
-  echo "📋 Creating lib/1password.sh from template..."
-  cp "$PREFLIGHT_DIR/lib/1password.sh.template" "$PREFLIGHT_DIR/lib/1password.sh"
-  echo "✅ Created. Edit lib/1password.sh to customize your 1Password secrets."
-fi
-
 if [[ ! -f "$PREFLIGHT_DIR/config/owl.sh" ]] && [[ -f "$PREFLIGHT_DIR/config/owl.sh.template" ]]; then
   echo "📋 Creating config/owl.sh from template..."
   cp "$PREFLIGHT_DIR/config/owl.sh.template" "$PREFLIGHT_DIR/config/owl.sh"

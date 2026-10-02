@@ -4,24 +4,19 @@
 # Intended for individual developers: Gitea, GitHub PATs, minimal tooling.
 # Selected on first-time setup, or copy manually:
 #   cp config/accounts.general.sh config/accounts.sh
-# Then edit accounts.sh with your real op:// references and values.
+# Then edit accounts.sh with your real values, and register secrets with `op-env add`.
 
 # ── 1Password account reference ──────────────────────────────────────────────
-# See lib/1password.sh for the auth model. Examples: "my.1password.com", "my".
+# See lib/onepassword.sh for the auth model. Examples: "my.1password.com", "my".
 export OP_ACCOUNT="my.1password.com"
 
-# ── 1Password secrets (override lib/1password.sh.template default) ───────────
-# Format: VAR_NAME<TAB>op://vault/item/field. op-load-env and op-clear-env both
-# iterate this array, so listing a secret here registers it for load and clear.
-#
-# NOTE: avoid GITHUB_TOKEN/GH_TOKEN here. `gh` CLI treats those env vars as
-# an override for its own stored auth (~/.config/gh/hosts.yml) — exporting
-# one shadows a working `gh auth login` session for every `gh` command and
-# API call for the rest of the shell session. Use a differently-named var
-# (e.g. GH_PAT) if some other tool needs a personal access token by env var.
-OP_SECRETS=(
-  $'GITEA_TOKEN\top://Private/Gitea - Personal/pat'
-)
+# ── 1Password secrets ────────────────────────────────────────────────────────
+# The list of secrets does not live in this file. Register VAR -> op:// pairs
+# with `op-env add`; they are stored in config/envsets/<set>.tsv and loaded by
+# op-load-env. For example:
+#   op-env add default GITEA_TOKEN 'op://Private/Gitea - Personal/pat'
+# Run `op-env help` for the rest. (A legacy OP_SECRETS=( ... ) array here still
+# works; `op-env migrate` moves it into a set.)
 
 # ── Optional env var warnings in preflight ───────────────────────────────────
 # Space-separated list of variable names. Preflight warns if any are unset.

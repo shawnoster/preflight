@@ -166,12 +166,6 @@ main() {
     _pf_ok "Created config/accounts.sh from template"
   fi
 
-  if [[ ! -f "$PREFLIGHT_DIR/lib/1password.sh" ]] \
-      && [[ -f "$PREFLIGHT_DIR/lib/1password.sh.template" ]]; then
-    cp "$PREFLIGHT_DIR/lib/1password.sh.template" "$PREFLIGHT_DIR/lib/1password.sh"
-    _pf_ok "Created lib/1password.sh from template"
-  fi
-
   # Owl base theme: place the bundled OMP theme in the gitignored state dir so
   # owl-theme has a user-owned config to patch (it refuses to touch Oh My
   # Posh's own theme directory). init.sh re-ensures this on later updates.
@@ -194,7 +188,9 @@ main() {
   _pf_info "Next steps:"
   _pf_info "  1. Reload your shell:  $reload_cmd  (or open a new terminal)"
   _pf_info "     — on first load, you'll be prompted to pick a config profile."
-  _pf_info "  2. Run: preflight"
+  _pf_info "  2. Register your 1Password secrets:  op-env add"
+  _pf_info "     (set OP_ACCOUNT in config/accounts.sh first)"
+  _pf_info "  3. Run: preflight"
   _pf_info ""
   _pf_info "Available profiles:"
   _pf_info "  config/accounts.general.sh  — Individual dev (Gitea, GitHub, minimal)"
