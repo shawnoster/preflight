@@ -17,7 +17,7 @@
 # line written before this existed — keep working untouched.
 #
 # Usage:
-#   op-env add [set] [VAR] [op://ref] [account]   add/update a key (prompts for what's missing)
+#   op-env add [set] [VAR] [op://ref] [account]   add/update a key (prompts for a missing set, VAR or ref — never the account)
 #   op-env list [set]                   show sets and their keys
 #   op-env rm [set] [VAR]               remove a key (fzf picker if omitted)
 #   op-env use [set...]                 choose which sets op-load-env loads
@@ -455,7 +455,7 @@ _op_env_help() {
   cat <<'EOF'
 op-env manages named env sets backed by 1Password references.
 
-  op-env add [set] [VAR] [op://ref] [account]   Add or update a key (prompts for the rest)
+  op-env add [set] [VAR] [op://ref] [account]   Add or update a key (prompts for a missing set/VAR/ref)
   op-env list [set]                   Show sets and keys (● active, ○ inactive)
   op-env rm [set] [VAR]               Remove a key
   op-env use [set...]                 Choose active sets (fzf multi-select if omitted)
