@@ -7,6 +7,10 @@ config/envsets/
 lib/1password.sh
 pwsh/config/accounts.ps1
 
+# Your own shell functions; sourced with the other lib/*.sh (install.sh and
+# `preflight update` point users here)
+lib/local.sh
+
 # Runtime state
 state/
 

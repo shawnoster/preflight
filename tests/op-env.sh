@@ -43,6 +43,9 @@ chmod +x "$OP_BIN"
 fails=0 passes=0
 chk() { if eval "$2"; then passes=$((passes + 1)); else fails=$((fails + 1)); echo "FAIL: $1"; fi; }
 sets="$PREFLIGHT_DIR/config/envsets"
+# find, not a glob: an unmatched glob is an error in zsh.
+clean_sets() { find "$sets" -maxdepth 1 -type f \( -name '*.tsv' -o -name .active \) -delete 2>/dev/null; }
+any_sets() { [ -n "$(find "$sets" -maxdepth 1 -type f -name '*.tsv' 2>/dev/null)" ]; }
 
 # Load the libs the way init.sh does: by glob, in order.
 load_libs() { local f; for f in "$R"/lib/*.sh; do source "$f" || echo "SOURCE FAIL $f"; done; }
@@ -90,13 +93,13 @@ op-load-env >/dev/null; rm "$sets/guild.tsv"; op-clear-env >/dev/null
 chk "op-clear-env works after the definition is gone" '[[ -z "${NPM_TOKEN:-}" ]]'
 
 # ── failed sign-in keeps the previous list ────────────────────────────────────
-printf 'KEEP_ME\top://v/i/k\n' > "$sets/x.tsv"; rm -f "$sets/.active" "$sets/personal.tsv"
+printf 'KEEP_ME\top://v/i/k\n' > "$sets/x.tsv"; clean_sets
 op-load-env >/dev/null
 printf 'OTHER\top://v/i/o\n' > "$sets/x.tsv"
 FAKE_OP_SIGNED_OUT=1 op-load-env >/dev/null 2>&1; rc=$?
 chk "failed sign-in: rc 1" '[[ $rc -ne 0 ]]'
 chk "failed sign-in: old list remembered, so clear still works" 'op-clear-env >/dev/null; [[ -z "${KEEP_ME:-}" ]]'
-rm -f "$sets"/*.tsv "$sets/.active"
+clean_sets
 
 # ── CRLF edits (WSL users editing from Windows) ───────────────────────────────
 printf 'CRLF_VAR\top://v/i/f\r\n' > "$sets/w.tsv"
@@ -104,7 +107,7 @@ printf 'w\r\n' > "$sets/.active"
 op-load-env >/dev/null
 chk "CRLF .tsv and .active: value has no CR" '[[ "$CRLF_VAR" == val-of-f ]]'
 chk "CRLF: list output has no CR" '[[ "$(op-env list)" != *$'"'"'\r'"'"'* ]]'
-rm -f "$sets"/*.tsv "$sets/.active"
+clean_sets
 
 # ── ordering: first definition wins, in .active order ─────────────────────────
 printf 'DUP\top://v/i/first\n'  > "$sets/a.tsv"
@@ -112,13 +115,13 @@ printf 'DUP\top://v/i/second\n' > "$sets/b.tsv"
 chk "no .active: alphabetical, a wins" '[[ "$(_op_env_entries)" == *first* ]]'
 printf 'b\na\n' > "$sets/.active"
 chk ".active order decides: b wins" '[[ "$(_op_env_entries)" == *second* ]]'
-rm -f "$sets"/*.tsv "$sets/.active"
+clean_sets
 
 # ── hand-edited garbage is ignored ────────────────────────────────────────────
 printf 'ok1\top://v/i/k\nnot a name\top://v/i/k\nnoref\tx\n\n' > "$sets/junk.tsv"
 echo "no_such_set" >> "$sets/.active"; echo "junk" >> "$sets/.active"
 chk "garbage lines dropped, good line kept" '[[ "$(_op_env_entries)" == "ok1"$'"'"'\t'"'"'"op://v/i/k" ]]'
-rm -f "$sets"/*.tsv "$sets/.active"
+clean_sets
 
 # ── legacy OP_SECRETS + migrate ───────────────────────────────────────────────
 OP_SECRETS=($'LEGACY_A\top://v/i/a' $'bad name\top://v/i/z' $'NOREF\tnotop')
@@ -129,7 +132,7 @@ chk "migrate wrote the valid key" 'grep -q "^LEGACY_A	op://v/i/a" "$sets/legacy.
 chk "migrate skipped the malformed ones" '! grep -q "bad name\|NOREF" "$sets/legacy.tsv"'
 unset OP_SECRETS; op-load-env >/dev/null
 chk "loads from the set once the array is gone" '[[ "$LEGACY_A" == val-of-a ]]'
-rm -f "$sets"/*.tsv "$sets/.active"
+clean_sets
 
 # ── upgrade: a leftover pre-rename lib/1password.sh must keep working ──────────
 # Old file: defined its own op-load-env and an OP_SECRETS array. It sorts before
@@ -147,6 +150,71 @@ chk "upgrade: old OP_SECRETS still loads" '[[ "$OLD_LIST_VAR" == val-of-old ]]'
 out=$(op-env migrate 2>&1)
 chk "upgrade: migrate tells the user to delete the leftover file" '[[ "$out" == *"lib/1password.sh is a leftover"* ]]'
 rm -f "$PREFLIGHT_DIR/lib/1password.sh"
+
+# ── interactive prompts (need a real tty: they read /dev/tty) ─────────────────
+# Drive `op-env` through a pty, feeding answers as typed input. Skipped without python3.
+# Usage: tty_run "answers (\n-separated)" <shell snippet>   -> prints what the shell printed
+tty_run() {
+  PF_ANS="$1" PF_SNIP="$2" PF_SHELL="${ZSH_VERSION:+zsh}" PF_LIBS="$R/lib" python3 - <<'PY'
+import os, pty, sys, select, time
+ans = os.environ["PF_ANS"].encode().decode("unicode_escape").encode()
+sh = os.environ["PF_SHELL"] or "bash"
+snip = 'for f in "$PF_LIBS"/*.sh; do source "$f"; done; ' + os.environ["PF_SNIP"]
+pid, fd = pty.fork()
+if pid == 0:
+    os.execvp(sh, [sh, "-c", snip])
+os.write(fd, ans)
+out = b""; end = time.time() + 15
+while time.time() < end:
+    r, _, _ = select.select([fd], [], [], 0.2)
+    if r:
+        try:
+            d = os.read(fd, 4096)
+        except OSError:
+            break
+        if not d:
+            break
+        out += d
+    else:
+        done, _ = os.waitpid(pid, os.WNOHANG)
+        if done:
+            break
+sys.stdout.write(out.decode(errors="replace").replace("\r", ""))
+PY
+}
+
+if command -v python3 >/dev/null 2>&1; then
+  export PF_LIBS="$R/lib"
+  # A PATH with the tools the libs need but no fzf, so the pickers use the numbered menu
+  # (fzf would take over a pty). bash/zsh are linked too since tty_run execs them by name.
+  nofzf="$T/nofzf"; mkdir -p "$nofzf"
+  for c in bash zsh python3 awk sed grep cut sort find mktemp chmod mv rm cat tr paste stat dirname head; do
+    p=$(command -v "$c" 2>/dev/null) && [[ "$p" == /* ]] && ln -sf "$p" "$nofzf/$c"
+  done
+  clean_sets
+  out=$(PATH="$nofzf" tty_run '2\nPROMPTED_VAR\nop://v/i/p\n' 'op-env add')
+  chk "prompts: add picks a set from the menu, then asks for var and ref" 'grep -q "^PROMPTED_VAR	op://v/i/p" "$sets/personal.tsv" 2>/dev/null'
+  clean_sets
+
+  out=$(PATH="$nofzf" tty_run '3\nnewset\nMENU_VAR\nop://v/i/m\n' 'op-env add')
+  chk "prompts: '+ new set...' asks for a name" 'grep -q "^MENU_VAR	op://v/i/m" "$sets/newset.tsv" 2>/dev/null'
+  clean_sets
+
+  printf 'A1\top://v/i/a\n' > "$sets/one.tsv"; printf 'B1\top://v/i/b\n' > "$sets/two.tsv"
+  PATH="$nofzf" tty_run 'two\n' 'op-env use' >/dev/null
+  chk "prompts: op-env use reads the sets to activate" '[[ "$(cat "$sets/.active" 2>/dev/null)" == "two" ]]'
+  clean_sets
+
+  out=$(tty_run 'n\n' 'op-env add x GITHUB_TOKEN op://v/i/g; echo "rc=$?"')
+  chk "prompts: declining the GITHUB_TOKEN warning adds nothing" '[[ "$out" == *"rc=1"* && ! -e "$sets/x.tsv" ]]'
+  out=$(tty_run 'y\n' 'op-env add x GITHUB_TOKEN op://v/i/g; echo "rc=$?"')
+  chk "prompts: confirming the GITHUB_TOKEN warning adds it" 'grep -q "^GITHUB_TOKEN" "$sets/x.tsv" 2>/dev/null'
+  clean_sets
+
+  # No terminal at all: must fail cleanly, not hang or write anything.
+  out=$(op-env add </dev/null 2>&1); rc=$?
+  chk "prompts: no tty -> fails, writes nothing" '[[ $rc -ne 0 ]] && ! any_sets'
+fi
 
 # ── hooks ─────────────────────────────────────────────────────────────────────
 source "$R/lib/nanoleaf.sh"; source "$R/lib/onepassword.sh"
