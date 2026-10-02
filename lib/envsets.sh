@@ -1,16 +1,21 @@
 #!/usr/bin/env bash
 # ~/.preflight/lib/envsets.sh - Named sets of env vars backed by 1Password refs
 #
+# This is the only place that says WHICH secrets get loaded; lib/1password.sh
+# just resolves whatever _op_env_entries hands it.
+#
 # A "set" is a named group of VAR -> op:// references (guild, personal, ...).
 # Sets live in config/envsets/<set>.tsv (gitignored, per-install), one
 # `VAR<TAB>op://vault/item/field` line each. Active sets are listed in
-# config/envsets/.active; op-load-env / op-clear-env merge them into OP_SECRETS.
+# config/envsets/.active (absent = every set is active). Hand-editing a .tsv
+# is fine.
 #
 # Usage:
 #   op-env add [set] [VAR] [op://ref]   add/update a key (prompts for what's missing)
 #   op-env list [set]                   show sets and their keys
 #   op-env rm [set] [VAR]               remove a key (fzf picker if omitted)
 #   op-env use [set...]                 choose which sets op-load-env loads
+#   op-env migrate [set]                move a legacy OP_SECRETS array into a set
 #   op-env help
 
 _op_envsets_dir() { printf '%s' "${PREFLIGHT_DIR:-$HOME/.preflight}/config/envsets"; }
@@ -86,6 +91,28 @@ _op_envsets_choose_set() {
   printf '%s' "$set"
 }
 
+# Write (or replace) one VAR -> ref line in a set, creating the set if needed.
+# Usage: _op_envsets_put set VAR ref
+_op_envsets_put() {
+  local set="$1" name="$2" ref="$3"
+  _op_envsets_ensure
+  local file is_new=0; file="$(_op_envsets_dir)/$set.tsv"
+  [[ -f "$file" ]] || is_new=1
+  local tmp; tmp=$(mktemp "$(_op_envsets_dir)/.tmp.XXXXXX") || return 1
+  { [[ -f "$file" ]] && awk -F'\t' -v n="$name" '$1 != n' "$file"; printf '%s\t%s\n' "$name" "$ref"; } > "$tmp" \
+    && chmod 600 "$tmp" && mv "$tmp" "$file" || { rm -f "$tmp"; return 1; }
+
+  # Keep an explicit .active list consistent: a brand-new set should load, but
+  # editing a set the user deliberately deactivated must not reactivate it.
+  local act; act="$(_op_envsets_dir)/.active"
+  if [[ $is_new -eq 1 && -f "$act" ]] && ! grep -qxF "$set" "$act"; then
+    printf '%s\n' "$set" >> "$act" || {
+      echo "❌ Saved the key, but could not activate set '$set' (write to $act failed). Fix the file, then run: op-env use" >&2
+      return 1
+    }
+  fi
+}
+
 _op_env_add() {
   local set="${1:-}" name="${2:-}" ref="${3:-}"
   _op_envsets_ensure
@@ -106,31 +133,9 @@ _op_env_add() {
     echo "❌ Reference must look like op://vault/item/field" >&2; return 1
   fi
 
-  local file is_new=0; file="$(_op_envsets_dir)/$set.tsv"
-  [[ -f "$file" ]] || is_new=1
-  local tmp; tmp=$(mktemp "$(_op_envsets_dir)/.tmp.XXXXXX") || return 1
-  { [[ -f "$file" ]] && awk -F'\t' -v n="$name" '$1 != n' "$file"; printf '%s\t%s\n' "$name" "$ref"; } > "$tmp" \
-    && chmod 600 "$tmp" && mv "$tmp" "$file" || { rm -f "$tmp"; return 1; }
-
-  # Keep an explicit .active list consistent: a brand-new set should load, but
-  # editing a set the user deliberately deactivated must not reactivate it.
-  local act; act="$(_op_envsets_dir)/.active"
-  if [[ $is_new -eq 1 && -f "$act" ]] && ! grep -qxF "$set" "$act"; then
-    printf '%s\n' "$set" >> "$act" || {
-      echo "❌ Saved the key, but could not activate set '$set' (write to $act failed). Fix the file, then run: op-env use" >&2
-      return 1
-    }
-  fi
+  _op_envsets_put "$set" "$name" "$ref" || return 1
   echo "✅ [$set] $name -> $ref"
-  if declare -f op-load-env 2>/dev/null | grep -q _op_envsets_merge; then
-    echo "   Load it now: op-load-env"
-  else
-    # lib/1password.sh is a per-install copy of the template; it predates the
-    # env-set hook until its owner merges the template change in.
-    echo "⚠️  Your lib/1password.sh doesn't load env sets yet, so op-load-env will skip this."
-    echo "   Merge the _op_envsets_merge calls from lib/1password.sh.template into it"
-    echo "   (in op-load-env and op-clear-env), or delete lib/1password.sh to regenerate it."
-  fi
+  echo "   Load it now: op-load-env"
 }
 
 _op_env_list() {
@@ -145,6 +150,13 @@ _op_env_list() {
       [[ -n "$line" ]] && printf '    %-28s %s\n' "$line" "$ref"
     done < "$file"
   done < <(_op_envsets_names)
+  if [[ -z "$only" && ${#OP_SECRETS[@]} -gt 0 ]]; then
+    found=1
+    echo "◆ OP_SECRETS array (legacy, from config/accounts.sh) — move it with: op-env migrate"
+    for line in "${OP_SECRETS[@]}"; do
+      printf '    %-28s %s\n' "${line%%$'\t'*}" "${line#*$'\t'}"
+    done
+  fi
   if [[ $found -eq 0 ]]; then
     [[ -n "$only" ]] && { echo "❌ No such set: $only" >&2; return 1; }
     echo "No env sets yet. Create one with: op-env add"
@@ -192,6 +204,33 @@ _op_env_use() {
   echo "✅ Active sets: $(printf '%s\n' "$chosen" | paste -sd' ' -)"
 }
 
+# Move a legacy OP_SECRETS array (config/accounts.sh, or the old per-install
+# lib/1password.sh) into a set. Keys the set already has are left alone.
+_op_env_migrate() {
+  local set="${1:-default}" line name ref file moved=0
+  if [[ ${#OP_SECRETS[@]} -eq 0 ]]; then
+    echo "Nothing to migrate: no OP_SECRETS array is defined."
+    return 0
+  fi
+  _op_envsets_valid_name "$set" || { echo "❌ Invalid set name '$set'" >&2; return 1; }
+  file="$(_op_envsets_dir)/$set.tsv"
+  for line in "${OP_SECRETS[@]}"; do
+    name="${line%%$'\t'*}"; ref="${line#*$'\t'}"
+    if [[ ! "$name" =~ ^[A-Za-z_][A-Za-z0-9_]*$ || "$ref" != op://* ]]; then
+      echo "⚠️  Skipped malformed entry: $name"; continue
+    fi
+    if [[ -f "$file" ]] && cut -f1 "$file" | grep -qxF "$name"; then
+      echo "   $name already in [$set], left as is"; continue
+    fi
+    _op_envsets_put "$set" "$name" "$ref" || return 1
+    echo "✅ [$set] $name -> $ref"
+    moved=$((moved + 1))
+  done
+  echo ""
+  echo "Moved $moved key(s). Now delete the OP_SECRETS=( ... ) block from config/accounts.sh"
+  echo "so the set is the only source."
+}
+
 _op_env_help() {
   cat <<'EOF'
 op-env manages named env sets backed by 1Password references.
@@ -200,10 +239,12 @@ op-env manages named env sets backed by 1Password references.
   op-env list [set]                   Show sets and keys (● active, ○ inactive)
   op-env rm [set] [VAR]               Remove a key
   op-env use [set...]                 Choose active sets (fzf multi-select if omitted)
+  op-env migrate [set]                Move a legacy OP_SECRETS array into a set
   op-env help                         This message
 
-Sets (e.g. guild, personal) are stored in config/envsets/<set>.tsv and loaded
-by op-load-env alongside OP_SECRETS from config/accounts.sh.
+Sets (e.g. guild, personal) are stored in config/envsets/<set>.tsv, one
+`VAR<TAB>op://vault/item/field` per line, and are the only list of secrets
+op-load-env and op-clear-env use.
 EOF
 }
 
@@ -213,55 +254,25 @@ op-env() {
     list|ls)      shift; _op_env_list "$@" ;;
     rm|remove)    shift; _op_env_rm "$@" ;;
     use)          shift; _op_env_use "$@" ;;
+    migrate)      shift; _op_env_migrate "$@" ;;
     help|-h|--help) _op_env_help ;;
     *) echo "❌ Unknown op-env command: $1" >&2; _op_env_help >&2; return 1 ;;
   esac
 }
 
-# Entries a previous merge added to OP_SECRETS, so the next merge can drop them.
-declare -p _OP_ENVSETS_INJECTED &>/dev/null || _OP_ENVSETS_INJECTED=()
-
-# Rebuild OP_SECRETS to include the active sets' entries (names already supplied
-# by the base list win), so op-load-env and op-clear-env treat them like any other
-# secret. Safe to call repeatedly: entries from a previous merge are removed first,
-# and any variable that merge supplied but this one no longer does (key removed,
-# set deactivated) is unset, so a stale secret can't outlive its definition.
-_op_envsets_merge() {
-  local set file name ref existing injected entry dup old_names=() n keep=()
-  for existing in "${OP_SECRETS[@]}"; do
-    dup=0
-    for injected in "${_OP_ENVSETS_INJECTED[@]}"; do
-      [[ "$existing" == "$injected" ]] && { dup=1; break; }
-    done
-    [[ $dup -eq 1 ]] || keep+=("$existing")
-  done
-  OP_SECRETS=("${keep[@]}")
-  for injected in "${_OP_ENVSETS_INJECTED[@]}"; do old_names+=("${injected%%$'\t'*}"); done
-  _OP_ENVSETS_INJECTED=()
-
-  while IFS= read -r set; do
-    _op_envsets_valid_name "$set" || continue
-    file="$(_op_envsets_dir)/$set.tsv"
-    [[ -f "$file" ]] || continue
-    while IFS=$'\t' read -r name ref; do
-      [[ -n "$name" && -n "$ref" ]] || continue
-      dup=0
-      for existing in "${OP_SECRETS[@]}"; do
-        [[ "${existing%%$'\t'*}" == "$name" ]] && { dup=1; break; }
-      done
-      if [[ $dup -eq 0 ]]; then
-        entry="$name"$'\t'"$ref"
-        OP_SECRETS+=("$entry")
-        _OP_ENVSETS_INJECTED+=("$entry")
-      fi
-    done < "$file"
-  done < <(_op_envsets_active)
-
-  for n in "${old_names[@]}"; do
-    dup=0
-    for existing in "${OP_SECRETS[@]}"; do
-      [[ "${existing%%$'\t'*}" == "$n" ]] && { dup=1; break; }
-    done
-    [[ $dup -eq 1 ]] || unset "$n"
-  done
+# Everything op-load-env / op-clear-env need to know: one `VAR<TAB>op://ref` line
+# per secret, from the active sets. An OP_SECRETS array still defined by an older
+# config/accounts.sh is honored too (and wins on a name clash) until it is moved
+# with `op-env migrate`. The first definition of a name wins; anything that isn't a
+# valid variable name or an op:// reference is dropped.
+_op_env_entries() {
+  local set file
+  {
+    if [[ ${#OP_SECRETS[@]} -gt 0 ]]; then printf '%s\n' "${OP_SECRETS[@]}"; fi
+    while IFS= read -r set; do
+      _op_envsets_valid_name "$set" || continue
+      file="$(_op_envsets_dir)/$set.tsv"
+      [[ -f "$file" ]] && awk 1 "$file"
+    done < <(_op_envsets_active)
+  } | awk -F'\t' '$1 ~ /^[A-Za-z_][A-Za-z0-9_]*$/ && $2 ~ /^op:\/\// && !seen[$1]++'
 }

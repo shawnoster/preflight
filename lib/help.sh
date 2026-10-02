@@ -51,7 +51,8 @@ Quick Reference:
 
 Load secrets:
   op-load-env              # Load secrets from 1Password
-  op-env add               # Add a VAR -> op:// ref to a set (guild, personal, ...)
+  op-env add               # Add a VAR -> op:// ref to a set (guild, personal, ...);
+                           # sets are the only list of secrets op-load-env uses
   op-env use               # Choose which sets load
 
 Switch AWS profile:
@@ -132,7 +133,7 @@ gstash [ref]         Pop a stash (use --apply to keep in stash list)
 gsync [main]         Sync fork with upstream
 gunwip               Undo last WIP commit
 gwip [msg]           Quick work-in-progress commit
-op-env [cmd]         Manage env sets of 1Password refs (add/list/rm/use)
+op-env [cmd]         Manage env sets of 1Password refs (add/list/rm/use/migrate)
 op-clear-env         Clear all sensitive environment variables
 op-help              Show 1Password command help
 op-load-env          Load secrets from 1Password into env vars

@@ -166,12 +166,6 @@ main() {
     _pf_ok "Created config/accounts.sh from template"
   fi
 
-  if [[ ! -f "$PREFLIGHT_DIR/lib/1password.sh" ]] \
-      && [[ -f "$PREFLIGHT_DIR/lib/1password.sh.template" ]]; then
-    cp "$PREFLIGHT_DIR/lib/1password.sh.template" "$PREFLIGHT_DIR/lib/1password.sh"
-    _pf_ok "Created lib/1password.sh from template"
-  fi
-
   # Owl base theme: place the bundled OMP theme in the gitignored state dir so
   # owl-theme has a user-owned config to patch (it refuses to touch Oh My
   # Posh's own theme directory). init.sh re-ensures this on later updates.

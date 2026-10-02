@@ -13,7 +13,7 @@ curl -fsSL https://raw.githubusercontent.com/shawnoster/preflight/main/install.s
 The installer:
 - Clones the repo to `~/.preflight` (override with `PREFLIGHT_DIR=/your/path`)
 - Adds a source line to your shell rc file (`.bashrc` or `.zshrc`), with the correct syntax for your shell
-- Creates `config/accounts.sh` and `lib/1password.sh` from their templates
+- Creates `config/accounts.sh` from its template
 - Seeds a user-owned owl base theme into `state/owl/theme-catppuccin.omp.json` (gitignored), so `owl-theme` has an OMP config to patch out of the box
 
 After installing:
@@ -21,7 +21,7 @@ After installing:
 ```bash
 # 1. Configure your accounts
 vim ~/.preflight/config/accounts.sh   # set OP_ACCOUNT, PROJ_DIRS, etc.
-vim ~/.preflight/lib/1password.sh     # configure your 1Password secrets
+op-env add                            # register your 1Password secrets (VAR -> op:// ref)
 
 # 2. Reload your shell
 source ~/.bashrc   # or open a new terminal
@@ -45,7 +45,9 @@ NO_MODIFY_PROFILE=1 curl -fsSL https://raw.githubusercontent.com/shawnoster/pref
 preflight update
 ```
 
-Pulls the latest changes from the upstream repo, shows incoming commits, and warns if any tracked files have local modifications. Gitignored files (`config/accounts.sh`, `config/owl.sh`, `lib/1password.sh`) are never touched.
+Pulls the latest changes from the upstream repo, shows incoming commits, and warns if any tracked files have local modifications. Gitignored files (`config/accounts.sh`, `config/owl.sh`, `config/envsets/`) are never touched.
+
+> **Upgrading from a version where `lib/1password.sh` was a per-install copy:** it is a tracked file now, so the update overwrites your copy. If you kept an `OP_SECRETS=( ... )` list in it, move the entries first: `for p in "${OP_SECRETS[@]}"; do op-env add default "${p%%$'\t'*}" "${p#*$'\t'}"; done`. A list in `config/accounts.sh` is untouched and keeps working; `op-env migrate` moves it into a set.
 
 After updating, reload your shell:
 
@@ -81,17 +83,20 @@ source ~/.bashrc
 │   ├── nanoleaf-streak  # Per-panel streak via Nanoleaf direct API
 │   └── nanoleaf-kitt    # KITT-style scanner with comet trail
 ├── lib/
-│   ├── 1password.sh     # 1Password CLI utilities
+│   ├── 1password.sh     # 1Password CLI utilities (generic; holds no secret names)
 │   ├── aws.sh           # AWS profile management
 │   ├── docker.sh        # Docker utilities
 │   ├── git.sh           # Git shortcuts
+│   ├── envsets.sh       # op-env: named sets of VAR -> op:// refs (the list of secrets)
 │   ├── help.sh          # Unified help system (dev-help / devhelp)
+│   ├── nanoleaf.sh      # op-load-env hook: hands NANOLEAF_TOKEN to the nanoleaf-* scripts
 │   ├── owl.sh           # OOO theme engine + MOTD splash
 │   ├── postgres.sh      # PostgreSQL cluster start/stop (pg-up / pg-down)
 │   ├── preflight.sh     # Session startup + environment health check
 │   └── project.sh       # Build tool wrappers
 ├── config/
 │   ├── accounts.sh      # Non-secret configuration (gitignored, from template)
+│   ├── envsets/         # <set>.tsv: VAR -> op:// refs, per install (gitignored)
 │   └── owl.sh           # Owl/OMP config — OWL_OMP_CONFIG path (gitignored, from template)
 ├── pwsh/                # PowerShell sibling — see pwsh/README.md
 │   ├── Preflight.psd1   # Module manifest
@@ -138,18 +143,19 @@ When something is behind, the suggested upgrade command is derived from **how th
 |---------|-------------|
 | `op-status` | Check if signed in to 1Password |
 | `op-signin [account]` | Sign in to 1Password |
-| `op-load-env` | Load all secrets from 1Password into env vars |
+| `op-load-env` | Load the active sets' secrets from 1Password into env vars |
 | `op-env add [set] [VAR] [ref]` | Add a VAR → `op://` reference to a named set (`guild`, `personal`, ...); prompts for anything omitted |
 | `op-env list [set]` / `rm` / `use` | Show sets, remove a key, choose which sets are active (fzf pickers) |
-| `op-clear-env` | Clear all sensitive environment variables |
+| `op-env migrate [set]` | Move a legacy `OP_SECRETS` array (from an older `config/accounts.sh`) into a set |
+| `op-clear-env` | Unset every variable `op-load-env` set |
 
-**Secrets loaded by `op-load-env`:** `ANTHROPIC_API_KEY`, `ATLASSIAN_API_TOKEN`, `NPM_TOKEN`, `DATADOG_API_KEY`, `SONAR_TOKEN`, and more — configured per-install in `OP_SECRETS` (`config/accounts.sh`).
+**Which secrets load (`lib/envsets.sh`):** `lib/1password.sh` is generic and names no secret. The list lives in env sets: `op-env` keeps named groups of `VAR → op://` references in `config/envsets/<set>.tsv` (gitignored, one `VAR<TAB>op://vault/item/field` per line, safe to hand-edit). `op-load-env` and `op-clear-env` use the active sets (`op-env use`; with no `config/envsets/.active`, every set is active). If two sets define the same variable, the first one wins. A variable removed from a set, or a set that is deactivated, is unset on the next `op-load-env`.
 
-**Env sets (`lib/envsets.sh`):** `op-env` keeps named groups of `VAR → op://` references in `config/envsets/<set>.tsv` (gitignored). Active sets are merged into `OP_SECRETS` by `op-load-env`/`op-clear-env`; names already in `OP_SECRETS` win.
+To run extra code after a load (for example `lib/nanoleaf.sh` copying `NANOLEAF_TOKEN` for cron jobs), add a function name to `_OP_AFTER_LOAD_HOOKS`.
 
 **Auth model:** the helpers resolve an `op` binary and **prefer the Windows `op.exe` under WSL**, so secret reads are authorized by the Windows 1Password desktop app (Windows Hello / desktop unlock) — no password typed in WSL. On native Linux/macOS they fall back to the platform `op` and the manual session-token sign-in. See [docs/wsl-1password-cli.md](./docs/wsl-1password-cli.md) for the full WSL setup.
 
-**GitHub auth:** owned by the `gh` CLI, which stores its own token in `~/.config/gh/hosts.yml`. That stored token is what `gh` (and tools that shell out to it) use. Deliberately **do not** add `GITHUB_TOKEN`/`GH_TOKEN` to `OP_SECRETS` — `gh` treats those env vars as an override for its own stored auth, so exporting one shadows a working `gh auth login` session for every `gh` command and API call until the shell exits (use a differently-named var like `GH_PAT` if some other tool needs one). Claude Code's `github` MCP server (`api.githubcopilot.com/mcp`) can't do OAuth, so it carries the `gh` token in an `Authorization` header baked into `~/.claude.json`. When the `gh` token rotates (`gh auth login`/`refresh`), re-stamp that header:
+**GitHub auth:** owned by the `gh` CLI, which stores its own token in `~/.config/gh/hosts.yml`. That stored token is what `gh` (and tools that shell out to it) use. Deliberately **do not** add `GITHUB_TOKEN`/`GH_TOKEN` to an env set — `gh` treats those env vars as an override for its own stored auth, so exporting one shadows a working `gh auth login` session for every `gh` command and API call until the shell exits (use a differently-named var like `GH_PAT` if some other tool needs one). Claude Code's `github` MCP server (`api.githubcopilot.com/mcp`) can't do OAuth, so it carries the `gh` token in an `Authorization` header baked into `~/.claude.json`. When the `gh` token rotates (`gh auth login`/`refresh`), re-stamp that header:
 
 ```bash
 claude mcp remove github -s local

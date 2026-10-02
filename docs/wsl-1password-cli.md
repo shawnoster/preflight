@@ -41,7 +41,7 @@ Find your address with:
 op.exe account list
 ```
 
-Then point the secret references in `op-load-env` (in `lib/1password.sh`) at your items. Each is a per-secret `op read`; the first triggers the desktop unlock and the rest are authorized automatically.
+Then register your items with `op-env add` (for example `op-env add default NPM_TOKEN 'op://Private/npmjs/credential'`). Each is a per-secret `op read`; the first triggers the desktop unlock and the rest are authorized automatically.
 
 ## Verify
 

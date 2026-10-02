@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # ~/.preflight/lib/1password.sh - 1Password CLI utilities
 #
-# SETUP: Copy this to 1password.sh and customize for your environment
-#   cp lib/1password.sh.template lib/1password.sh
+# Generic helpers only: this file knows how to talk to 1Password, not which
+# secrets you use. The VAR -> op:// reference lists live in env sets
+# (lib/envsets.sh, config/envsets/<set>.tsv); op-load-env asks _op_env_entries
+# for them. Nothing here needs editing per install.
 #
 # ── Auth model ───────────────────────────────────────────────────────────────
 # These helpers resolve an `op` binary (memoized in OP_BIN) and prefer the
@@ -72,7 +74,7 @@ op-signin [account]
 op-new [--dry-run]
   Interactively create a new 1Password item (login, api-credential, password,
   or secure-note). Prints the op:// reference path(s) when done, ready to
-  paste into op-load-env.
+  register with op-env add.
   Options:
     --dry-run  Show the JSON template that would be created (concealed values
                masked), without writing anything
@@ -96,19 +98,17 @@ op-import-csv <csv-path> [--vault <vault>] [--tag <tag>] [--dry-run]
     --dry-run          Show what would be created without calling op.
 
 op-load-env
-  Load secrets from 1Password into environment variables.
+  Load the active env sets' secrets from 1Password into environment variables.
   Resolves all secrets in a single `op inject` call; the first call triggers
   the desktop unlock (WSL) or uses the cached session (native). Falls back to
   per-secret reads if the batch fails.
-  Customize the secret list for your environment.
 
-op-env [add|list|rm|use]
+op-env [add|list|rm|use|migrate]
   Manage named env sets (guild, personal, ...) of VAR -> op:// references.
-  Active sets are loaded by op-load-env. Run `op-env help` for details.
+  This is where the list of secrets lives. Run `op-env help` for details.
 
 op-clear-env
-  Clear all sensitive environment variables loaded by op-load-env.
-  Automatically derived from the same secret list used by op-load-env.
+  Unset every variable op-load-env set (and any the active sets define).
 
 Configuration:
 --------------
@@ -116,30 +116,6 @@ Default account: $OP_ACCOUNT
 Set OP_ACCOUNT in config/accounts.sh to override.
 EOF
 }
-
-# ── Secret definitions ───────────────────────────────────────────────────────
-# Single source of truth for op-load-env and op-clear-env.
-# Format: VAR<TAB>op://reference. Both functions iterate this array,
-# so adding a secret here automatically registers it for load and clear.
-#
-# Override in config/accounts.sh (gitignored, per-install) to customize
-# without editing this template. If accounts.sh defines OP_SECRETS, it
-# replaces this default entirely.
-#
-# NOTE: avoid GITHUB_TOKEN/GH_TOKEN. `gh` CLI treats those env vars as an
-# override for its own stored auth (~/.config/gh/hosts.yml) — exporting one
-# shadows a working `gh auth login` session for every `gh` command and API
-# call for the rest of the shell session. Use a differently-named var
-# (e.g. GH_PAT) if some other tool needs a personal access token by env var.
-#
-# Kept empty here — this is a tracked template shared across installs, and a
-# real-looking default secret name confuses new installs when that secret
-# doesn't exist in their vault. Set actual secrets in config/accounts.sh.
-# Example:
-#   OP_SECRETS=(
-#     $'NPM_TOKEN\top://Private/npmjs/credential'
-#   )
-OP_SECRETS=()
 
 # Check if signed in to 1Password
 op-status() {
@@ -195,9 +171,43 @@ op-signin() {
   fi
 }
 
-# Load secrets into environment variables
-# Uses OP_SECRETS defined above (or overridden in config/accounts.sh).
+# Variables op-load-env exported last time (newline-separated). Lets the next
+# load unset anything that has since been removed from the env sets, and lets
+# op-clear-env clear them even if the definition is already gone.
+_OP_LOADED_VARS="${_OP_LOADED_VARS:-}"
+
+# Functions to call after op-load-env finishes, whether or not every secret
+# loaded. Register with:  _OP_AFTER_LOAD_HOOKS+=(my_function)
+declare -p _OP_AFTER_LOAD_HOOKS &>/dev/null || _OP_AFTER_LOAD_HOOKS=()
+
+# Load secrets into environment variables.
+#
+# This function is data-agnostic: _op_env_entries (lib/envsets.sh) supplies the
+# list, one `VAR<TAB>op://vault/item/field` line per secret. Nothing here names
+# a particular secret.
 op-load-env() {
+  if ! declare -f _op_env_entries >/dev/null; then
+    echo "❌ No env source loaded (lib/envsets.sh is missing)"
+    return 1
+  fi
+
+  local _op_entries _op_names _op_line _op_stale
+  _op_entries=$(_op_env_entries)
+  _op_names=$(printf '%s\n' "$_op_entries" | cut -f1 | awk 'NF')
+
+  # Anything a previous load set that the sets no longer define is stale: unset
+  # it so a removed or deactivated secret can't outlive its definition.
+  while IFS= read -r _op_stale; do
+    [[ -n "$_op_stale" ]] || continue
+    grep -qxF -- "$_op_stale" <<< "$_op_names" || unset "$_op_stale"
+  done <<< "$_OP_LOADED_VARS"
+  _OP_LOADED_VARS="$_op_names"
+
+  if [[ -z "$_op_names" ]]; then
+    echo "ℹ️  No secrets configured — add one with: op-env add"
+    return 0
+  fi
+
   _op_resolve_bin || { echo "❌ 1Password CLI not found (need op.exe or op on PATH)"; return 1; }
 
   # op.exe self-authorizes on first read (desktop unlock). Native op needs an
@@ -205,9 +215,6 @@ op-load-env() {
   if [[ "$OP_BIN" != *op.exe ]] && ! "$OP_BIN" whoami --account "$OP_ACCOUNT" >/dev/null 2>&1; then
     op-signin "$OP_ACCOUNT" || return 1
   fi
-
-  # Fold in active env sets (op-env) so they load like any other secret.
-  declare -F _op_envsets_merge >/dev/null && _op_envsets_merge
 
   # No header here — when run under `preflight` the orchestrator prints the
   # "--- Secrets ---" section header. Standalone callers still get the
@@ -225,12 +232,13 @@ op-load-env() {
   # Framing: one `VAR={{ op://… }}` line per secret. This assumes single-line
   # secret values (tokens, emails, URLs). If you add a multi-line secret,
   # switch to a non-newline record separator (it would break this line parser).
-  local _op_pair _op_template=""
-  for _op_pair in "${OP_SECRETS[@]}"; do
-    _op_template+="${_op_pair%%$'\t'*}={{ ${_op_pair#*$'\t'} }}"$'\n'
-  done
+  local _op_template=""
+  while IFS= read -r _op_line; do
+    [[ -n "$_op_line" ]] || continue
+    _op_template+="${_op_line%%$'\t'*}={{ ${_op_line#*$'\t'} }}"$'\n'
+  done <<< "$_op_entries"
 
-  local _op_resolved
+  local _op_resolved _op_failed=0
   if ! _op_resolved=$(printf '%s' "$_op_template" \
         | "$OP_BIN" inject --account "$OP_ACCOUNT" 2>/dev/null); then
     # `op inject` is all-or-nothing: one unresolvable reference fails the whole
@@ -238,76 +246,51 @@ op-load-env() {
     # reference broke (and still load the rest). Slower, but only on the error
     # path — the happy path stays a single invocation.
     echo "⚠️  Batch resolve failed — falling back to per-secret reads"
-    local _op_pair2 _op_name2 _op_ref2 _op_val2 _op_failed=0
-    for _op_pair2 in "${OP_SECRETS[@]}"; do
-      _op_name2="${_op_pair2%%$'\t'*}"
-      _op_ref2="${_op_pair2#*$'\t'}"
-      _op_val2="$("$OP_BIN" read --account "$OP_ACCOUNT" "$_op_ref2" 2>/dev/null)"
+    local _op_name2 _op_ref2 _op_val2
+    while IFS= read -r _op_line; do
+      [[ -n "$_op_line" ]] || continue
+      _op_name2="${_op_line%%$'\t'*}"
+      _op_ref2="${_op_line#*$'\t'}"
+      # </dev/null: op must not swallow the entries this loop is reading.
+      _op_val2="$("$OP_BIN" read --account "$OP_ACCOUNT" "$_op_ref2" 2>/dev/null </dev/null)"
       if [[ -n "$_op_val2" ]]; then
         export "$_op_name2"="$_op_val2"
         echo "✅ $_op_name2"
       else
         # Clear any value left from a prior load so a stale/rotated token isn't
-        # silently reused (and isn't re-persisted by _op_sync_nanoleaf_env).
+        # silently reused (or re-persisted by an after-load hook).
         unset "$_op_name2"
         echo "⚠️  $_op_name2 (failed to load)"
         ((_op_failed++))
       fi
-    done
-    _op_sync_nanoleaf_env
-    [[ "$_op_failed" -gt 0 ]] && return 1
-    return 0
+    done <<< "$_op_entries"
+  else
+    # Parse VAR=value lines and export each.
+    local _op_rec _op_name _op_val
+    while IFS= read -r _op_rec; do
+      [[ -z "$_op_rec" ]] && continue
+      _op_name="${_op_rec%%=*}"
+      _op_val="${_op_rec#*=}"
+      if [[ -n "$_op_val" ]]; then
+        export "$_op_name"="$_op_val"
+        echo "✅ $_op_name"
+      else
+        # Clear any value left from a prior load so a stale/rotated token isn't
+        # silently reused (or re-persisted by an after-load hook).
+        unset "$_op_name"
+        echo "⚠️  $_op_name (failed to load)"
+        ((_op_failed++))
+      fi
+    done <<< "$_op_resolved"
   fi
 
-  # Parse VAR=value lines and export each.
-  local _op_rec _op_name _op_val _op_failed=0
-  while IFS= read -r _op_rec; do
-    [[ -z "$_op_rec" ]] && continue
-    _op_name="${_op_rec%%=*}"
-    _op_val="${_op_rec#*=}"
-    if [[ -n "$_op_val" ]]; then
-      export "$_op_name"="$_op_val"
-      echo "✅ $_op_name"
-    else
-      # Clear any value left from a prior load so a stale/rotated token isn't
-      # silently reused (and isn't re-persisted by _op_sync_nanoleaf_env).
-      unset "$_op_name"
-      echo "⚠️  $_op_name (failed to load)"
-      ((_op_failed++))
-    fi
-  done <<< "$_op_resolved"
+  local _op_hook
+  for _op_hook in "${_OP_AFTER_LOAD_HOOKS[@]}"; do
+    declare -f "$_op_hook" >/dev/null && "$_op_hook"
+  done
 
-  _op_sync_nanoleaf_env
   [[ "$_op_failed" -gt 0 ]] && return 1
   return 0
-}
-
-# Sync NANOLEAF_TOKEN to ~/.config/nanoleaf-direct/env so cron jobs
-# (light-remind --tone streak-pan / kitt-pan, etc.) can read it
-# without needing a 1Password session. Preserves other lines in the
-# file; replaces or appends the key line; keeps mode 0600.
-#
-# Atomicity: tempfile is created in the destination directory so the
-# final mv is rename(2) on the same filesystem (atomic) rather than
-# copy+delete from /tmp (which could leave a truncated file with
-# partial secret content if interrupted). chmod 600 is applied to the
-# tempfile before the rename so the secret is never world-readable.
-# RETURN trap removes the tempfile on any early exit.
-_op_sync_nanoleaf_env() {
-  if [ -n "$NANOLEAF_TOKEN" ]; then
-    local nl_env=~/.config/nanoleaf-direct/env
-    local nl_dir
-    nl_dir=$(dirname "$nl_env")
-    mkdir -p "$nl_dir" || return 1
-    local nl_tmp
-    nl_tmp=$(mktemp "$nl_dir/.env.tmp.XXXXXX") || return 1
-    trap 'rm -f "$nl_tmp"' RETURN
-    { [ -f "$nl_env" ] && grep -v '^NANOLEAF_TOKEN=' "$nl_env"; \
-      printf 'NANOLEAF_TOKEN=%s\n' "$NANOLEAF_TOKEN"; } > "$nl_tmp" || return 1
-    chmod 600 "$nl_tmp" || return 1
-    mv -f "$nl_tmp" "$nl_env" || return 1
-    trap - RETURN
-  fi
 }
 
 # Interactively create a new 1Password item and print its op:// reference path(s)
@@ -460,7 +443,7 @@ op-new() {
 
   echo "✅ Created: $title (vault: $vault)"
   echo ""
-  echo "Reference paths — paste into op-load-env:"
+  echo "Reference paths — register with op-env add:"
   case "$choice" in
     1)
       echo "  op://$vault/$title/username"
@@ -801,13 +784,16 @@ PYEOF
   return 0
 }
 
-# Clear sensitive environment variables — derived from OP_SECRETS
+# Clear the variables op-load-env set, plus any the active env sets define.
 op-clear-env() {
-  declare -F _op_envsets_merge >/dev/null && _op_envsets_merge
-  local _pair _var
-  for _pair in "${OP_SECRETS[@]}"; do
-    _var="${_pair%%$'\t'*}"
-    unset "$_var"
-  done
+  local _op_names _op_var
+  _op_names=$( {
+      declare -f _op_env_entries >/dev/null && _op_env_entries | cut -f1
+      printf '%s\n' "$_OP_LOADED_VARS"
+    } | awk 'NF && !seen[$0]++')
+  while IFS= read -r _op_var; do
+    [[ -n "$_op_var" ]] && unset "$_op_var"
+  done <<< "$_op_names"
+  _OP_LOADED_VARS=""
   echo "🧹 Secure environment variables cleared."
 }
