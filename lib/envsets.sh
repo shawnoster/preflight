@@ -63,13 +63,15 @@ _op_envsets_show() {
   fi
 }
 
-# First valid "reference<TAB>account" pair a set file gives VAR ("" if none), with
-# the account resolved so an absent column means the default.
+# First "reference<TAB>account" pair a set file gives VAR ("" if none), with the
+# account resolved so an absent column means the default. A line counts only if the
+# loader (_op_env_entries) would accept it: a malformed account or an over-long line
+# is ignored at load time, so it must not look like a definition here either.
 # Usage: _op_envsets_ref_of FILE VAR
 _op_envsets_ref_of() {
   [[ -f "$1" ]] || return 0
-  tr -d '\r' < "$1" | awk -F'\t' -v n="$2" -v re="$_OP_REF_RE" -v def="${OP_ACCOUNT:-}" \
-    '$1 == n && $2 ~ re { print $2 "\t" ($3 == "" ? def : $3); exit }'
+  tr -d '\r' < "$1" | awk -F'\t' -v n="$2" -v re="$_OP_REF_RE" -v acre="$_OP_ACCT_RE" -v def="${OP_ACCOUNT:-}" \
+    'NF <= 3 && $1 == n && $2 ~ re && ($3 == "" || $3 ~ acre) { print $2 "\t" ($3 == "" ? def : $3); exit }'
 }
 
 # The account column of the first line a set file gives VAR, verbatim — "" both when

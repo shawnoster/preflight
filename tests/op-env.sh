@@ -246,6 +246,20 @@ out=$(op-env migrate new 2>&1); rc=$?
 chk "shadowed by an earlier set: migrate refuses" '[[ $rc -ne 0 && "$out" == *"would override"* && ! -e "$sets/new.tsv" ]]'
 unset OP_SECRETS; clean_sets
 
+# E: a line the loader drops (malformed account, too many columns) is not a definition,
+# so it can neither block a migrate as a conflict nor count as an override. Without
+# this, an ignored line would make migrate refuse over a value that never loaded.
+printf 'DROP1\top://v/other/one\tnot a valid acct!\nDROP2\top://v/other/two\twork\tsurplus\n' > "$sets/junk.tsv"
+OP_SECRETS=($'DROP1\top://v/legacy/one' $'DROP2\top://v/legacy/two')
+out=$(op-env migrate junk 2>&1); rc=$?
+chk "ignored lines in the destination are not conflicts" '[[ $rc -eq 0 && "$out" != *"different references"* ]]'
+unset OP_SECRETS; clean_sets
+printf 'DROP3\top://v/other/three\tnot a valid acct!\n' > "$sets/a.tsv"; printf 'a\nnew\n' > "$sets/.active"
+OP_SECRETS=($'DROP3\top://v/legacy/three')
+out=$(op-env migrate new 2>&1); rc=$?
+chk "an ignored line in an earlier set does not shadow the migrated value" '[[ $rc -eq 0 && "$out" != *"would override"* ]] && grep -q "^DROP3" "$sets/new.tsv"'
+unset OP_SECRETS; clean_sets
+
 # ── upgrade: a leftover pre-rename lib/1password.sh must keep working ──────────
 # Old file: defined its own op-load-env and an OP_SECRETS array. It sorts before
 # onepassword.sh, so the new functions must win while its array is still honored.
