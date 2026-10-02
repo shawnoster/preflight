@@ -93,26 +93,68 @@ _op_envsets_choose_set() {
   printf '%s' "$set"
 }
 
+# Write VAR<TAB>ref lines (read from stdin) into a set as ONE all-or-nothing change.
+# The new set file and, when a brand-new set must be added to an explicit .active
+# list, the new .active are both staged first and only then moved into place; if the
+# second move fails the first is rolled back. A problem is detected before anything
+# is touched where it can be (an unwritable .active), so a failure never leaves a
+# half-created set that the loader would ignore and a later migrate would refuse.
+# Editing a set the user deliberately deactivated does not reactivate it.
+# Usage: printf 'VAR\tref\n' | _op_envsets_write set
+_op_envsets_write() {
+  local set="$1" dir file act lines names
+  local tmp="" tmpa="" bak="" is_new=0 need_act=0
+  dir=$(_op_envsets_dir); file="$dir/$set.tsv"; act="$dir/.active"
+  lines=$(cat)
+  [[ -n "$lines" ]] || return 0
+  _op_envsets_ensure
+  names=$(printf '%s\n' "$lines" | cut -f1)
+
+  [[ -f "$file" ]] || is_new=1
+  if [[ $is_new -eq 1 && -f "$act" ]] && ! tr -d '\r' < "$act" | grep -qxF -- "$set"; then
+    need_act=1
+    if [[ ! -w "$act" ]]; then
+      echo "❌ Can't activate set '$set': $act is not writable. Nothing was changed." >&2
+      echo "   Fix the file's permissions, or run: op-env use" >&2
+      return 1
+    fi
+  fi
+
+  tmp=$(mktemp "$dir/.tmp.XXXXXX") || return 1
+  {
+    # ENVIRON, not -v: a value holding newlines is rejected by some awks (mawk).
+    [[ -f "$file" ]] && PF_NAMES="$names" awk -F'\t' \
+      'BEGIN { n = split(ENVIRON["PF_NAMES"], a, "\n"); for (i = 1; i <= n; i++) skip[a[i]] = 1 } !($1 in skip)' "$file"
+    printf '%s\n' "$lines"
+  } > "$tmp" && chmod 600 "$tmp" || { rm -f "$tmp"; return 1; }
+
+  if [[ $need_act -eq 1 ]]; then
+    tmpa=$(mktemp "$dir/.tmp.XXXXXX") || { rm -f "$tmp"; return 1; }
+    { cp -p "$act" "$tmpa" \
+      && { [[ -z "$(tail -c1 "$tmpa")" ]] || printf '\n' >> "$tmpa"; } \
+      && printf '%s\n' "$set" >> "$tmpa"; } || { rm -f "$tmp" "$tmpa"; return 1; }
+  fi
+
+  if [[ -f "$file" ]]; then
+    bak=$(mktemp "$dir/.tmp.XXXXXX") && cp -p "$file" "$bak" || { rm -f "$tmp" "$tmpa" "$bak"; return 1; }
+  fi
+  if ! mv "$tmp" "$file"; then
+    rm -f "$tmp" "$tmpa" "$bak"; return 1
+  fi
+  if [[ $need_act -eq 1 ]] && ! mv "$tmpa" "$act"; then
+    # Roll back the set file so we leave exactly what was there before.
+    if [[ -n "$bak" ]]; then mv "$bak" "$file"; bak=""; else rm -f "$file"; fi
+    rm -f "$tmpa" "$bak"
+    echo "❌ Could not activate set '$set' (replacing $act failed). Nothing was changed." >&2
+    return 1
+  fi
+  rm -f "$bak"
+}
+
 # Write (or replace) one VAR -> ref line in a set, creating the set if needed.
 # Usage: _op_envsets_put set VAR ref
 _op_envsets_put() {
-  local set="$1" name="$2" ref="$3"
-  _op_envsets_ensure
-  local file is_new=0; file="$(_op_envsets_dir)/$set.tsv"
-  [[ -f "$file" ]] || is_new=1
-  local tmp; tmp=$(mktemp "$(_op_envsets_dir)/.tmp.XXXXXX") || return 1
-  { [[ -f "$file" ]] && awk -F'\t' -v n="$name" '$1 != n' "$file"; printf '%s\t%s\n' "$name" "$ref"; } > "$tmp" \
-    && chmod 600 "$tmp" && mv "$tmp" "$file" || { rm -f "$tmp"; return 1; }
-
-  # Keep an explicit .active list consistent: a brand-new set should load, but
-  # editing a set the user deliberately deactivated must not reactivate it.
-  local act; act="$(_op_envsets_dir)/.active"
-  if [[ $is_new -eq 1 && -f "$act" ]] && ! grep -qxF "$set" "$act"; then
-    printf '%s\n' "$set" >> "$act" || {
-      echo "❌ Saved the key, but could not activate set '$set' (write to $act failed). Fix the file, then run: op-env use" >&2
-      return 1
-    }
-  fi
+  printf '%s\t%s\n' "$2" "$3" | _op_envsets_write "$1"
 }
 
 _op_env_add() {
@@ -303,15 +345,26 @@ _op_env_migrate() {
     return 1
   fi
 
+  # Stage every change, then write them in one step so a failure leaves nothing behind.
+  local to_write=""
   while IFS= read -r line; do
     name="${line%%$'\t'*}"; ref="${line#*$'\t'}"
     if [[ "$(_op_envsets_ref_of "$file" "$name")" == "$ref" ]]; then
       echo "   $name already in [$set] with the same reference"; same=$((same + 1)); continue
     fi
-    _op_envsets_put "$set" "$name" "$ref" || return 1
-    echo "✅ [$set] $name -> $ref"
-    moved=$((moved + 1))
+    to_write+="$name"$'\t'"$ref"$'\n'
   done <<< "$entries"
+  if [[ -n "$to_write" ]]; then
+    printf '%s' "$to_write" | _op_envsets_write "$set" || {
+      echo "   Migration stopped; nothing was changed." >&2
+      return 1
+    }
+    while IFS= read -r line; do
+      [[ -n "$line" ]] || continue
+      echo "✅ [$set] ${line%%$'\t'*} -> ${line#*$'\t'}"
+      moved=$((moved + 1))
+    done <<< "$to_write"
+  fi
   echo ""
   echo "Moved $moved key(s) ($same already there). Now remove the old list so the set is the only source:"
   echo "  - an OP_SECRETS=( ... ) block in config/accounts.sh: delete the block"

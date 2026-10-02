@@ -242,13 +242,17 @@ op-load-env() {
   # safe with op.exe under WSL (the `op run` child would have been a Windows
   # process, not WSL bash). Uses $OP_BIN so op.exe is honored when present.
   #
-  # Framing: one `VAR={{ op://… }}` line per secret. This assumes single-line
-  # secret values (tokens, emails, URLs). If you add a multi-line secret,
-  # switch to a non-newline record separator (it would break this line parser).
-  local _op_template=""
+  # Framing: one `<tag>VAR={{ op://… }}` line per secret, where <tag> is random
+  # for this call. A record starts at a line beginning with the tag; any other line
+  # is a continuation of the previous value. So a secret whose value contains a
+  # newline (even one that looks like `OTHER=x`) stays inside its own record: it
+  # cannot forge a boundary, because it can't know the tag, and multi-line values
+  # load intact. (A fixed `VAR=` framing let such a value overwrite another secret.)
+  local _op_tag _op_template=""
+  _op_tag="@@pf$(od -An -N8 -tx1 /dev/urandom 2>/dev/null | tr -d ' \n')${RANDOM}${RANDOM}@@"
   while IFS= read -r _op_line; do
     [[ -n "$_op_line" ]] || continue
-    _op_template+="${_op_line%%$'\t'*}={{ ${_op_line#*$'\t'} }}"$'\n'
+    _op_template+="${_op_tag}${_op_line%%$'\t'*}={{ ${_op_line#*$'\t'} }}"$'\n'
   done <<< "$_op_entries"
 
   local _op_resolved _op_failed=0
@@ -278,20 +282,11 @@ op-load-env() {
       fi
     done <<< "$_op_entries"
   else
-    # Parse VAR=value lines and export each.
-    local _op_rec _op_name _op_val
-    while IFS= read -r _op_rec; do
-      [[ -z "$_op_rec" ]] && continue
-      _op_name="${_op_rec%%=*}"
-      _op_val="${_op_rec#*=}"
-      # A secret value that itself contains a newline would leave a stray line
-      # here that reads like `NAME=value`. Only ever touch a name we asked for,
-      # so such a value cannot set (say) PATH or LD_PRELOAD.
-      if ! grep -qxF -- "$_op_name" <<< "$_op_names"; then
-        echo "⚠️  Ignored unexpected output from op inject (a secret value may contain a newline)"
-        ((_op_failed++))
-        continue
-      fi
+    # Split the output into tagged records (see the framing note above) and export
+    # each. _op_pf_flush applies the record collected so far.
+    local _op_name="" _op_val="" _op_have=0 _op_rec
+    _op_pf_flush() {
+      [[ $_op_have -eq 1 ]] || return 0
       if [[ -n "$_op_val" ]]; then
         export "$_op_name"="$_op_val"
         echo "✅ $_op_name"
@@ -302,7 +297,21 @@ op-load-env() {
         echo "⚠️  $_op_name (failed to load)"
         ((_op_failed++))
       fi
+      _op_have=0; _op_name=""; _op_val=""
+    }
+    while IFS= read -r _op_rec; do
+      if [[ "$_op_rec" == "$_op_tag"* ]]; then
+        _op_pf_flush
+        _op_rec="${_op_rec#"$_op_tag"}"
+        _op_name="${_op_rec%%=*}"
+        _op_val="${_op_rec#*=}"
+        _op_have=1
+      elif [[ $_op_have -eq 1 ]]; then
+        _op_val+=$'\n'"$_op_rec"
+      fi
     done <<< "$_op_resolved"
+    _op_pf_flush
+    unset -f _op_pf_flush
   fi
 
   local _op_hook
