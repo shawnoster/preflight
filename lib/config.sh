@@ -29,7 +29,9 @@ owl.omp_config|OWL_OMP_CONFIG|p|x|$PREFLIGHT_STATE_DIR/owl/theme-catppuccin.omp.
 # Names the loader has set (not exported). A variable that is already set but is not on
 # this list was set by you, and wins over the file. A nested shell inherits the exported
 # values but not this list, so it treats them as yours until you open a new terminal.
-_PF_CONFIG_MANAGED=" "
+# Kept across re-sourcing: init.sh sources every lib again on `source ~/.bashrc`, and
+# resetting the list then would make every value the loader exported look like yours.
+_PF_CONFIG_MANAGED="${_PF_CONFIG_MANAGED:- }"
 
 # ok | missing | nojq | invalid, with the reason in _PF_CONFIG_ERROR. `preflight` reports it.
 _PF_CONFIG_STATUS=ok
@@ -149,12 +151,16 @@ _pf_config_load() {
     _pf_config_table_json
     out=$(jq -r --argjson t "$_pf_cfg_out" --arg home "$HOME" \
             --arg state "${PREFLIGHT_STATE_DIR:-}" --arg cfg "${PREFLIGHT_CONFIG_DIR:-}" \
-            "$_PF_CONFIG_FILTER" "$_pf_cfg_file" 2>&1)
+            "$_PF_CONFIG_FILTER" "$_pf_cfg_file" 2>/dev/null)
     rc=$?
     if [[ $rc -eq 0 ]]; then
+      # stdout only: nothing jq prints on stderr is ever evaluated as shell.
       eval "$out"
       return 0
     fi
+    # Only now, on the failure path, ask jq what is wrong with the file.
+    out=$(jq empty "$_pf_cfg_file" 2>&1)
+    [[ -n "$out" ]] || out="the settings filter failed (jq exit $rc)"
     _PF_CONFIG_STATUS=invalid
     _PF_CONFIG_ERROR="$_pf_cfg_file: $out"
     echo "⚠️  preflight: could not read $_pf_cfg_file (built-in defaults in use):" >&2
@@ -241,7 +247,7 @@ _pf_config_check() {
 }
 
 _pf_config_set_cmd() {
-  local key="${1:-}" val="${2-}" file dir tmp base
+  local key="${1:-}" val="${2-}" file dir tmp base err var
   if [[ $# -lt 2 ]]; then echo "Usage: preflight config set KEY VALUE" >&2; return 1; fi
   if ! _pf_config_row "$key"; then
     echo "preflight config: unknown key '$key'. Keys:" >&2; _pf_config_keys >&2; return 1
@@ -261,7 +267,8 @@ _pf_config_set_cmd() {
   fi
 
   tmp=$(mktemp "$dir/.config.XXXXXX") || return 1
-  if ! printf '%s\n' "$base" | jq --arg key "$key" --arg type "$_pf_row_type" --arg v "$val" '
+  # stderr into $err, stdout into the temp file (order matters: 2>&1 first).
+  if ! err=$(printf '%s\n' "$base" | jq --arg key "$key" --arg type "$_pf_row_type" --arg v "$val" '
         setpath($key | split(".");
           if $type == "b" then
             ($v | ascii_downcase
@@ -270,15 +277,19 @@ _pf_config_set_cmd() {
                 else error("expected true or false") end)
           elif $type == "pl" then ($v | split(":") | map(select(length > 0)))
           elif $type == "sl" then ($v | [splits("[[:space:]]+")] | map(select(length > 0)))
-          else $v end)' > "$tmp" 2>"$tmp.err"; then
-    echo "preflight config: could not set $key: $(head -1 "$tmp.err")" >&2
-    rm -f "$tmp" "$tmp.err"; return 1
+          else $v end)' 2>&1 >"$tmp"); then
+    echo "preflight config: could not set $key: ${err%%$'\n'*}" >&2
+    rm -f "$tmp"; return 1
   fi
-  rm -f "$tmp.err"
   chmod 644 "$tmp" 2>/dev/null
   mv -f "$tmp" "$file" || { rm -f "$tmp"; return 1; }
+  var="$_pf_row_var"
   _pf_config_load
   echo "✅ $key set in $file"
+  case "$_PF_CONFIG_MANAGED" in
+    *" $var "*) ;;
+    *) echo "   Note: this shell keeps the \$$var you set outside the file; a new terminal picks up the file's value." >&2 ;;
+  esac
 }
 
 _pf_config_cmd() {

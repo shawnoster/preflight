@@ -20,7 +20,9 @@ preflight config check                         # invalid JSON, unknown keys, wro
 
 `set` writes through `jq` to a temporary file in the same directory and renames it into place, so an interrupted
 write never leaves a half-written file. It refuses an unknown key, a bad boolean, and a file that is not valid JSON
-(fix it with `config edit` first). It applies the change to the current shell as well.
+(fix it with `config edit` first). It applies the change to the current shell as well, unless you set that variable yourself, in which case it says so.
+
+`config edit` checks the file when the editor returns, so a GUI editor needs its wait flag (`VISUAL="code --wait"`); without it the check runs against the unchanged file.
 
 `defaults/config.schema.json` describes every key. Add `"$schema": "<path to it>"` to your file (or point your
 editor's JSON settings at it) for hover help and validation; the loader ignores that key.

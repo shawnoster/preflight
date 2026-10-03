@@ -83,6 +83,17 @@ out=$(source "$PREFLIGHT_DIR/init.sh" 2>&1 </dev/null)
 chk "second run keeps an edited config.json" '[[ "$(jq -r .op.account "$HOME/.config/preflight/config.json")" == mine ]]'
 chk "second run loads the edited value"      '[[ "$(source "$PREFLIGHT_DIR/init.sh" >/dev/null 2>&1 </dev/null; printf %s "$OP_ACCOUNT")" == mine ]]'
 
+# Re-sourcing init.sh in the SAME shell (source ~/.bashrc) must still pick up edits:
+# the managed list has to survive the libs being sourced again.
+fresh
+source "$PREFLIGHT_DIR/init.sh" >/dev/null 2>&1 </dev/null
+echo '{"version":1,"git":{"main_branch":"first"}}' > "$HOME/.config/preflight/config.json"
+source "$PREFLIGHT_DIR/init.sh" >/dev/null 2>&1 </dev/null
+chk "same-shell reload: first value loaded" '[[ "$GIT_MAIN_BRANCH" == first ]]'
+echo '{"version":1,"git":{"main_branch":"second"}}' > "$HOME/.config/preflight/config.json"
+source "$PREFLIGHT_DIR/init.sh" >/dev/null 2>&1 </dev/null
+chk "same-shell reload: edited value follows the file" '[[ "$GIT_MAIN_BRANCH" == second ]]'
+
 # init.sh refuses a config dir that is the clone, and creates nothing there.
 fresh; export PREFLIGHT_CONFIG_DIR="$PREFLIGHT_DIR"
 out=$(source "$PREFLIGHT_DIR/init.sh" 2>&1 </dev/null); rc=$?

@@ -111,6 +111,13 @@ PATH=$OLDPATH
 chk "no jq: warns that no settings were loaded" '[[ "$warn" == *"jq is not installed"* ]]'
 chk "no jq: status nojq, built-in defaults"     '[[ "$_PF_CONFIG_STATUS" == nojq && "$AWS_PROFILE_DEFAULT" == "" ]]'
 
+# jq's stderr is never evaluated as shell, even when jq succeeds.
+reset; cp "$R/defaults/config.company.json" "$CFG"
+mkdir -p "$T/fakebin"; REALJQ=$(command -v jq)
+printf '#!/bin/sh\necho "touch %s/pwned" >&2\nexec "%s" "$@"\n' "$T" "$REALJQ" > "$T/fakebin/jq"; chmod +x "$T/fakebin/jq"
+OLDPATH=$PATH; PATH="$T/fakebin:$PATH"; _pf_config_load 2>/dev/null; PATH=$OLDPATH
+chk "jq stderr is not run as shell"         '[[ ! -e "$T/pwned" && "$AWS_PROFILE_DEFAULT" == my-dev-profile ]]'
+
 # ── environment wins, and reloads ─────────────────────────────────────────────
 reset; put '{"op":{"account":"from-file"},"git":{"main_branch":"file-branch"}}'
 OP_ACCOUNT=from-env; export OP_ACCOUNT
@@ -169,6 +176,12 @@ rm -f "$CFG"; reset
 _pf_config_cmd set op.account fresh.1password.com >/dev/null
 chk "set creates a missing file with version 1" '[[ "$(jq -r .version "$CFG")" == 1 && "$OP_ACCOUNT" == fresh.1password.com ]]'
 
+reset; cp "$R/defaults/config.company.json" "$CFG"; OP_ACCOUNT=mine; export OP_ACCOUNT; _pf_config_load
+out=$(_pf_config_cmd set op.account other 2>&1)
+chk "set warns when your own variable keeps winning" '[[ "$out" == *"keeps the \$OP_ACCOUNT you set"* && "$OP_ACCOUNT" == mine ]]'
+chk "set does not warn for a loader-set variable"    'reset; out=$(_pf_config_cmd set git.main_branch z 2>&1); [[ "$out" != *"Note:"* ]]'
+unset OP_ACCOUNT
+
 # check
 put '{"$schema":"x","version":1,"op":{"account":"a","typo":"b"},"checks":{"aws":"yes"},"projcts":{"dirs":[]}}'
 out=$(_pf_config_check); rc=$?
@@ -182,8 +195,11 @@ chk "check reports invalid JSON"            'out=$(_pf_config_check); [[ "$out" 
 
 # edit runs the editor on the file, then checks
 cp "$R/defaults/config.company.json" "$CFG"
-EDITOR="true" VISUAL="" _pf_config_cmd edit >/dev/null 2>&1
-chk "edit runs the editor (VISUAL empty -> EDITOR)" '[[ $? -eq 0 ]]'
+printf '#!/bin/sh\necho "$@" > "%s/edited"\n' "$T" > "$T/ed"; chmod +x "$T/ed"
+EDITOR="$T/ed" VISUAL="" _pf_config_cmd edit >/dev/null 2>&1
+chk "edit runs the editor (VISUAL empty -> EDITOR) on the file" '[[ "$(cat "$T/edited" 2>/dev/null)" == "$CFG" ]]'
+VISUAL="$T/ed --wait" EDITOR="" _pf_config_cmd edit >/dev/null 2>&1
+chk "edit splits a multi-word editor (VISUAL wins)" '[[ "$(cat "$T/edited" 2>/dev/null)" == "--wait $CFG" ]]'
 
 # ── table / schema / profiles cannot drift ────────────────────────────────────
 SCHEMA="$R/defaults/config.schema.json"
