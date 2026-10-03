@@ -147,6 +147,17 @@ for args in "--purge typo" "typo" "--purge --purge" "--purge=1"; do
   chk "uninstall '$args' is rejected and deletes nothing" '[[ "$out" == *"Usage: preflight uninstall"* && -d "$PREFLIGHT_DIR" && -f "$HOME/.config/preflight/accounts.sh" ]]'
 done
 
+# A protected PREFLIGHT_DIR is refused before any shell profile is edited.
+fresh
+( source "$PREFLIGHT_DIR/init.sh" >/dev/null 2>&1 </dev/null )
+mkdir -p "$HOME/.config"
+printf '# Preflight — developer environment\n[[ -f "$HOME/.preflight/init.sh" ]] && source "$HOME/.preflight/init.sh"\n' > "$HOME/.bashrc"
+before=$(cat "$HOME/.bashrc")
+out=$( ( source "$PREFLIGHT_DIR/init.sh" >/dev/null 2>&1 </dev/null; PREFLIGHT_DIR="$HOME/.config"; printf 'y\n' | preflight uninstall ) 2>&1 )
+chk "uninstall with a protected PREFLIGHT_DIR refuses" '[[ "$out" == *"refusing to remove"* ]]'
+chk "...and leaves the shell profile untouched"     '[[ "$(cat "$HOME/.bashrc")" == "$before" ]]'
+chk "...and deletes nothing"                         '[[ -d "$HOME/.config" && -f "$HOME/.config/preflight/accounts.sh" ]]'
+
 fresh
 ( source "$PREFLIGHT_DIR/init.sh" >/dev/null 2>&1 </dev/null )
 out=$(run_uninstall n --purge)
