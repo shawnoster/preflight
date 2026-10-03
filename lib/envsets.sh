@@ -20,7 +20,9 @@
 #   op-env add [set] [VAR] [op://ref] [account]   add/update a key (prompts for a missing set, VAR or ref — never the account)
 #   op-env list [set]                   show sets and their keys
 #   op-env rm [set] [VAR]               remove a key (fzf picker if omitted)
-#   op-env use [set...]                 choose which sets op-load-env loads
+#   op-env load [set...]                load the active sets, or just the named ones
+#   op-env clear [set...]               clear everything loaded, or just the named sets
+#   op-env use [set...]                 choose which sets a plain `op-env load` loads
 #   op-env migrate [set] [--force]      move a legacy OP_SECRETS array into a set
 #   op-env help
 
@@ -461,6 +463,8 @@ _op_env_help() {
   cat <<'EOF'
 op-env manages named env sets backed by 1Password references.
 
+  op-env load [set...]                Load the active sets from 1Password (or only the named sets)
+  op-env clear [set...]               Unset everything loaded (or only the named sets' variables)
   op-env add [set] [VAR] [op://ref] [account]   Add or update a key (prompts for a missing set/VAR/ref)
   op-env list [set]                   Show sets and keys (● active, ○ inactive)
   op-env rm [set] [VAR]               Remove a key
@@ -470,13 +474,21 @@ op-env manages named env sets backed by 1Password references.
 
 Sets (e.g. guild, personal) are stored in envsets/<set>.tsv, one
 `VAR<TAB>op://vault/item/field` per line, and are the only list of secrets
-op-load-env and op-clear-env use.
+`op-env load` and `op-env clear` use. (`op-load-env` and `op-clear-env` are the same
+commands under their older names.)
+
+`op-env load` with no set loads every active set, and is authoritative: a variable
+whose definition is gone, or whose set is no longer active, is unset. `op-env load
+guild` loads only that set, adds to what is already loaded and unsets nothing, and
+works on a set that is not active (it says so). A later plain `op-env load` -- the one
+`preflight` runs -- unsets such a set's variables again, as it does for any inactive set;
+activate it with `op-env use` to keep it.
 
 A line may add a third TAB-separated column: the 1Password account that holds the
 reference (a sign-in address like my-team.1password.com, or an `op account add`
 shorthand). Leave it out to use $OP_ACCOUNT. Use it when a reference lives in a
 different account than your other secrets — op resolves each reference against one
-account per call, so op-load-env batches one `op inject` per account:
+account per call, so `op-env load` batches one `op inject` per account:
 
   op-env add guild ATLASSIAN_TOKEN op://Employee/Some\ Item/credential my-team.1password.com
 
@@ -486,6 +498,8 @@ EOF
 
 op-env() {
   case "${1:-help}" in
+    load)         shift; op-load-env "$@" ;;
+    clear)        shift; op-clear-env "$@" ;;
     add)          shift; _op_env_add "$@" ;;
     list|ls)      shift; _op_env_list "$@" ;;
     rm|remove)    shift; _op_env_rm "$@" ;;
@@ -505,7 +519,36 @@ _op_legacy_secrets() {
   printf '%s\n' "${OP_SECRETS[@]}"
 }
 
-# Everything op-load-env / op-clear-env need to know: one `VAR<TAB>op://ref` line
+# Check the set names given to `op-env load` / `clear`: each must be a valid name with a
+# file. Prints the problem and returns 1 before anything has been changed or signed in.
+# With "note" as the first argument, also says (once per set) when a set is not active:
+# naming it is an explicit request, so it loads anyway.
+# Usage: _op_env_check_sets [note] set...
+_op_env_check_sets() {
+  local note=0 set active
+  if [[ "${1:-}" == note ]]; then note=1; shift; fi
+  [[ $# -gt 0 ]] || return 0
+  active=$(_op_envsets_active)
+  for set in "$@"; do
+    if ! _op_envsets_valid_name "$set"; then
+      echo "❌ Invalid set name '$set' (use lowercase letters, digits, - or _). Nothing was changed." >&2
+      return 1
+    fi
+    if [[ ! -f "$(_op_envsets_dir)/$set.tsv" ]]; then
+      echo "❌ No env set '$set'. See: op-env list. Nothing was changed." >&2
+      return 1
+    fi
+  done
+  if [[ $note -eq 1 ]]; then
+    for set in "$@"; do
+      grep -qxF -- "$set" <<< "$active" \
+        || echo "ℹ️  Set '$set' is not active; loading it anyway. A plain op-env load will unset its variables again (op-env use $set keeps it)."
+    done
+  fi
+  return 0
+}
+
+# Everything op-env load / clear (op-load-env / op-clear-env) need to know: one `VAR<TAB>op://ref` line
 # per secret, from the active sets, carrying an optional third `TABaccount` column
 # when the set names one (otherwise $OP_ACCOUNT). An OP_SECRETS array still defined
 # by a leftover lib/1password.sh is honored too (and wins on a name clash) until it
@@ -521,12 +564,14 @@ _op_legacy_secrets() {
 _op_env_entries() {
   local set file
   {
-    _op_legacy_secrets
+    # With set names, only those sets, in the order given, and never the legacy OP_SECRETS
+    # array (it belongs to no set). With none, exactly the output this has always produced.
+    [[ $# -gt 0 ]] || _op_legacy_secrets
     while IFS= read -r set; do
       _op_envsets_valid_name "$set" || continue
       file="$(_op_envsets_dir)/$set.tsv"
       [[ -f "$file" ]] && awk 1 "$file"
-    done < <(_op_envsets_active)
+    done < <(if [[ $# -gt 0 ]]; then printf '%s\n' "$@"; else _op_envsets_active; fi)
   } | tr -d '\r' | awk -F'\t' -v re="$_OP_REF_RE" -v acre="$_OP_ACCT_RE" \
       'NF <= 3 && $1 ~ /^[A-Za-z_][A-Za-z0-9_]*$/ && $2 ~ re && ($3 == "" || $3 ~ acre) && !seen[$1]++'
 }
