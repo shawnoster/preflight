@@ -145,6 +145,12 @@ fresh
 out=$(run_uninstall n --purge)
 chk "declining uninstall deletes nothing" '[[ -d "$PREFLIGHT_DIR" && -f "$HOME/.config/preflight/accounts.sh" ]]'
 
+# lib/owl.sh sourced on its own stops on a refused layout and leaves OWL_THEME_DIR unset.
+fresh; export PREFLIGHT_CONFIG_DIR="$PREFLIGHT_DIR"
+out=$( (source "$R/lib/owl.sh" 2>&1; echo "rc=$? dir=[${OWL_THEME_DIR:-}]") 2>&1 )
+chk "owl.sh stops on a refused layout and sets no theme dir" '[[ "$out" == *"is the install directory"* && "$out" == *"rc=1 dir=[]"* ]]'
+unset PREFLIGHT_CONFIG_DIR
+
 # ── install.sh refuses a shared layout before touching anything ──────────────
 # Clones this repo's current branch from disk, so only runs inside a git checkout on a
 # branch (the clone has the committed install.sh and lib/paths.sh, not uncommitted edits).
