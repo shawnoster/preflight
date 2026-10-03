@@ -192,7 +192,7 @@ _pf_config_help() {
 Usage: preflight config <command>
 
   path             Print the settings file ($PREFLIGHT_CONFIG_DIR/config.json)
-  get KEY          Print a setting in the form `set` accepts (the built-in default if unset)
+  get KEY          Print a setting in the form 'set' accepts (the built-in default if unset)
   set KEY VALUE    Write a setting, keeping the others; applies to this shell too
   init [--stdin]   Walk through every setting (Enter keeps, - clears); writes once at the end
   edit             Open the file in \${VISUAL:-\${EDITOR:-vi}}, then check it
