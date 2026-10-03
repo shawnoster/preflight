@@ -23,7 +23,7 @@ git-help
 
 op-help
   1Password CLI utilities: secrets management.
-  Commands: op-status, op-signin, op-env (load, clear, add, list, rm, use, migrate)
+  Commands: op-status, op-signin, op-env (load, clear, add, list, rm, use)
 
 pg-help
   PostgreSQL cluster control for manually-started clusters.
@@ -134,7 +134,7 @@ gstash [ref]         Pop a stash (use --apply to keep in stash list)
 gsync [main]         Sync fork with upstream
 gunwip               Undo last WIP commit
 gwip [msg]           Quick work-in-progress commit
-op-env [cmd]         1Password env sets: load/clear secrets, add/list/rm/use/migrate
+op-env [cmd]         1Password env sets: load/clear secrets, add/list/rm/use
 op-env clear [set...] Clear all loaded secrets (or only the named sets)
 op-help              Show 1Password command help
 op-env load [set...] Load secrets from 1Password into env vars

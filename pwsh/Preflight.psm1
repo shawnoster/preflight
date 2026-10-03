@@ -41,7 +41,6 @@ if (Test-Path -LiteralPath $libDir) {
 # built-in defaults apply (Invoke-Preflight reports it as a failed check).
 if (Resolve-PreflightDirs) {
     Import-PreflightConfig
-    Write-PreflightLegacyWarning
 } else {
     $script:PreflightConfigStatus = 'invalid'
     $script:PreflightConfigError  = 'the config or state directory overlaps the install directory'

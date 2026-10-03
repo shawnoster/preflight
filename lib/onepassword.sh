@@ -6,10 +6,6 @@
 # (lib/envsets.sh, envsets/<set>.tsv); `op-env load` asks _op_env_entries
 # for them. Nothing here needs editing per install.
 #
-# Load order: init.sh sources lib/*.sh by glob, and this file relies on sorting after
-# a leftover pre-rename lib/1password.sh (digits sort before letters), so that the
-# functions below replace that file's same-named ones. Don't rename it to sort earlier.
-#
 # ── Auth model ───────────────────────────────────────────────────────────────
 # These helpers resolve an `op` binary (memoized in OP_BIN) and prefer the
 # Windows op.exe when running under WSL. That lets secret reads be authorized by
@@ -112,7 +108,7 @@ op-env load [set...]
   WSL the sign-in step triggers the desktop unlock; native op uses the cached
   session. Falls back to per-secret reads for an account whose batch fails.
 
-op-env [load|clear|add|list|rm|use|migrate]
+op-env [load|clear|add|list|rm|use]
   Manage named env sets (guild, personal, ...) of VAR -> op:// references.
   This is where the list of secrets lives. Run `op-env help` for details.
 
@@ -221,7 +217,7 @@ _op_err_line() {
 # $OP_ACCOUNT) and each group becomes one `op inject` call.
 #
 # This is what `op-env load` runs (lib/envsets.sh dispatches here; there is no other entry
-# point, the old op-load-env name is gone). With no argument it loads the active sets and is
+# point). With no argument it loads the active sets and is
 # authoritative (anything a previous load set that is no longer defined is unset). With set
 # names it loads just those sets, adds to what is already loaded, unsets nothing, and works
 # on a set that is not active. It signs in to every account it needs before it sets a single

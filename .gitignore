@@ -1,22 +1,3 @@
-# Legacy in-clone locations of user data. Config and state now live outside the clone
-# (lib/paths.sh), but an install that was updated in place still has files here until
-# they are moved by hand, and they must not show up as untracked (or get committed:
-# env sets hold op:// references). Safe to drop once existing installs have moved.
-config/accounts.sh
-config/owl.sh
-config/envsets/
-state/
-
-# Pre-rename per-install copy of lib/onepassword.sh; left in place so an old OP_SECRETS
-# list in it keeps working until `op-env migrate` (then delete it).
-# TEMPORARY: drop this entry, the legacy OP_SECRETS support in lib/envsets.sh
-# (_op_legacy_secrets, op-env migrate) and the README upgrade note once existing
-# installs have migrated.
-lib/1password.sh
-# Legacy PowerShell settings, no longer read (see pwsh/README.md); kept ignored so an updated
-# install does not show it as untracked or commit its secret references.
-pwsh/config/accounts.ps1
-
 # Your own shell functions; sourced with the other lib/*.sh (install.sh and
 # `preflight update` point users here)
 lib/local.sh

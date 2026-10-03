@@ -242,30 +242,3 @@ function Test-PreflightConfig {
     }
     return $problems.ToArray()
 }
-
-function Write-PreflightLegacyWarning {
-    # An install updated in place still has accounts.ps1 (and owl state) inside the clone, where
-    # nothing reads them any more. Say so rather than silently starting from built-in defaults.
-    [CmdletBinding()]
-    param()
-
-    $legacy = Join-Path (Join-Path $script:PreflightRoot 'config') 'accounts.ps1'
-    if (Test-Path -LiteralPath $legacy -PathType Leaf) {
-        Write-Warning ("Preflight: $legacy is no longer read. Settings now live in $(Get-PreflightConfigPath) " +
-            "and the secret map in $(Join-Path $env:PREFLIGHT_CONFIG_DIR 'envsets') (VAR<TAB>op://ref lines, one file per set). " +
-            "See pwsh\README.md, then delete the old file.")
-    }
-    # An install that predates install.ps1 / defaults\ being shipped by Update-Preflight cannot be
-    # upgraded by re-running its own (old) installer: fetch the new one first. (An old profile guard
-    # also still exports OWL_OMP_CONFIG / OWL_THEME_DIR, which would override config.json.)
-    $defaults = Join-Path (Join-Path (Split-Path -Parent $script:PreflightRoot) 'defaults') 'config.general.json'
-    if (-not (Test-Path -LiteralPath $defaults -PathType Leaf)) {
-        Write-Warning ("Preflight: this install has the old installer. Run Update-Preflight once more (it now also fetches " +
-            "install.ps1 and defaults\), then run $(Join-Path $script:PreflightRoot 'install.ps1').")
-    }
-    $oldState = Join-Path (Join-Path (Split-Path -Parent $script:PreflightRoot) 'state') 'owl'
-    if ((Test-Path -LiteralPath $oldState -PathType Container) -and
-        -not (Test-Path -LiteralPath (Join-Path $env:PREFLIGHT_STATE_DIR 'owl') -PathType Container)) {
-        Write-Warning "Preflight: owl theme state moved out of the clone. Move $oldState to $(Join-Path $env:PREFLIGHT_STATE_DIR 'owl')."
-    }
-}

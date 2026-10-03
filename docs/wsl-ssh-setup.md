@@ -64,12 +64,9 @@ For the WSL SSH section it does the following, asking before each step (`--yes` 
 | Export `SSH_AUTH_SOCK` | `~/.profile` |
 | Point SSH at the agent | `~/.ssh/config`: `Host *` → `IdentityAgent "~/.1password/agent.sock"` |
 | Trust GitHub's host keys (from `gh api meta`) | `~/.ssh/known_hosts` |
-| Remove the old `ssh` and `ssh-add` aliases and `SSH_AUTH_SOCK` from `.bashrc`, and unset `core.sshCommand` | `~/.bashrc`, `~/.gitconfig` |
 | Check for the Windows `op.exe` | reported only |
 
 `SSH_AUTH_SOCK` goes in `~/.profile`, not `~/.bashrc`, because it is environment configuration and not interactive configuration. Non-interactive shells skip `.bashrc`, so with the export there only your own terminals get the agent. That gap is easy to miss because your terminals keep working. Git hooks and scripts inherit the variable from the shell or process that starts them, so they get the agent only when that parent has it. Cron jobs inherit nothing, because cron reads neither file, so set `SSH_AUTH_SOCK` in the crontab or source `~/.profile` in the job. `~/.profile` does not reach zsh or non-login Bash shells either, so preflight's `init.sh` also exports it in interactive shells whenever the bridge socket exists and no other agent is configured.
-
-Open a new terminal afterwards so the old aliases are dropped.
 
 ## Manual setup
 
@@ -167,21 +164,6 @@ To sign commits with your 1Password SSH key (optional):
 4. Paste the snippet into `~/.gitconfig` in WSL.
 
 This sets `gpg.format = ssh`, `user.signingkey`, and `gpg.ssh.program` to 1Password's `op-ssh-sign-wsl` binary. 1Password app versions 8.11.18+ moved that binary to `…/Microsoft/WindowsApps/op-ssh-sign-wsl.exe`. If signing breaks after an app upgrade, re-copy the snippet.
-
-## Fallback without systemd
-
-If you can't enable systemd, use 1Password's interop approach instead. It only covers interactive shells and `git`:
-
-```bash
-# ~/.bashrc
-export SSH_AUTH_SOCK=$HOME/.1password/agent.sock   # optional
-alias ssh='/mnt/c/Windows/System32/OpenSSH/ssh.exe'
-alias ssh-add='/mnt/c/Windows/System32/OpenSSH/ssh-add.exe'
-
-git config --global core.sshCommand /mnt/c/Windows/System32/OpenSSH/ssh.exe
-```
-
-In this mode `preflight` still reports agent status, but `preflight configure` doesn't set anything up.
 
 ## Troubleshooting
 

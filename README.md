@@ -51,32 +51,6 @@ preflight update
 
 Pulls the latest changes from the upstream repo, shows incoming commits, and warns if any tracked files have local modifications. Your config, env sets and state live outside the clone (`~/.config/preflight`, `~/.local/state/preflight`), so an update never touches them.
 
-> **Upgrading from a version where `lib/1password.sh` was a per-install copy:** the generic helpers are now the tracked file `lib/onepassword.sh`, so `preflight update` does not touch your old `lib/1password.sh` (it is gitignored and still loaded). An `OP_SECRETS=( ... )` list in it keeps working. Run `op-env migrate` to move it into a set (it refuses rather than silently switch a credential; see the command table), then delete the old list (and `lib/1password.sh` if it holds nothing else).
-
-> **Upgrading from a version that kept config inside `~/.preflight`:** config and state moved out of the clone, and `config/` was renamed `defaults/`. There is no automatic migration or fallback; move your files once, by hand, before the next shell start:
->
-> ```bash
-> mkdir -p ~/.config/preflight ~/.local/state/preflight
-> mv ~/.preflight/config/envsets ~/.config/preflight/
-> mv ~/.preflight/state/owl ~/.local/state/preflight/
-> ```
->
-> Your settings (`accounts.sh`, `owl.sh`) are replaced by `config.json`; see the next note. Anything of yours that reads `~/.preflight/config` needs the new path.
-
-> **Upgrading from `accounts.sh` / `owl.sh` to `config.json`:** settings are now one JSON file, and `accounts.sh` and `owl.sh` are no longer sourced. There is no automatic conversion: install `jq`, move your env sets as above, and on the next shell start pick a profile (or copy `defaults/config.general.json` to `~/.config/preflight/config.json`), then set what you had with `preflight config set KEY VALUE`. [docs/config.md](./docs/config.md) maps each old variable to its key. Until the file exists, built-in defaults are used, including a placeholder `OP_ACCOUNT`, and `preflight` reports it. Any alias or `export` you kept in `accounts.sh` moves to `lib/local.sh`.
-
-> **If you installed to `~/.config/preflight`** (the custom-location example this README used to show), the clone and your config share that directory, which the new layout refuses. Move the clone out first, then follow the steps above (your files are then under `~/.preflight`, so use that path in them):
->
-> ```bash
-> mv ~/.config/preflight ~/.preflight
-> # -i.bak works with both GNU and BSD/macOS sed; whichever rc file has the source line is edited
-> sed -i.bak 's|\.config/preflight/init\.sh|.preflight/init.sh|' ~/.bashrc ~/.zshrc 2>/dev/null
-> rm -f ~/.bashrc.bak ~/.zshrc.bak
-> ```
->
-> Or keep the clone where it is and point the config elsewhere, setting `PREFLIGHT_CONFIG_DIR=~/.config/preflight-data` and `PREFLIGHT_STATE_DIR=~/.local/state/preflight-data` before the `source` line, and moving the files there instead.
-
-> **`op-load-env` and `op-clear-env` were removed:** loading and clearing now live under `op-env`. Use `op-env load [set...]` and `op-env clear [set...]` (same behaviour for the plain forms; with set names they load or clear just those sets). `preflight` already calls `op-env load`. Update any script, cron job or shell alias of yours that calls the old names; they now fail with "command not found". The PowerShell commands (`Import-OpEnv` and `Clear-OpEnv`, with their `op-load-env` and `op-clear-env` aliases) are unchanged for now.
 
 After updating, reload your shell:
 
@@ -176,10 +150,9 @@ When something is behind, the suggested upgrade command is derived from **how th
 | `op-env load [set...]` | Load the active sets' secrets from 1Password into env vars, or only the named sets (see below) |
 | `op-env add [set] [VAR] [ref] [account]` | Add a VAR → `op://` reference to a named set (`guild`, `personal`, ...); prompts for an omitted set, variable or reference (never the optional account) |
 | `op-env list [set]` / `rm` / `use` | Show sets, remove a key, choose which sets are active (fzf pickers) |
-| `op-env migrate [set] [--force]` | Move a legacy `OP_SECRETS` array (from a leftover `lib/1password.sh`) into a set. Skips malformed refs, and stops without changing anything if the set already holds a different ref for a variable, if another active set would override it, or if the set exists but is not active (`--force` overwrites the set's conflicting refs with the legacy ones) |
 | `op-env clear [set...]` | Unset every variable `op-env load` set, or only the named sets' variables |
 
-**Loading just some sets.** `op-env load work personal` loads only those sets, in that order (the first definition of a variable still wins), without changing which sets are active. It adds to what is already loaded and unsets nothing, signs in to every account it needs before it sets a variable, and works on a set that is not active (it says so). A name that is not a set stops it before anything is signed in or changed. A plain `op-env load` is authoritative: it unsets variables that are no longer defined or whose set is not active, so a set you loaded by name but did not activate (`op-env use`) is unset again by the next plain load, including the one `preflight` runs. `op-env clear work` unsets just that set's variables and leaves the rest loaded. The old `op-load-env` and `op-clear-env` commands no longer exist: use `op-env load` and `op-env clear`.
+**Loading just some sets.** `op-env load work personal` loads only those sets, in that order (the first definition of a variable still wins), without changing which sets are active. It adds to what is already loaded and unsets nothing, signs in to every account it needs before it sets a variable, and works on a set that is not active (it says so). A name that is not a set stops it before anything is signed in or changed. A plain `op-env load` is authoritative: it unsets variables that are no longer defined or whose set is not active, so a set you loaded by name but did not activate (`op-env use`) is unset again by the next plain load, including the one `preflight` runs. `op-env clear work` unsets just that set's variables and leaves the rest loaded.
 
 **Which secrets load (`lib/envsets.sh`):** `lib/onepassword.sh` is generic and names no secret. The list lives in env sets: `op-env` keeps named groups of `VAR → op://` references in `~/.config/preflight/envsets/<set>.tsv` (outside the clone, one `VAR<TAB>op://vault/item/field` per line, safe to hand-edit). `op-env load` and `op-env clear` use the active sets (`op-env use`; with no `envsets/.active`, every set is active). Once `.active` exists, a `.tsv` you create by hand is **not** loaded until you add it with `op-env use` (`op-env list` shows it as `○ inactive`); `op-env add` to a new set activates it for you. If two sets define the same variable, the first one wins: sets are read in the order listed in `envsets/.active` (what `op-env use` writes), or alphabetically when that file does not exist. With no secrets configured, `op-env load` does nothing and does not sign in. A variable removed from a set, or a set that is deactivated, is unset on the next plain `op-env load`. When a secret fails to load, `op-env load` prints the first line of `op`'s error under it, with the account it used, so a wrong `OP_ACCOUNT` or a missing vault is visible instead of a bare "failed to load".
 

@@ -1,6 +1,6 @@
 # Config layout and settings file
 
-Status: decisions settled (see Decisions). Phase 1 is implemented in #48; Phase 2 is not.
+Status: implemented (#48, #49). Kept as a design record: it describes the layout as proposed, so its "Today" columns are the pre-change state. Current behavior is documented in `docs/config.md`.
 
 ## Problem
 

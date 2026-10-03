@@ -23,7 +23,6 @@
 #   op-env load [set...]                load the active sets, or just the named ones
 #   op-env clear [set...]               clear everything loaded, or just the named sets
 #   op-env use [set...]                 choose which sets a plain `op-env load` loads
-#   op-env migrate [set] [--force]      move a legacy OP_SECRETS array into a set
 #   op-env help
 
 _op_envsets_dir() {
@@ -41,7 +40,7 @@ _op_envsets_ensure() {
 }
 
 # A reference must look like op://vault/item/field (an item may have a section, so
-# more segments are fine). One definition, used by add, migrate and the loader.
+# more segments are fine). One definition, used by add and the loader.
 _OP_REF_RE='^op://[^/]+/[^/]+/.+'
 _op_envsets_valid_ref() { [[ "$1" =~ $_OP_REF_RE ]]; }
 
@@ -50,38 +49,6 @@ _op_envsets_valid_ref() { [[ "$1" =~ $_OP_REF_RE ]]; }
 # an unquoted word of letters, digits, dots, dashes and underscores.
 _OP_ACCT_RE='^[A-Za-z0-9][A-Za-z0-9._-]*$'
 _op_envsets_valid_acct() { [[ "$1" =~ $_OP_ACCT_RE ]]; }
-
-# A "reference<TAB>account" pair as it actually resolves. An absent account column
-# means the default, so a hand-written two-column line and one that spells out the
-# default have to compare equal — migrate refuses rather than silently switch a
-# credential, so comparing the raw text instead would refuse harmless no-ops.
-# Usage: _op_envsets_pair REF [ACCOUNT]
-_op_envsets_pair() { printf '%s\t%s' "$1" "${2:-${OP_ACCOUNT:-}}"; }
-
-# Render a pair for a human: the reference, plus the account only when it is not
-# the one already in force.
-_op_envsets_show() {
-  local ref="$1" acct=""
-  if [[ "$1" == *$'\t'* ]]; then
-    ref="${1%%$'\t'*}"; acct="${1#*$'\t'}"
-  fi
-  if [[ -n "$acct" && "$acct" != "${OP_ACCOUNT:-}" ]]; then
-    printf '%s [account: %s]' "$ref" "$acct"
-  else
-    printf '%s' "$ref"
-  fi
-}
-
-# First "reference<TAB>account" pair a set file gives VAR ("" if none), with the
-# account resolved so an absent column means the default. A line counts only if the
-# loader (_op_env_entries) would accept it: a malformed account or an over-long line
-# is ignored at load time, so it must not look like a definition here either.
-# Usage: _op_envsets_ref_of FILE VAR
-_op_envsets_ref_of() {
-  [[ -f "$1" ]] || return 0
-  tr -d '\r' < "$1" | awk -F'\t' -v n="$2" -v re="$_OP_REF_RE" -v acre="$_OP_ACCT_RE" -v def="${OP_ACCOUNT:-}" \
-    'NF <= 3 && $1 == n && $2 ~ re && ($3 == "" || $3 ~ acre) { print $2 "\t" ($3 == "" ? def : $3); exit }'
-}
 
 # The account column of the first line a set file gives VAR, verbatim — "" both when
 # there is no line and when the line has no account column, which are different
@@ -153,7 +120,7 @@ _op_envsets_choose_set() {
 # list, the new .active are both staged first and only then moved into place; if the
 # second move fails the first is rolled back. A problem is detected before anything
 # is touched where it can be (an unwritable .active), so a failure never leaves a
-# half-created set that the loader would ignore and a later migrate would refuse.
+# half-created set that the loader would ignore.
 # Editing a set the user deliberately deactivated does not reactivate it.
 # Usage: printf 'VAR\tref\n' | _op_envsets_write set
 _op_envsets_write() {
@@ -275,14 +242,6 @@ _op_env_list() {
       fi
     done < "$file"
   done < <(_op_envsets_names)
-  local legacy; legacy=$(_op_legacy_secrets)
-  if [[ -z "$only" && -n "$legacy" ]]; then
-    found=1
-    echo "◆ OP_SECRETS array (legacy, from lib/1password.sh) — move it with: op-env migrate"
-    while IFS= read -r line; do
-      printf '    %-28s %s\n' "${line%%$'\t'*}" "${line#*$'\t'}"
-    done <<< "$legacy"
-  fi
   if [[ $found -eq 0 ]]; then
     [[ -n "$only" ]] && { echo "❌ No such set: $only" >&2; return 1; }
     echo "No env sets yet. Create one with: op-env add"
@@ -332,133 +291,6 @@ _op_env_use() {
   echo "✅ Active sets: $(printf '%s\n' "$chosen" | paste -sd' ' -)"
 }
 
-# Move a legacy OP_SECRETS array (from a leftover per-install
-# lib/1password.sh) into a set. The legacy array wins over sets today, so the move
-# must not change which reference a variable resolves to once the array is deleted.
-# Everything is checked before anything is written; on a problem nothing changes.
-#   - malformed entries (bad name, or a ref that is not op://vault/item/field) are skipped
-#   - a name the set already holds with a DIFFERENT ref stops the move; --force overwrites
-#     the set's ref with the legacy one (what loads today)
-#   - a different active set that would still override the moved value stops the move
-#   - an existing set that is not active is refused (its keys would stop loading)
-# Usage: op-env migrate [set] [--force]
-_op_env_migrate() {
-  local force=0 set="" arg legacy valid entries line name ref refpair file dir order s r
-  local dest_def winner_set winner_ref dest_conf="" shadow="" moved=0 same=0
-  for arg in "$@"; do
-    case "$arg" in
-      --force|-f) force=1 ;;
-      -*) echo "❌ Unknown option: $arg" >&2; return 1 ;;
-      *)  set="$arg" ;;
-    esac
-  done
-  set="${set:-default}"
-  legacy=$(_op_legacy_secrets)
-  if [[ -z "$legacy" ]]; then
-    echo "Nothing to migrate: no OP_SECRETS array is defined."
-    return 0
-  fi
-  _op_envsets_valid_name "$set" || { echo "❌ Invalid set name '$set'" >&2; return 1; }
-  dir=$(_op_envsets_dir); file="$dir/$set.tsv"
-
-  if [[ -f "$file" ]] && ! _op_envsets_active | grep -qxF -- "$set"; then
-    echo "❌ Set '$set' exists but is not active, so the migrated keys would stop loading" >&2
-    echo "   once the legacy list is deleted. Activate it first (op-env use <sets...>, keeping" >&2
-    echo "   the ones already active) or pick another set. Nothing was changed." >&2
-    return 1
-  fi
-
-  # Valid entries only, first definition of a name winning (as the loader does).
-  valid=""
-  while IFS= read -r line; do
-    [[ -n "$line" ]] || continue
-    name="${line%%$'\t'*}"; ref="${line#*$'\t'}"
-    if [[ ! "$name" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || ! _op_envsets_valid_ref "$ref"; then
-      echo "⚠️  Skipped malformed entry: $name ($ref)"; continue
-    fi
-    valid+="$name"$'\t'"$ref"$'\n'
-  done <<< "$legacy"
-  entries=$(printf '%s' "$valid" | awk -F'\t' 'NF && !seen[$1]++')
-  if [[ -z "$entries" ]]; then
-    echo "Nothing to migrate: no valid entries in OP_SECRETS."
-    return 0
-  fi
-
-  # The order sets are read in once the legacy list is gone: the active list, or
-  # alphabetical when there is no .active file. A brand-new set joins it too.
-  order=$( { _op_envsets_active; [[ -f "$file" ]] || printf '%s\n' "$set"; } | awk 'NF && !seen[$0]++')
-  [[ -f "$dir/.active" ]] || order=$(printf '%s\n' "$order" | sort)
-
-  # Compare by what a definition resolves to, not by how it is spelled: an entry
-  # with no account column means the default. So a legacy entry (which has no
-  # account column either) is held as a pair too. The pair is only ever compared —
-  # what lands in the set file is the bare reference, so migrating does not stamp
-  # the current default account onto lines that never named one.
-  while IFS= read -r line; do
-    name="${line%%$'\t'*}"; ref="${line#*$'\t'}"
-    refpair=$(_op_envsets_pair "$ref")
-    dest_def=$(_op_envsets_ref_of "$file" "$name")
-    if [[ -n "$dest_def" && "$dest_def" != "$refpair" && $force -eq 0 ]]; then
-      dest_conf+="   $name: [$set] has $(_op_envsets_show "$dest_def"), the legacy list has $(_op_envsets_show "$refpair")"$'\n'
-    fi
-    winner_set=""; winner_ref=""
-    while IFS= read -r s; do
-      [[ -n "$s" ]] || continue
-      if [[ "$s" == "$set" ]]; then
-        if [[ -n "$dest_def" && $force -eq 0 ]]; then r="$dest_def"; else r="$refpair"; fi
-      else
-        r=$(_op_envsets_ref_of "$dir/$s.tsv" "$name")
-      fi
-      if [[ -n "$r" ]]; then winner_set="$s"; winner_ref="$r"; break; fi
-    done <<< "$order"
-    if [[ -n "$winner_set" && "$winner_set" != "$set" && "$winner_ref" != "$refpair" ]]; then
-      shadow+="   $name: set [$winner_set] defines it as $(_op_envsets_show "$winner_ref") and would override $(_op_envsets_show "$refpair")"$'\n'
-    fi
-  done <<< "$entries"
-
-  if [[ -n "$shadow" ]]; then
-    echo "❌ Another active set would override the legacy value for:" >&2
-    printf '%s' "$shadow" >&2
-    echo "   Remove or change that entry (op-env rm <set> <VAR>), then run migrate again." >&2
-    echo "   Nothing was changed." >&2
-    return 1
-  fi
-  if [[ -n "$dest_conf" ]]; then
-    echo "❌ [$set] already has different references for:" >&2
-    printf '%s' "$dest_conf" >&2
-    echo "   The legacy list is what loads today, so deleting it would switch these credentials." >&2
-    echo "   Re-run with --force to overwrite [$set] with the legacy values. Nothing was changed." >&2
-    return 1
-  fi
-
-  # Stage every change, then write them in one step so a failure leaves nothing behind.
-  local to_write=""
-  while IFS= read -r line; do
-    name="${line%%$'\t'*}"; ref="${line#*$'\t'}"
-    if [[ "$(_op_envsets_ref_of "$file" "$name")" == "$(_op_envsets_pair "$ref")" ]]; then
-      echo "   $name already in [$set] with the same reference"; same=$((same + 1)); continue
-    fi
-    to_write+="$name"$'\t'"$ref"$'\n'
-  done <<< "$entries"
-  if [[ -n "$to_write" ]]; then
-    printf '%s' "$to_write" | _op_envsets_write "$set" || {
-      echo "   Migration stopped; nothing was changed." >&2
-      return 1
-    }
-    while IFS= read -r line; do
-      [[ -n "$line" ]] || continue
-      echo "✅ [$set] ${line%%$'\t'*} -> ${line#*$'\t'}"
-      moved=$((moved + 1))
-    done <<< "$to_write"
-  fi
-  echo ""
-  echo "Moved $moved key(s) ($same already there). Now remove the old list so the set is the only source:"
-  if [[ -f "${PREFLIGHT_DIR:-$HOME/.preflight}/lib/1password.sh" ]]; then
-    echo "  - lib/1password.sh is a leftover from before the rename to lib/onepassword.sh:"
-    echo "    delete it (${PREFLIGHT_DIR:-$HOME/.preflight}/lib/1password.sh) if it holds nothing else you need"
-  fi
-}
-
 _op_env_help() {
   cat <<'EOF'
 op-env manages named env sets backed by 1Password references.
@@ -469,7 +301,6 @@ op-env manages named env sets backed by 1Password references.
   op-env list [set]                   Show sets and keys (● active, ○ inactive)
   op-env rm [set] [VAR]               Remove a key
   op-env use [set...]                 Choose active sets (fzf multi-select if omitted)
-  op-env migrate [set] [--force]      Move a legacy OP_SECRETS array into a set (stops on conflicts)
   op-env help                         This message
 
 Sets (e.g. guild, personal) are stored in envsets/<set>.tsv, one
@@ -503,19 +334,9 @@ op-env() {
     list|ls)      shift; _op_env_list "$@" ;;
     rm|remove)    shift; _op_env_rm "$@" ;;
     use)          shift; _op_env_use "$@" ;;
-    migrate)      shift; _op_env_migrate "$@" ;;
     help|-h|--help) _op_env_help ;;
     *) echo "❌ Unknown op-env command: $1" >&2; _op_env_help >&2; return 1 ;;
   esac
-}
-
-# The legacy OP_SECRETS array, one entry per line (nothing if it is unset or empty).
-# Checks with declare -p first: since this PR nothing defines the array by default,
-# and reading an unset array aborts a shell running `set -u`.
-_op_legacy_secrets() {
-  declare -p OP_SECRETS &>/dev/null || return 0
-  [[ ${#OP_SECRETS[@]} -gt 0 ]] || return 0
-  printf '%s\n' "${OP_SECRETS[@]}"
 }
 
 # Check the set names given to `op-env load` / `clear`: each must be a valid name with a
@@ -552,24 +373,12 @@ _op_env_check_sets() {
 # Which set supplies each variable: one `VAR<TAB>set` line per variable, for the named sets in the
 # order given (or the active sets, in their order, when none are named). The first set with a
 # valid definition wins, exactly as _op_env_entries decides it, because this is built from that
-# function. The legacy OP_SECRETS array comes first, as it does in _op_env_entries (it wins a
-# clash), and its names get "-": a variable the array supplies is not any set's to clear. This is
-# what lets `op-env clear b` leave alone a variable that `a` (or the array) supplied when both
-# define it.
+# function. This is what lets `op-env clear b` leave alone a variable that `a` supplied when
+# both define it.
 # Usage: _op_env_sources [set...]
 _op_env_sources() {
   local sets set n seen=""
-  if [[ $# -gt 0 ]]; then
-    sets=$(printf '%s\n' "$@")
-  else
-    sets=$(_op_envsets_active)
-    while IFS= read -r n; do
-      [[ -n "$n" ]] || continue
-      grep -qxF -- "$n" <<< "$seen" && continue
-      printf '%s\t-\n' "$n"
-      seen="${seen:+$seen$'\n'}$n"
-    done <<< "$(_op_env_legacy_names)"
-  fi
+  if [[ $# -gt 0 ]]; then sets=$(printf '%s\n' "$@"); else sets=$(_op_envsets_active); fi
   while IFS= read -r set; do
     [[ -n "$set" ]] || continue
     _op_envsets_valid_name "$set" || continue
@@ -585,9 +394,7 @@ _op_env_sources() {
 
 # Everything op-env load / clear need to know: one `VAR<TAB>op://ref` line
 # per secret, from the active sets, carrying an optional third `TABaccount` column
-# when the set names one (otherwise $OP_ACCOUNT). An OP_SECRETS array still defined
-# by a leftover lib/1password.sh is honored too (and wins on a name clash) until it
-# is moved with `op-env migrate`. The first definition of a name wins (sets are read
+# when the set names one (otherwise $OP_ACCOUNT). The first definition of a name wins (sets are read
 # in the order of envsets/.active, or alphabetically when that file is absent);
 # anything that isn't a valid variable name, an op:// reference, or a well-formed
 # account is dropped. CRs are stripped so a set edited on Windows (CRLF) still
@@ -599,26 +406,12 @@ _op_env_sources() {
 _op_env_entries() {
   local set file
   {
-    # With set names, only those sets, in the order given, and never the legacy OP_SECRETS
-    # array (it belongs to no set). With none, exactly the output this has always produced.
-    [[ $# -gt 0 ]] || _op_legacy_secrets
+    # With set names, only those sets, in the order given. With none, the active sets.
     while IFS= read -r set; do
       _op_envsets_valid_name "$set" || continue
       file="$(_op_envsets_dir)/$set.tsv"
       [[ -f "$file" ]] && awk 1 "$file"
     done < <(if [[ $# -gt 0 ]]; then printf '%s\n' "$@"; else _op_envsets_active; fi)
-  } | tr -d '\r' | _op_env_valid_lines
-}
-
-# The line filter shared by _op_env_entries and the legacy-name lookup below, so both decide
-# what a valid entry is in one place: at most three TAB fields, a valid variable name, an
-# op:// reference and, if present, a valid account; the first definition of a name wins.
-_op_env_valid_lines() {
-  awk -F'\t' -v re="$_OP_REF_RE" -v acre="$_OP_ACCT_RE" \
+  } | tr -d '\r' | awk -F'\t' -v re="$_OP_REF_RE" -v acre="$_OP_ACCT_RE" \
       'NF <= 3 && $1 ~ /^[A-Za-z_][A-Za-z0-9_]*$/ && $2 ~ re && ($3 == "" || $3 ~ acre) && !seen[$1]++'
-}
-
-# Names the legacy OP_SECRETS array validly defines (nothing once the array is gone).
-_op_env_legacy_names() {
-  _op_legacy_secrets | tr -d '\r' | _op_env_valid_lines | cut -f1
 }
