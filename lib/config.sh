@@ -244,16 +244,13 @@ _pf_config_check() {
   return $((n > 0 ? 1 : 0))
 }
 
-_pf_config_set_cmd() {
-  local key="${1:-}" val="${2-}" file dir tmp base err var
-  # Exactly KEY VALUE: an unquoted multi-word value would otherwise be stored truncated.
-  if [[ $# -ne 2 ]]; then
-    echo "Usage: preflight config set KEY VALUE  (quote a value that has spaces)" >&2
-    return 1
-  fi
-  if ! _pf_config_row "$key"; then
-    echo "preflight config: unknown key '$key'. Keys:" >&2; _pf_config_keys >&2; return 1
-  fi
+# Write one or more settings in a single atomic change. Arguments are KEY VALUE pairs. Every value
+# is converted and checked before anything is written, so one bad value changes nothing. The file
+# is edited through jq into a same-directory temp file and renamed into place; a symlinked
+# config.json is edited at its target. Applies the result to this shell and says (on stderr) when
+# a variable you set yourself keeps winning. The written path is left in _pf_cfg_written.
+_pf_config_write_many() {
+  local file dir tmp base err key val var
   command -v jq >/dev/null 2>&1 || { echo "preflight config: jq is required" >&2; return 1; }
   _pf_config_file || return 1
   file="$_pf_cfg_file"
@@ -281,29 +278,77 @@ _pf_config_set_cmd() {
     base=$(cat "$file")
   fi
 
+  local keys=""
+  while [[ $# -ge 2 ]]; do
+    key="$1" val="$2"; shift 2
+    _pf_config_row "$key" || { echo "preflight config: unknown key '$key'. Nothing was changed." >&2; return 1; }
+    # stderr into $err, stdout into $base on success only.
+    if ! err=$(printf '%s\n' "$base" | jq --arg key "$key" --arg type "$_pf_row_type" --arg v "$val" '
+          setpath($key | split(".");
+            if $type == "b" then
+              ($v | ascii_downcase
+                | if . == "true" or . == "1" or . == "yes" or . == "on" then true
+                  elif . == "false" or . == "0" or . == "no" or . == "off" then false
+                  else error("expected true or false") end)
+            elif $type == "pl" then ($v | split(":") | map(select(length > 0)))
+            else $v end)' 2>&1); then
+      echo "preflight config: could not set $key: ${err%%$'\n'*}. Nothing was changed." >&2
+      return 1
+    fi
+    base="$err"
+    keys="$keys $_pf_row_var"
+  done
+
   tmp=$(mktemp "$dir/.config.XXXXXX") || return 1
-  # stderr into $err, stdout into the temp file (order matters: 2>&1 first).
-  if ! err=$(printf '%s\n' "$base" | jq --arg key "$key" --arg type "$_pf_row_type" --arg v "$val" '
-        setpath($key | split(".");
-          if $type == "b" then
-            ($v | ascii_downcase
-              | if . == "true" or . == "1" or . == "yes" or . == "on" then true
-                elif . == "false" or . == "0" or . == "no" or . == "off" then false
-                else error("expected true or false") end)
-          elif $type == "pl" then ($v | split(":") | map(select(length > 0)))
-          else $v end)' 2>&1 >"$tmp"); then
-    echo "preflight config: could not set $key: ${err%%$'\n'*}" >&2
-    rm -f "$tmp"; return 1
-  fi
+  printf '%s\n' "$base" > "$tmp" || { rm -f "$tmp"; return 1; }
   chmod 644 "$tmp" 2>/dev/null
   mv -f "$tmp" "$file" || { rm -f "$tmp"; return 1; }
-  var="$_pf_row_var"
+  _pf_cfg_written="$file"
   _pf_config_load
-  echo "✅ $key set in $file"
-  case "$_PF_CONFIG_MANAGED" in
-    *" $var "*) ;;
-    *) echo "   Note: this shell keeps the \$$var you set outside the file; a new terminal picks up the file's value." >&2 ;;
-  esac
+  for var in $keys; do
+    case "$_PF_CONFIG_MANAGED" in
+      *" $var "*) ;;
+      *) echo "   Note: this shell keeps the \$$var you set outside the file; a new terminal picks up the file's value." >&2 ;;
+    esac
+  done
+}
+
+_pf_config_set_cmd() {
+  # Exactly KEY VALUE: an unquoted multi-word value would otherwise be stored truncated.
+  if [[ $# -ne 2 ]]; then
+    echo "Usage: preflight config set KEY VALUE  (quote a value that has spaces)" >&2
+    return 1
+  fi
+  if ! _pf_config_row "$1"; then
+    echo "preflight config: unknown key '$1'. Keys:" >&2; _pf_config_keys >&2; return 1
+  fi
+  _pf_config_write_many "$1" "$2" || return 1
+  echo "✅ $1 set in $_pf_cfg_written"
+}
+
+# The current value of KEY in the form `set` accepts, in _pf_cfg_val: strings as written, booleans as
+# true/false, the list ':'-joined with its entries unexpanded. A key the file does not set gives its
+# built-in default. "=" marks a key that is present (a false or empty value is a value). Only a
+# successful query may report "absent": a file that exists but cannot be read (no jq, invalid JSON)
+# is an error, not an unset key.
+_pf_config_value() {
+  local got=""
+  _pf_config_row "$1" || { echo "preflight config: unknown key '$1'" >&2; return 1; }
+  _pf_config_file || return 1
+  if [[ -f "$_pf_cfg_file" ]]; then
+    command -v jq >/dev/null 2>&1 || { echo "preflight config: jq is required to read $_pf_cfg_file" >&2; return 1; }
+    got=$(jq -r --arg key "$1" 'getpath($key | split(".")) as $v
+            | if $v == null then "-" else "=" + ($v | if type == "array" then join(":") else tostring end) end' \
+            "$_pf_cfg_file" 2>&1) \
+      || { echo "preflight config: cannot read $_pf_cfg_file: ${got%%$'\n'*}" >&2; return 1; }
+  fi
+  if [[ "$got" == "="* ]]; then
+    _pf_cfg_val="${got#=}"
+  elif [[ "$_pf_row_type" == b ]]; then
+    if [[ "$_pf_row_def" == 1 ]]; then _pf_cfg_val=true; else _pf_cfg_val=false; fi
+  else
+    _pf_cfg_val="$_pf_row_def"
+  fi
 }
 
 _pf_config_cmd() {
@@ -314,26 +359,8 @@ _pf_config_cmd() {
       [[ -n "${2:-}" ]] || { echo "Usage: preflight config get KEY" >&2; return 1; }
       _pf_config_row "$2" || { echo "preflight config: unknown key '$2'" >&2; return 1; }
       _pf_config_file || return 1
-      # Print the value in the form `set` accepts: strings as written, booleans as
-      # true/false, the list ':'-joined with its entries unexpanded. "=" marks a key that is
-      # present (a false or empty value is a value); anything else falls back to the default.
-      # Only a successful query may report "absent" (and so the default). A file that exists
-      # but cannot be read (no jq, invalid JSON) is an error, not an unset key.
-      local got=""
-      if [[ -f "$_pf_cfg_file" ]]; then
-        command -v jq >/dev/null 2>&1 || { echo "preflight config: jq is required to read $_pf_cfg_file" >&2; return 1; }
-        got=$(jq -r --arg key "$2" 'getpath($key | split(".")) as $v
-                | if $v == null then "-" else "=" + ($v | if type == "array" then join(":") else tostring end) end' \
-                "$_pf_cfg_file" 2>&1) \
-          || { echo "preflight config: cannot read $_pf_cfg_file: ${got%%$'\n'*}" >&2; return 1; }
-      fi
-      if [[ "$got" == "="* ]]; then
-        printf '%s\n' "${got#=}"
-      elif [[ "$_pf_row_type" == b ]]; then
-        [[ "$_pf_row_def" == 1 ]] && echo true || echo false
-      else
-        printf '%s\n' "$_pf_row_def"
-      fi ;;
+      _pf_config_value "$2" || return 1
+      printf '%s\n' "$_pf_cfg_val" ;;
     set)    _pf_config_set_cmd "${@:2}" ;;
     edit)
       _pf_config_file || return 1
