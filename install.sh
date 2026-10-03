@@ -145,6 +145,18 @@ main() {
     _pf_die "git clone failed"
   fi
 
+  # Resolve where the user's own data lives (config and state are outside the clone;
+  # see lib/paths.sh) and refuse a layout that would mix it with the code. This runs
+  # before the shell profile is touched, and a refusal removes the clone this run just
+  # made, so correcting the variables and re-running starts clean instead of stopping
+  # at "already installed".
+  # shellcheck source=lib/paths.sh
+  source "$PREFLIGHT_DIR/lib/paths.sh"
+  if ! _pf_resolve_dirs; then
+    if _pf_safe_rm_dir "$PREFLIGHT_DIR" 2>/dev/null; then rm -rf -- "$PREFLIGHT_DIR"; fi
+    _pf_die "Nothing was installed. Choose a PREFLIGHT_DIR that is not (or does not contain) your config or state directory."
+  fi
+
   # Dotfile modification
   local shell_name
   shell_name=$(basename "${SHELL:-bash}")
@@ -160,11 +172,6 @@ main() {
     _pf_add_to_profile "$profile" "$shell_name"
   fi
 
-  # Resolve where the user's own data lives (config and state are outside the
-  # clone; see lib/paths.sh) and refuse a layout that would mix it with the code.
-  # shellcheck source=lib/paths.sh
-  source "$PREFLIGHT_DIR/lib/paths.sh"
-  _pf_resolve_dirs || _pf_die "Choose a PREFLIGHT_DIR that is not your config directory."
   mkdir -p "$PREFLIGHT_CONFIG_DIR"
 
   # First-time config setup (init.sh handles this too, but do it now so the

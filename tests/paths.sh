@@ -145,5 +145,22 @@ fresh
 out=$(run_uninstall n --purge)
 chk "declining uninstall deletes nothing" '[[ -d "$PREFLIGHT_DIR" && -f "$HOME/.config/preflight/accounts.sh" ]]'
 
+# ── install.sh refuses a shared layout before touching anything ──────────────
+# Clones this repo's current branch from disk, so only runs inside a git checkout on a
+# branch (the clone has the committed install.sh and lib/paths.sh, not uncommitted edits).
+branch=$(git -C "$R" branch --show-current 2>/dev/null)
+if [[ -n "$branch" ]] && command -v git >/dev/null 2>&1; then
+  fresh; unset PREFLIGHT_DIR
+  inst() { env -i PATH="$PATH" HOME="$HOME" SHELL=/bin/bash PREFLIGHT_REPO="$R" PREFLIGHT_BRANCH="$branch" "$@" bash "$R/install.sh" 2>&1; }
+  out=$(inst PREFLIGHT_DIR="$HOME/.config/preflight"); rc=$?
+  chk "install into the config dir fails" '[[ $rc -ne 0 && "$out" == *"Nothing was installed"* ]]'
+  chk "install rolls the clone back"      '[[ ! -e "$HOME/.config/preflight" ]]'
+  chk "install left the shell profile alone" '[[ ! -e "$HOME/.bashrc" && ! -e "$HOME/.profile" ]]'
+  out=$(inst); rc=$?
+  chk "re-running with the default location installs" '[[ $rc -eq 0 && -f "$HOME/.preflight/init.sh" && -d "$HOME/.config/preflight" ]]'
+else
+  echo "skipped: install.sh checks (not on a git branch)"
+fi
+
 echo "$passes passed, $fails failed"
 [[ $fails -eq 0 ]]
