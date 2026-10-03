@@ -29,6 +29,7 @@ export HOME="$T/home" PREFLIGHT_DIR="$R" PREFLIGHT_CONFIG_DIR="$T/cfg" PREFLIGHT
 mkdir -p "$HOME" "$PREFLIGHT_CONFIG_DIR"
 CFG="$PREFLIGHT_CONFIG_DIR/config.json"
 source "$R/lib/paths.sh"
+source "$R/lib/prompt.sh"
 source "$R/lib/config.sh"
 
 MANAGED="OP_ACCOUNT PROJ_DIRS AWS_PROFILE_DEFAULT GIT_MAIN_BRANCH GITEA_USERNAME GITEA_HOST _CHECK_AWS _CHECK_GH _CHECK_SSH _CHECK_GIT_CONFIG OWL_OMP_CONFIG"
@@ -243,6 +244,90 @@ EDITOR="$T/ed" VISUAL="" _pf_config_cmd edit >/dev/null 2>&1
 chk "edit runs the editor (VISUAL empty -> EDITOR) on the file" '[[ "$(cat "$T/edited" 2>/dev/null)" == "$CFG" ]]'
 VISUAL="$T/ed --wait" EDITOR="" _pf_config_cmd edit >/dev/null 2>&1
 chk "edit splits a multi-word editor (VISUAL wins)" '[[ "$(cat "$T/edited" 2>/dev/null)" == "--wait $CFG" ]]'
+
+# ── preflight config init ─────────────────────────────────────────────────────
+# Answers are fed with --stdin, one per line in table order: op.account, projects.dirs,
+# aws.default_profile, git.main_branch, gitea.username, gitea.host, checks.aws, checks.gh,
+# checks.ssh, checks.git_config, owl.omp_config. Called in the current shell (process
+# substitution, not a pipe) so the loader's variables can be checked afterwards.
+init_with() { _pf_config_init --stdin < <(printf '%s\n' "$@") >"$T/init.out" 2>&1; }
+KEEP=""   # an empty line keeps the current value
+reset; cp "$R/defaults/config.company.json" "$CFG"; _pf_config_load; before=$(cat "$CFG")
+init_with "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP"; rc=$?
+chk "init: all Enter keeps everything and writes nothing" '[[ $rc -eq 0 && "$(cat "$CFG")" == "$before" && "$(cat "$T/init.out")" == *"No changes"* ]]'
+
+init_with "new.1password.com" "~/x:~/y" "-" "trunk" "$KEEP" "gitea.example.com" "no" "$KEEP" "yes" "$KEEP" "-"; rc=$?
+chk "init: succeeds"                          '[[ $rc -eq 0 ]]'
+chk "init: string, list and clear are written" '[[ "$(jq -r .op.account "$CFG")" == new.1password.com && "$(jq -c .projects.dirs "$CFG")" == "[\"~/x\",\"~/y\"]" && "$(jq -r .aws.default_profile "$CFG")" == "" && "$(jq -r .git.main_branch "$CFG")" == trunk ]]'
+chk "init: yes/no become JSON booleans"       '[[ "$(jq -c .checks "$CFG")" == "{\"aws\":false,\"gh\":true,\"ssh\":true,\"git_config\":true}" ]]'
+chk "init: - clears the Oh My Posh path"      '[[ "$(jq -r .owl.omp_config "$CFG")" == "" ]]'
+chk "init: kept keys and version are untouched" '[[ "$(jq -r .version "$CFG")" == 1 && "$(jq -r .gitea.host "$CFG")" == gitea.example.com && "$(jq -r .gitea.username "$CFG")" == "" ]]'
+chk "init: the shell picks up the new values" '[[ "$OP_ACCOUNT" == new.1password.com && "$GIT_MAIN_BRANCH" == trunk && "$_CHECK_AWS" == 0 ]]'
+chk "init: reports how many changed"          '[[ "$(cat "$T/init.out")" == *"changed in"* ]]'
+chk "init: leaves no temp files"              '[[ -z "$(find "$PREFLIGHT_CONFIG_DIR" -maxdepth 1 -name ".config.*")" ]]'
+chk "init: the result passes check"           '_pf_config_check >/dev/null'
+
+# The current value is shown as the default.
+init_with "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP"
+chk "init: prompts show the current value"    '[[ "$(cat "$T/init.out")" == *"[new.1password.com]"* && "$(cat "$T/init.out")" == *"[~/x:~/y]"* && "$(cat "$T/init.out")" == *"[false]"* ]]'
+
+# Stopping part-way writes nothing, even after some answers were given.
+before=$(cat "$CFG")
+init_with "changed.1password.com" "~/z"; rc=$?
+chk "init: input ending part-way fails"       '[[ $rc -ne 0 && "$(cat "$T/init.out")" == *"no changes were written"* ]]'
+chk "init: ...and leaves the file untouched"  '[[ "$(cat "$CFG")" == "$before" && "$OP_ACCOUNT" == new.1password.com ]]'
+chk "init: ...and stops at the first missing answer (does not keep prompting)" '[[ "$(grep -c "Input ended" "$T/init.out")" == 1 && "$(grep -c "^[a-z_.]*: " "$T/init.out")" == 3 ]]'
+
+# A bad yes/no stops it, and writes nothing.
+init_with "x" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "maybe"; rc=$?
+chk "init: a bad yes/no is refused with the key named, nothing written" '[[ $rc -ne 0 && "$(cat "$T/init.out")" == *"not yes or no for checks.aws"* && "$(cat "$CFG")" == "$before" ]]'
+init_with "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "-"; rc=$?
+chk "init: - is not an answer to a yes/no question" '[[ $rc -ne 0 && "$(cat "$CFG")" == "$before" ]]'
+
+# No terminal and no --stdin: refuse rather than hang.
+out=$(_pf_config_init </dev/null 2>&1); rc=$?
+chk "init: without a terminal or --stdin it refuses" '[[ $rc -ne 0 && "$out" == *"needs a terminal"* ]]'
+out=$(_pf_config_init --bogus 2>&1); rc=$?
+chk "init: unknown argument prints the usage" '[[ $rc -ne 0 && "$out" == *"Usage: preflight config init"* ]]'
+
+# An invalid file is refused, not overwritten.
+printf '{ broken' > "$CFG"
+init_with "a" ; rc=$?
+chk "init: invalid JSON is refused and left alone" '[[ $rc -ne 0 && "$(cat "$CFG")" == "{ broken" && "$(cat "$T/init.out")" == *"not valid JSON"* ]]'
+
+# No file yet: only the answered keys are written, plus the version.
+reset; rm -f "$CFG"
+init_with "fresh.1password.com" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP"; rc=$?
+chk "init: with no file, creates it with just version and the answered key" '[[ $rc -eq 0 && "$(jq -c . "$CFG")" == "{\"version\":1,\"op\":{\"account\":\"fresh.1password.com\"}}" ]]'
+
+# The "your own variable keeps winning" note is built from a newline-delimited list, so it works where an
+# unquoted expansion is not word-split (zsh). IFS set to a newline alone reproduces that in bash: with the
+# old space-separated list a loader-set variable was reported as shadowed, and several came out as one.
+reset; cp "$R/defaults/config.company.json" "$CFG"; _pf_config_load
+OLDIFS=$IFS; IFS=$'\n'
+out=$(_pf_config_cmd set git.main_branch zsh1 2>&1)
+IFS=$OLDIFS
+chk "set: no false 'keeps' note for a loader-set variable when the shell does not word-split" '[[ "$out" != *"Note:"* ]]'
+reset; cp "$R/defaults/config.company.json" "$CFG"; GIT_MAIN_BRANCH=mine; export GIT_MAIN_BRANCH; OP_ACCOUNT=mine2; export OP_ACCOUNT; _pf_config_load
+OLDIFS=$IFS; IFS=$'\n'
+out=$(_pf_config_write_many git.main_branch zsh2 op.account other 2>&1 )
+IFS=$OLDIFS
+chk "write_many: one note per shadowed variable, each correctly named, without word-splitting" '[[ "$out" == *"keeps the \$GIT_MAIN_BRANCH you set"* && "$out" == *"keeps the \$OP_ACCOUNT you set"* && "$out" != *"\$ GIT"* ]]'
+unset GIT_MAIN_BRANCH OP_ACCOUNT
+
+# A symlinked config.json is edited at its target.
+reset; mkdir -p "$T/dots"; cp "$R/defaults/config.company.json" "$T/dots/config.json"; rm -f "$CFG"; ln -s "$T/dots/config.json" "$CFG"
+init_with "linked.1password.com" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP"
+chk "init: through a symlink keeps the link and writes the target" '[[ -L "$CFG" && "$(jq -r .op.account "$T/dots/config.json")" == linked.1password.com ]]'
+rm -f "$CFG"
+
+# Every key has its own prompt text (the fallback is the bare key).
+missing=""
+while IFS='|' read -r k rest; do
+  [[ -n "$k" ]] || continue
+  [[ "$(_pf_config_prompt_text "$k")" != "$k" ]] || missing="$missing $k"
+done <<< "$_PF_CONFIG_TABLE"
+chk "every key has a prompt text:$missing" '[[ -z "$missing" ]]'
 
 # ── table / schema / profiles cannot drift ────────────────────────────────────
 SCHEMA="$R/defaults/config.schema.json"

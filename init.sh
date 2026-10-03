@@ -97,7 +97,7 @@ if [[ ! -f "$PREFLIGHT_CONFIG_DIR/config.json" ]]; then
   if [[ -n "$_pf_pick" ]]; then
     cp "$_pf_pick" "$PREFLIGHT_CONFIG_DIR/config.json"
     echo "📋 Created $PREFLIGHT_CONFIG_DIR/config.json from $(basename "$_pf_pick")."
-    echo "   Change settings with: preflight config set KEY VALUE  (preflight config help)"
+    echo "   Walk through the settings with: preflight config init  (or: preflight config set KEY VALUE)"
   fi
   # These are globals (see the `local` note above) — don't leak them into the
   # user's interactive shell.

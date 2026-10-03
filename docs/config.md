@@ -14,6 +14,7 @@ preflight config get op.account                 # booleans as true/false, the li
 preflight config set op.account my-team.1password.com
 preflight config set checks.aws false          # a JSON boolean
 preflight config set projects.dirs "~/dev:~/src"   # a JSON array
+preflight config init                          # walk through every setting; Enter keeps, "-" clears; one write at the end
 preflight config edit                          # ${VISUAL:-${EDITOR:-vi}}, then checks the file
 preflight config check                         # invalid JSON, unknown keys, wrongly typed values
 ```
@@ -21,6 +22,12 @@ preflight config check                         # invalid JSON, unknown keys, wro
 `get` prints a value in the form `set` accepts, so `set KEY "$(get KEY)"` is a no-op. `set` writes through `jq` to a temporary file in the same directory and renames it into place, so an interrupted
 write never leaves a half-written file. If `config.json` is a symlink (a dotfiles repo), the target is edited and the link stays. It refuses an unknown key, a bad boolean, and a file that is not valid JSON
 (fix it with `config edit` first). It applies the change to the current shell as well, unless you set that variable yourself, in which case it says so.
+
+`config init` asks about every key in turn, in table order, showing the current value (or the built-in default) in
+brackets. Enter keeps it, `-` clears a string, path or list, and a yes/no question is asked again (up to three
+tries, then it stops and writes nothing; with `--stdin` the first invalid answer stops it). Answers are collected and written once at the end through the same atomic write as `set`, so stopping
+part-way (Ctrl-C, or the input ending) changes nothing; it refuses to run on an invalid file. It needs a terminal;
+`config init --stdin` reads one answer per line in key order instead, for scripting.
 
 `config edit` checks the file when the editor returns, so a GUI editor needs its wait flag (`VISUAL="code --wait"`); without it the check runs against the unchanged file.
 
