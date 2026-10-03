@@ -194,6 +194,7 @@ Usage: preflight config <command>
   path             Print the settings file ($PREFLIGHT_CONFIG_DIR/config.json)
   get KEY          Print a setting in the form `set` accepts (the built-in default if unset)
   set KEY VALUE    Write a setting, keeping the others; applies to this shell too
+  init [--stdin]   Walk through every setting (Enter keeps, - clears); writes once at the end
   edit             Open the file in \${VISUAL:-\${EDITOR:-vi}}, then check it
   check            Report invalid JSON, unknown keys and wrongly typed values
   help             Show this help
@@ -326,6 +327,111 @@ _pf_config_set_cmd() {
   echo "✅ $1 set in $_pf_cfg_written"
 }
 
+# One line of help per key for `preflight config init`. Kept beside the table rather than in it:
+# the table is also the PowerShell side's contract and carries only what both loaders need.
+# tests/config.sh checks that every key has a prompt.
+_pf_config_prompt_text() {
+  case "$1" in
+    op.account)          echo "1Password account: your sign-in address (my-team.1password.com) under WSL/desktop integration, or an 'op account add' shorthand" ;;
+    projects.dirs)       echo "Directories the 'proj' command searches, separated by ':' (for example ~/dev:~/src)" ;;
+    aws.default_profile) echo "AWS profile 'preflight' exports as AWS_PROFILE at session start${_pf_init_profiles:+ (available: $_pf_init_profiles)}; - for none" ;;
+    git.main_branch)     echo "Branch the git helpers treat as the trunk (main, master, ...)" ;;
+    gitea.username)      echo "Gitea user name, for the HTTPS credential stored when GITEA_TOKEN is loaded; - for none" ;;
+    gitea.host)          echo "Gitea host name (for example git.example.com); - for none" ;;
+    checks.aws)          echo "Run the AWS session check in 'preflight'? (yes/no)" ;;
+    checks.gh)           echo "Run the GitHub CLI auth check in 'preflight'? (yes/no)" ;;
+    checks.ssh)          echo "Run the SSH agent check in 'preflight'? (yes/no)" ;;
+    checks.git_config)   echo "Run the global git configuration check in 'preflight'? (yes/no)" ;;
+    owl.omp_config)      echo "Oh My Posh JSON that 'owl-theme' patches; - turns Oh My Posh integration off" ;;
+    *)                   echo "$1" ;;
+  esac
+}
+
+# Walk through every setting: show what it is now, take a new value or keep the old one, and write
+# all the changes in one atomic step at the end. Nothing is written if you stop part-way (Ctrl-C,
+# or the input ending), and a bad answer to a yes/no question is asked again.
+#   Enter  keep the current value      -  clear it (strings, paths and lists; not yes/no)
+# With --stdin the answers are read from standard input, one per line in key order, for scripting.
+_pf_config_init() {
+  local from_stdin=0 k var type exp def cur reply new tries changed=0 total=0
+  case "${1:-}" in
+    "") ;;
+    --stdin) from_stdin=1 ;;
+    *) echo "Usage: preflight config init [--stdin]" >&2; return 1 ;;
+  esac
+  command -v jq >/dev/null 2>&1 || { echo "preflight config: jq is required" >&2; return 1; }
+  if [[ $from_stdin -eq 0 && ! -t 0 ]]; then
+    echo "preflight config init asks questions, so it needs a terminal (or --stdin to read answers from a pipe)." >&2
+    return 1
+  fi
+  _pf_config_file || return 1
+  if [[ -f "$_pf_cfg_file" ]] && ! jq -e . "$_pf_cfg_file" >/dev/null 2>&1; then
+    echo "preflight config: $_pf_cfg_file is not valid JSON; fix it (preflight config edit) first." >&2
+    return 1
+  fi
+
+  _pf_init_profiles=""
+  if command -v aws >/dev/null 2>&1; then
+    _pf_init_profiles=$(aws configure list-profiles 2>/dev/null | tr '\n' ' ')
+    _pf_init_profiles="${_pf_init_profiles% }"
+    _pf_init_profiles="${_pf_init_profiles// /, }"
+  fi
+
+  echo "Settings: $_pf_cfg_file" >&2
+  echo "Enter keeps the current value; - clears it. Nothing is written until the end." >&2
+  echo "" >&2
+
+  # Collect KEY VALUE pairs in this function's positional parameters (portable to zsh).
+  set --
+  while IFS='|' read -r -u 3 k var type exp def; do
+    [[ -n "$k" ]] || continue
+    total=$((total + 1))
+    _pf_config_value "$k" || return 1
+    cur="$_pf_cfg_val"
+    echo "$k: $(_pf_config_prompt_text "$k")" >&2
+    tries=0
+    while :; do
+      if ! _pf_ask reply "  [${cur:-(empty)}] > "; then
+        echo "" >&2
+        echo "Input ended: no changes were written." >&2
+        return 1
+      fi
+      reply="${reply#"${reply%%[![:space:]]*}"}"; reply="${reply%"${reply##*[![:space:]]}"}"
+      new="$reply"
+      if [[ -z "$reply" ]]; then new="$cur"; break; fi
+      if [[ "$type" == b ]]; then
+        case "$(printf '%s' "$reply" | tr '[:upper:]' '[:lower:]')" in
+          y|yes|true|1|on)  new=true; break ;;
+          n|no|false|0|off) new=false; break ;;
+          *) tries=$((tries + 1))
+             if [[ $from_stdin -eq 1 || $tries -ge 3 ]]; then
+               echo "preflight config: '$reply' is not yes or no for $k. No changes were written." >&2
+               return 1
+             fi
+             echo "  Please answer yes or no." >&2 ;;
+        esac
+      elif [[ "$reply" == "-" ]]; then
+        new=""; break
+      else
+        break
+      fi
+    done
+    if [[ "$new" != "$cur" ]]; then
+      set -- "$@" "$k" "$new"
+      changed=$((changed + 1))
+    fi
+  done 3<<< "$_PF_CONFIG_TABLE"
+
+  echo "" >&2
+  if [[ $changed -eq 0 ]]; then
+    echo "No changes ($total settings kept)."
+    return 0
+  fi
+  _pf_config_write_many "$@" || return 1
+  echo "✅ $changed of $total settings changed in $_pf_cfg_written"
+  _pf_config_check >/dev/null || echo "⚠️  preflight config check reports problems; run it for details." >&2
+}
+
 # The current value of KEY in the form `set` accepts, in _pf_cfg_val: strings as written, booleans as
 # true/false, the list ':'-joined with its entries unexpanded. A key the file does not set gives its
 # built-in default. "=" marks a key that is present (a false or empty value is a value). Only a
@@ -362,6 +468,7 @@ _pf_config_cmd() {
       _pf_config_value "$2" || return 1
       printf '%s\n' "$_pf_cfg_val" ;;
     set)    _pf_config_set_cmd "${@:2}" ;;
+    init)   _pf_config_init "${@:2}" ;;
     edit)
       _pf_config_file || return 1
       [[ -f "$_pf_cfg_file" ]] || { echo "preflight config: $_pf_cfg_file does not exist" >&2; return 1; }
