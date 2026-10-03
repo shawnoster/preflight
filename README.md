@@ -69,7 +69,9 @@ Pulls the latest changes from the upstream repo, shows incoming commits, and war
 >
 > ```bash
 > mv ~/.config/preflight ~/.preflight
-> sed -i 's|\.config/preflight/init\.sh|.preflight/init.sh|' ~/.bashrc ~/.zshrc 2>/dev/null   # whichever rc file has the source line
+> # -i.bak works with both GNU and BSD/macOS sed; whichever rc file has the source line is edited
+> sed -i.bak 's|\.config/preflight/init\.sh|.preflight/init.sh|' ~/.bashrc ~/.zshrc 2>/dev/null
+> rm -f ~/.bashrc.bak ~/.zshrc.bak
 > ```
 >
 > Or keep the clone where it is and point the config elsewhere, setting `PREFLIGHT_CONFIG_DIR=~/.config/preflight-data` and `PREFLIGHT_STATE_DIR=~/.local/state/preflight-data` before the `source` line, and moving the files there instead.
