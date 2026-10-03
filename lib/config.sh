@@ -192,7 +192,7 @@ _pf_config_help() {
 Usage: preflight config <command>
 
   path             Print the settings file ($PREFLIGHT_CONFIG_DIR/config.json)
-  get KEY          Print a setting (the built-in default if the file does not set it)
+  get KEY          Print a setting in the form `set` accepts (the built-in default if unset)
   set KEY VALUE    Write a setting, keeping the others; applies to this shell too
   edit             Open the file in \${VISUAL:-\${EDITOR:-vi}}, then check it
   check            Report invalid JSON, unknown keys and wrongly typed values
@@ -252,7 +252,20 @@ _pf_config_set_cmd() {
   fi
   command -v jq >/dev/null 2>&1 || { echo "preflight config: jq is required" >&2; return 1; }
   _pf_config_file || return 1
-  file="$_pf_cfg_file"; dir="${file%/*}"
+  file="$_pf_cfg_file"
+  # A config.json that is a symlink (kept in a dotfiles repo) is edited in place at its
+  # target: renaming a temp file over the link would replace the link with a plain file.
+  # Follow it by hand; `readlink -f` is not portable to macOS.
+  local hops=0 link
+  while [[ -L "$file" && $hops -lt 20 ]]; do
+    link=$(readlink "$file")
+    case "$link" in
+      /*) file="$link" ;;
+      *)  file="${file%/*}/$link" ;;
+    esac
+    hops=$((hops + 1))
+  done
+  dir="${file%/*}"
   mkdir -p "$dir" || return 1
 
   base='{"version":1}'
@@ -297,13 +310,19 @@ _pf_config_cmd() {
       [[ -n "${2:-}" ]] || { echo "Usage: preflight config get KEY" >&2; return 1; }
       _pf_config_row "$2" || { echo "preflight config: unknown key '$2'" >&2; return 1; }
       _pf_config_file || return 1
+      # Print the value in the form `set` accepts: strings as written, booleans as
+      # true/false, the list ':'-joined with its entries unexpanded. "=" marks a key that is
+      # present (a false or empty value is a value); anything else falls back to the default.
       local got=""
       if [[ -f "$_pf_cfg_file" ]] && command -v jq >/dev/null 2>&1; then
-        got=$(jq -r --arg key "$2" 'getpath($key | split(".")) // empty
-                | if type == "array" then join(" ") else tostring end' "$_pf_cfg_file" 2>/dev/null)
+        got=$(jq -r --arg key "$2" 'getpath($key | split(".")) as $v
+                | if $v == null then "-" else "=" + ($v | if type == "array" then join(":") else tostring end) end' \
+                "$_pf_cfg_file" 2>/dev/null)
       fi
-      if [[ -n "$got" ]] || { [[ -f "$_pf_cfg_file" ]] && jq -e --arg key "$2" 'getpath($key | split(".")) != null' "$_pf_cfg_file" >/dev/null 2>&1; }; then
-        printf '%s\n' "$got"
+      if [[ "$got" == "="* ]]; then
+        printf '%s\n' "${got#=}"
+      elif [[ "$_pf_row_type" == b ]]; then
+        [[ "$_pf_row_def" == 1 ]] && echo true || echo false
       else
         printf '%s\n' "$_pf_row_def"
       fi ;;

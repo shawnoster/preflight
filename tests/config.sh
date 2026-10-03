@@ -143,8 +143,18 @@ chk "a fresh shell picks up the edited file" '[[ "$fresh_shell" == v2 ]]'
 reset; cp "$R/defaults/config.company.json" "$CFG"; _pf_config_load
 chk "config path"                           '[[ "$(_pf_config_cmd path)" == "$CFG" ]]'
 chk "config get string"                     '[[ "$(_pf_config_cmd get aws.default_profile)" == my-dev-profile ]]'
-chk "config get list"                       '[[ "$(_pf_config_cmd get projects.dirs)" == "~/projects ~/work ~/src" ]]'
+chk "config get list"                       '[[ "$(_pf_config_cmd get projects.dirs)" == "~/projects:~/work:~/src" ]]'
 chk "config get falls back to the default"  'jq "del(.git)" "$CFG" > "$T/x" && mv "$T/x" "$CFG"; [[ "$(_pf_config_cmd get git.main_branch)" == main ]]'
+# get prints what set accepts, including false, empty strings and lists.
+put '{"version":1,"checks":{"aws":false,"gh":true},"gitea":{"host":""},"projects":{"dirs":["~/a","~/b"]}}'
+chk "get prints false for a false boolean"  '[[ "$(_pf_config_cmd get checks.aws)" == false ]]'
+chk "get prints true for a true boolean"    '[[ "$(_pf_config_cmd get checks.gh)" == true ]]'
+chk "get prints an empty string value as empty (not the default)" 'put "{\"git\":{\"main_branch\":\"\"}}"; [[ -z "$(_pf_config_cmd get git.main_branch)" ]]'
+put '{"version":1,"checks":{"aws":false},"projects":{"dirs":["~/a","~/b"]}}'
+chk "get prints a list ':'-joined, entries unexpanded" '[[ "$(_pf_config_cmd get projects.dirs)" == "~/a:~/b" ]]'
+chk "get output round-trips through set"    'v=$(_pf_config_cmd get projects.dirs); _pf_config_cmd set projects.dirs "$v" >/dev/null; [[ "$(jq -c .projects.dirs "$CFG")" == "[\"~/a\",\"~/b\"]" ]]'
+chk "get of an absent bool falls back to the default as true/false" 'put "{}"; [[ "$(_pf_config_cmd get checks.ssh)" == true ]]'
+cp "$R/defaults/config.company.json" "$CFG"
 chk "config get unknown key fails"          '! _pf_config_cmd get nope.key 2>/dev/null'
 
 reset; cp "$R/defaults/config.company.json" "$CFG"; _pf_config_load
@@ -176,6 +186,17 @@ out=$(_pf_config_cmd set op.account other 2>&1)
 chk "set warns when your own variable keeps winning" '[[ "$out" == *"keeps the \$OP_ACCOUNT you set"* && "$OP_ACCOUNT" == mine ]]'
 chk "set does not warn for a loader-set variable"    'reset; out=$(_pf_config_cmd set git.main_branch z 2>&1); [[ "$out" != *"Note:"* ]]'
 unset OP_ACCOUNT
+
+# A symlinked config.json is edited at its target; the link stays a link.
+reset; mkdir -p "$T/dotfiles"; cp "$R/defaults/config.company.json" "$T/dotfiles/config.json"
+rm -f "$CFG"; ln -s "$T/dotfiles/config.json" "$CFG"
+_pf_config_cmd set git.main_branch viasymlink >/dev/null
+chk "set through a symlink keeps the link"      '[[ -L "$CFG" ]]'
+chk "set through a symlink writes the target"   '[[ "$(jq -r .git.main_branch "$T/dotfiles/config.json")" == viasymlink ]]'
+rm -f "$CFG"; ln -s "../dotfiles/config.json" "$CFG"
+chk "a relative symlink is followed too"        '_pf_config_cmd set git.main_branch rel >/dev/null 2>&1; [[ -L "$CFG" && "$(jq -r .git.main_branch "$T/dotfiles/config.json")" == rel ]]'
+chk "set through a symlink leaves no temp files" '[[ -z "$(find "$T/dotfiles" -name ".config.*")" ]]'
+rm -f "$CFG"
 
 # check
 put '{"$schema":"x","version":1,"op":{"account":"a","typo":"b"},"checks":{"aws":"yes"},"projcts":{"dirs":[]}}'

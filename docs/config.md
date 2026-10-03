@@ -10,7 +10,7 @@ is created on first load from a profile in `defaults/` (`config.general.json` or
 
 ```bash
 preflight config path                          # where the file is
-preflight config get op.account
+preflight config get op.account                 # booleans as true/false, the list ":"-joined, as `set` takes them
 preflight config set op.account my-team.1password.com
 preflight config set checks.aws false          # a JSON boolean
 preflight config set projects.dirs "~/dev:~/src"   # a JSON array
@@ -18,8 +18,8 @@ preflight config edit                          # ${VISUAL:-${EDITOR:-vi}}, then 
 preflight config check                         # invalid JSON, unknown keys, wrongly typed values
 ```
 
-`set` writes through `jq` to a temporary file in the same directory and renames it into place, so an interrupted
-write never leaves a half-written file. It refuses an unknown key, a bad boolean, and a file that is not valid JSON
+`get` prints a value in the form `set` accepts, so `set KEY "$(get KEY)"` is a no-op. `set` writes through `jq` to a temporary file in the same directory and renames it into place, so an interrupted
+write never leaves a half-written file. If `config.json` is a symlink (a dotfiles repo), the target is edited and the link stays. It refuses an unknown key, a bad boolean, and a file that is not valid JSON
 (fix it with `config edit` first). It applies the change to the current shell as well, unless you set that variable yourself, in which case it says so.
 
 `config edit` checks the file when the editor returns, so a GUI editor needs its wait flag (`VISUAL="code --wait"`); without it the check runs against the unchanged file.
