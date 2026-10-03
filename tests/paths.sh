@@ -52,10 +52,28 @@ chk "state override beats XDG" '[[ "$PREFLIGHT_STATE_DIR" == "$T/os" ]]'
 # ── code and data never share a directory ─────────────────────────────────────
 fresh; export PREFLIGHT_CONFIG_DIR="$T/pf/"
 out=$(_pf_resolve_dirs 2>&1); rc=$?
-chk "config dir == PREFLIGHT_DIR is refused" '[[ $rc -ne 0 && "$out" == *"also the config or state directory"* ]]'
+chk "config dir == PREFLIGHT_DIR is refused" '[[ $rc -ne 0 && "$out" == *"is the install directory"* ]]'
 fresh; export PREFLIGHT_STATE_DIR="$T/pf"
 out=$(_pf_resolve_dirs 2>&1); rc=$?
 chk "state dir == PREFLIGHT_DIR is refused" '[[ $rc -ne 0 ]]'
+
+# Aliases and nested paths are the same problem.
+fresh; mkdir -p "$PREFLIGHT_DIR/sub"; ln -s "$PREFLIGHT_DIR" "$T/alias"
+for spelling in "$T/pf/." "$T/pf/sub/.." "$T/alias" "$T/pf/config" "$T/alias/sub" "$T/pf/not/yet/created"; do
+  fresh; mkdir -p "$PREFLIGHT_DIR/sub"; ln -s "$PREFLIGHT_DIR" "$T/alias"
+  export PREFLIGHT_CONFIG_DIR="$spelling"
+  out=$(_pf_resolve_dirs 2>&1); rc=$?
+  chk "config dir '${spelling#$T/}' is refused" '[[ $rc -ne 0 ]]'
+  unset PREFLIGHT_CONFIG_DIR
+  export PREFLIGHT_STATE_DIR="$spelling"
+  out=$(_pf_resolve_dirs 2>&1); rc=$?
+  chk "state dir '${spelling#$T/}' is refused" '[[ $rc -ne 0 ]]'
+done
+fresh; mkdir -p "$T/pf-sibling"; ln -s "$T/pf" "$T/alias2"
+export PREFLIGHT_CONFIG_DIR="$T/pf-sibling"
+chk "a sibling that merely shares a prefix is allowed" '_pf_resolve_dirs'
+fresh; export PREFLIGHT_DIR="$T/alias2"; export PREFLIGHT_CONFIG_DIR="$T/pf/config"
+chk "PREFLIGHT_DIR given as a symlink is compared by real path" '! _pf_resolve_dirs 2>/dev/null'
 
 # ── rm guard ──────────────────────────────────────────────────────────────────
 fresh
@@ -64,6 +82,11 @@ for bad in "" "/" "$HOME" "$HOME/" "$HOME/.config" "$HOME/.local/state" "$HOME/.
 done
 export XDG_CONFIG_HOME="$T/xc"
 chk "guard refuses a custom XDG_CONFIG_HOME itself" '! _pf_safe_rm_dir "$T/xc" 2>/dev/null'
+unset XDG_CONFIG_HOME; mkdir -p "$HOME/x"; ln -s "$HOME" "$T/homelink"
+for bad in "$HOME/." "$HOME/x/.." "$T/homelink" "$HOME/.config/." "$HOME/./.cache"; do
+  chk "guard refuses the alias '${bad#$T/}'" '! _pf_safe_rm_dir "$bad" 2>/dev/null'
+done
+export XDG_CONFIG_HOME="$T/xc"
 chk "guard allows a preflight subdirectory" '_pf_safe_rm_dir "$T/xc/preflight"'
 
 # ── first run (init.sh sourced non-interactively) ─────────────────────────────
@@ -83,7 +106,7 @@ chk "second run keeps an edited accounts.sh" '[[ "$(cat "$HOME/.config/preflight
 # init.sh refuses a config dir that is the clone, and creates nothing there.
 fresh; export PREFLIGHT_CONFIG_DIR="$PREFLIGHT_DIR"
 out=$(source "$PREFLIGHT_DIR/init.sh" 2>&1 </dev/null); rc=$?
-chk "init.sh stops on a shared config dir" '[[ $rc -ne 0 && "$out" == *"also the config or state directory"* && ! -e "$PREFLIGHT_DIR/accounts.sh" ]]'
+chk "init.sh stops on a shared config dir" '[[ $rc -ne 0 && "$out" == *"is the install directory"* && ! -e "$PREFLIGHT_DIR/accounts.sh" ]]'
 
 # ── uninstall ─────────────────────────────────────────────────────────────────
 # Run in a subshell: uninstall unsets preflight's own functions.
