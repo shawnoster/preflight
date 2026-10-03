@@ -20,6 +20,7 @@
         'Connect-Op'
         'Import-OpEnv'
         'Clear-OpEnv'
+        'Invoke-OpEnv'
         'New-OpItem'
         'Import-OpCsv'
         'Get-PreflightHelp'
@@ -57,8 +58,7 @@
     AliasesToExport   = @(
         'op-status'
         'op-signin'
-        'op-load-env'
-        'op-clear-env'
+        'op-env'
         'op-new'
         'op-import-csv'
         'op-help'

@@ -161,12 +161,19 @@ function Connect-Op {
 # ---- Import-OpEnv ----------------------------------------------------------
 # The secret map (env var -> op:// reference, with an optional account per entry) comes from the
 # env sets in $env:PREFLIGHT_CONFIG_DIR\envsets (lib/02-envsets.ps1), the same files the bash
-# `op-env` reads. Add, remove or change secrets by editing a set.
+# `op-env` reads. Add, remove or change secrets with `op-env add` / `rm` (or by editing a set).
 
-# Names Import-OpEnv actually exported this session. Clear-OpEnv clears these as well as the
-# current sets' names, so a secret whose set was later removed or deactivated is still cleared
-# (the same job as _OP_LOADED_VARS in the bash loader).
-$script:OpLoadedVars = [System.Collections.Generic.HashSet[string]]::new()
+# What Import-OpEnv manages this session, and which set supplied each variable: the same two jobs as
+# _OP_LOADED_VARS and _OP_LOADED_SRC in the bash loader. Clear-OpEnv clears these as well as the current
+# sets' names, so a secret whose set was later removed or deactivated is still cleared, and
+# `op-env clear <set>` unsets only what that set supplied. $global:, not $script:, so they survive
+# `Import-Module -Force` (Update-Preflight does that): a script-scoped copy would forget what is loaded.
+if (-not (Test-Path -LiteralPath 'variable:global:OpLoadedVars')) {
+    $global:OpLoadedVars = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
+}
+if (-not (Test-Path -LiteralPath 'variable:global:OpLoadedSrc')) {
+    $global:OpLoadedSrc = [System.Collections.Generic.Dictionary[string, string]]::new([System.StringComparer]::Ordinal)
+}
 
 function Get-OpEnvMap {
     <#
@@ -218,7 +225,6 @@ function Import-OpEnvGroup {
             $value = (@(& op read --account $Account $entry.Ref 2>$null) -join "`n")
             if ($LASTEXITCODE -eq 0 -and $value) {
                 Set-Item -Path "env:$($entry.Name)" -Value $value
-                [void]$script:OpLoadedVars.Add($entry.Name)
                 Write-Host "✅ $($entry.Name)$via"
             } else {
                 Write-Host "⚠️  $($entry.Name) (failed to load$(if ($Label) { ", via $Label" }))"
@@ -235,7 +241,6 @@ function Import-OpEnvGroup {
             $value = try { [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($encoded)) } catch { '' }
             if ($value) {
                 Set-Item -Path "env:$key" -Value $value
-                [void]$script:OpLoadedVars.Add($key)
                 Write-Host "✅ $key$via"
                 continue
             }
@@ -247,10 +252,15 @@ function Import-OpEnvGroup {
 function Import-OpEnv {
     <#
     .SYNOPSIS
-        Load secrets from 1Password into environment variables.
+        Load secrets from 1Password into environment variables (`op-env load`).
     .DESCRIPTION
         Resolves every op:// reference in the active env sets by handing a temporary env-file to
         `op run`, then exports each value as $env:VAR in the current shell.
+
+        With no -Set this is authoritative: a variable an earlier load set that is no longer defined, or
+        whose set is no longer active, is unset. With -Set it loads just those sets, in the order given,
+        whether or not they are active; it adds to what is already loaded and unsets nothing. A name that
+        is not a set stops it before anything is signed in or changed.
 
         An entry may name its own 1Password account (an optional third column in the set file;
         otherwise the default account is used). `op` resolves a reference against exactly one
@@ -258,26 +268,58 @@ function Import-OpEnv {
         account is signed in up front: a sign-in failure stops before any variable is set, rather
         than leaving a half-loaded environment.
 
-        Falls back to per-secret `op read` if `op run` fails. Mirrors the bash op-load-env.
+        Falls back to per-secret `op read` if `op run` fails. Mirrors the bash `op-env load`.
 
         GitHub auth is intentionally NOT loaded here. `gh` manages its own
         token at ~/.config/gh/hosts.yml; loading GITHUB_TOKEN here would
         shadow it with a narrower-scoped PAT. This matches the bash side.
     .PARAMETER Account
         The default 1Password account, for entries that name none. Defaults to $env:OP_ACCOUNT.
+    .PARAMETER Set
+        Load only these sets (additive, even if a set is not active).
     .EXAMPLE
         Import-OpEnv
     .EXAMPLE
-        Import-OpEnv -Account my-team.1password.com
+        Import-OpEnv -Set work personal
     #>
     [CmdletBinding()]
     param(
-        [string]$Account = (Get-OpAccount)
+        [string]$Account = (Get-OpAccount),
+        [string[]]$Set
     )
 
-    $entries = @(Get-PreflightEnvEntry)
+    $subset = $PSBoundParameters.ContainsKey('Set') -and @($Set).Count -gt 0
+
+    if ($subset) {
+        # Before anything is touched or signed in.
+        $problem = Test-PreflightEnvSet -Set $Set
+        if ($problem) { Write-Error $problem; return }
+        foreach ($note in @(Get-PreflightEnvInactiveNote -Set $Set)) { Write-Host "ℹ️  $note" }
+        $entries = @(Get-PreflightEnvEntry -Set $Set)
+    } else {
+        $entries = @(Get-PreflightEnvEntry)
+    }
+
+    # Anything a previous load set that the sets no longer define is stale: unset it so a removed or
+    # deactivated secret cannot outlive its definition. Only a plain load is authoritative; with named
+    # sets the other sets' variables are not stale, they are just not part of this call. Safe before
+    # signing in: it depends only on the definitions.
+    if (-not $subset) {
+        $current = [System.Collections.Generic.HashSet[string]]::new([string[]]@($entries | ForEach-Object { $_.Name }), [System.StringComparer]::Ordinal)
+        foreach ($stale in @($global:OpLoadedVars)) {
+            if (-not $current.Contains($stale)) {
+                Remove-Item -LiteralPath "env:$stale" -ErrorAction SilentlyContinue
+            }
+        }
+    }
+
     if ($entries.Count -eq 0) {
-        Write-Verbose "Import-OpEnv: no secrets configured — nothing to load (add VAR<TAB>op://ref lines to a set in $(Join-Path $env:PREFLIGHT_CONFIG_DIR 'envsets'))."
+        if ($subset) {
+            Write-Host "ℹ️  No secrets in: $($Set -join ' ')"
+        } else {
+            $global:OpLoadedVars.Clear(); $global:OpLoadedSrc.Clear()
+            Write-Verbose "Import-OpEnv: no secrets configured — nothing to load (add one with: op-env add)."
+        }
         return
     }
 
@@ -298,6 +340,14 @@ function Import-OpEnv {
         }
     }
 
+    # Only now record what this load manages. If a sign-in failed above, the memory stays as it was, so
+    # Clear-OpEnv still knows what is in the environment. A plain load replaces it; a named load adds to
+    # it and re-points whatever it just reloaded at the set that supplied it.
+    $sources = if ($subset) { @(Get-PreflightEnvSource -Set $Set) } else { @(Get-PreflightEnvSource) }
+    if (-not $subset) { $global:OpLoadedVars.Clear(); $global:OpLoadedSrc.Clear() }
+    foreach ($e in $entries) { [void]$global:OpLoadedVars.Add($e.Name) }
+    foreach ($src in $sources) { $global:OpLoadedSrc[$src.Name] = $src.Set }
+
     # Header — skipped when called from Invoke-Preflight, which prints its own.
     if (-not $env:_PREFLIGHT_NESTED) {
         Write-Host "--- Secrets ---"
@@ -309,35 +359,50 @@ function Import-OpEnv {
     }
 }
 
-# ---- Clear-OpEnv -----------------------------------------------------------
-
 function Clear-OpEnv {
     <#
     .SYNOPSIS
-        Clear sensitive environment variables loaded by Import-OpEnv.
+        Clear sensitive environment variables loaded by Import-OpEnv (`op-env clear`).
     .DESCRIPTION
-        Removes every var Import-OpEnv exported this session, plus the names in the active env
-        sets (matching bash op-clear-env). A variable you set by hand under another name is left
-        alone.
+        With no -Set, removes every var Import-OpEnv exported this session, plus the names in the active
+        env sets. With -Set, removes only what those sets supplied (a variable two sets define belongs
+        to the first, and one you set by hand and never loaded is left alone); everything else stays
+        loaded and remembered. A variable you set by hand under another name is left alone either way.
+    .PARAMETER Set
+        Clear only the variables these sets supplied.
     .EXAMPLE
         Clear-OpEnv
+    .EXAMPLE
+        Clear-OpEnv -Set work
     #>
     [CmdletBinding()]
-    param()
+    param([string[]]$Set)
 
-    $allVars = @((Get-OpEnvMap).Keys) + @($script:OpLoadedVars) | Sort-Object -Unique
+    if ($PSBoundParameters.ContainsKey('Set') -and @($Set).Count -gt 0) {
+        $problem = Test-PreflightEnvSet -Set $Set
+        if ($problem) { Write-Error $problem; return }
+        $gone = @($global:OpLoadedSrc.Keys | Where-Object { $Set -ccontains $global:OpLoadedSrc[$_] })
+        foreach ($name in $gone) {
+            Remove-Item -LiteralPath "env:$name" -ErrorAction SilentlyContinue
+            [void]$global:OpLoadedVars.Remove($name)
+            [void]$global:OpLoadedSrc.Remove($name)
+        }
+        Write-Host "🧹 Cleared the variables of: $($Set -join ' ')"
+        return
+    }
+
+    $allVars = @((Get-OpEnvMap).Keys) + @($global:OpLoadedVars) | Sort-Object -Unique
 
     foreach ($var in $allVars) {
         if (Test-Path -LiteralPath "env:$var") {
             Remove-Item -LiteralPath "env:$var"
         }
     }
-    $script:OpLoadedVars.Clear()
+    $global:OpLoadedVars.Clear()
+    $global:OpLoadedSrc.Clear()
 
     Write-Host "🧹 Secure environment variables cleared."
 }
-
-# ---- New-OpItem ------------------------------------------------------------
 
 function New-OpItem {
     <#
@@ -806,7 +871,6 @@ function Import-OpCsv {
 
 Set-Alias -Name 'op-status'     -Value Get-OpStatus      -Force -Scope Script
 Set-Alias -Name 'op-signin'     -Value Connect-Op        -Force -Scope Script
-Set-Alias -Name 'op-load-env'   -Value Import-OpEnv      -Force -Scope Script
-Set-Alias -Name 'op-clear-env'  -Value Clear-OpEnv       -Force -Scope Script
+Set-Alias -Name 'op-env'        -Value Invoke-OpEnv      -Force -Scope Script
 Set-Alias -Name 'op-new'        -Value New-OpItem        -Force -Scope Script
 Set-Alias -Name 'op-import-csv' -Value Import-OpCsv      -Force -Scope Script
