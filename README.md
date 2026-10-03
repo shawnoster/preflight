@@ -51,7 +51,6 @@ preflight update
 
 Pulls the latest changes from the upstream repo, shows incoming commits, and warns if any tracked files have local modifications. Your config, env sets and state live outside the clone (`~/.config/preflight`, `~/.local/state/preflight`), so an update never touches them.
 
-
 After updating, reload your shell:
 
 ```bash
