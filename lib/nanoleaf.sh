@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ~/.preflight/lib/nanoleaf.sh - Nanoleaf token hand-off for the bin/nanoleaf-* scripts
 #
-# Hooks into op-load-env (lib/onepassword.sh) so the generic loader stays free of
+# Hooks into op-env load (lib/onepassword.sh) so the generic loader stays free of
 # secret-specific logic. Nothing happens unless NANOLEAF_TOKEN is in the
 # environment, i.e. an active env set maps it to an op:// reference.
 #
@@ -38,7 +38,7 @@ _op_sync_nanoleaf_env() {
   return 1
 }
 
-# Run after every op-load-env (registered once, even if this file is re-sourced).
+# Run after every op-env load (registered once, even if this file is re-sourced).
 case " ${_OP_AFTER_LOAD_HOOKS[*]:-} " in
   *" _op_sync_nanoleaf_env "*) ;;
   *) _OP_AFTER_LOAD_HOOKS+=(_op_sync_nanoleaf_env) ;;

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tests/op-env.sh - env sets + op-load-env, against a fake `op` in a scratch dir.
+# tests/op-env.sh - env sets + op-env load, against a fake `op` in a scratch dir.
 #
 #   tests/op-env.sh            run under bash, and under zsh if it is installed
 #
@@ -115,25 +115,25 @@ cp "$R"/lib/*.sh "$PREFLIGHT_DIR/lib/" 2>/dev/null
 load_libs
 
 # ── empty ─────────────────────────────────────────────────────────────────────
-out=$(op-load-env 2>&1); rc=$?
+out=$(op-env load 2>&1); rc=$?
 chk "empty load: rc 0 and hint" '[[ $rc -eq 0 && "$out" == *"op-env add"* ]]'
-out=$(FAKE_OP_SIGNED_OUT=1 op-load-env 2>&1); rc=$?
+out=$(FAKE_OP_SIGNED_OUT=1 op-env load 2>&1); rc=$?
 chk "empty load never signs in" '[[ $rc -eq 0 ]]'
 
 # ── the happy path must be the single batch call, not the fallback ─────────────
 mkdir -p "$sets"
 printf 'BATCH1\top://v/i/b1\nBATCH2\top://v/i/b2\n' > "$sets/batch.tsv"
-out=$(op-load-env 2>&1)
+out=$(op-env load 2>&1)
 chk "batch: no fallback message on success" '[[ "$out" != *"falling back"* ]]'
 chk "batch: both loaded" '[[ "$out" == *"BATCH1"* && "$out" == *"BATCH2"* ]]'
-op-clear-env >/dev/null; clean_sets
+op-env clear >/dev/null; clean_sets
 
 # ── add / list / load ─────────────────────────────────────────────────────────
 op-env add guild NPM_TOKEN 'op://Private/npmjs/credential' >/dev/null
 op-env add personal GITEA_TOKEN 'op://Private/Gitea - Personal/pat' >/dev/null
 op-env add personal NANOLEAF_TOKEN 'op://Private/nano/token' >/dev/null
 chk "list shows keys" '[[ "$(op-env list)" == *NPM_TOKEN*GITEA_TOKEN*NANOLEAF_TOKEN* ]]'
-op-load-env >/dev/null
+op-env load >/dev/null
 chk "loads a plain ref" '[[ "$NPM_TOKEN" == val-of-credential ]]'
 chk "loads a ref containing spaces" '[[ "$GITEA_TOKEN" == val-of-pat ]]'
 chk "nanoleaf hook wrote the token" 'grep -q "NANOLEAF_TOKEN=val-of-token" "$HOME/.config/nanoleaf-direct/env"'
@@ -141,54 +141,54 @@ chk "nanoleaf env file is mode 600" '[[ $(mode "$HOME/.config/nanoleaf-direct/en
 chk "set files are mode 600" '[[ $(mode "$sets/guild.tsv") == 600 ]]'
 
 # ── use / rm / stale handling ─────────────────────────────────────────────────
-op-env use guild >/dev/null; op-load-env >/dev/null
+op-env use guild >/dev/null; op-env load >/dev/null
 chk "deactivated set is unset on next load" '[[ -z "${GITEA_TOKEN:-}" && -n "${NPM_TOKEN:-}" ]]'
-op-env use guild personal >/dev/null; op-load-env >/dev/null
-op-env rm personal GITEA_TOKEN >/dev/null; op-load-env >/dev/null
+op-env use guild personal >/dev/null; op-env load >/dev/null
+op-env rm personal GITEA_TOKEN >/dev/null; op-env load >/dev/null
 chk "removed key is unset on next load" '[[ -z "${GITEA_TOKEN:-}" && -n "${NANOLEAF_TOKEN:-}" ]]'
 
 # ── broken reference -> per-secret fallback ───────────────────────────────────
 op-env add guild BAD 'op://v/broken/x' >/dev/null
-out=$(op-load-env 2>&1); rc=$?
+out=$(op-env load 2>&1); rc=$?
 chk "fallback: rc 1" '[[ $rc -eq 1 ]]'
 chk "fallback: reports the bad one" '[[ "$out" == *"BAD (failed to load)"* && "$out" == *"NPM_TOKEN"* ]]'
-op-load-env >/dev/null
+op-env load >/dev/null
 chk "fallback: the others still load" '[[ -n "${NPM_TOKEN:-}" && -z "${BAD:-}" ]]'
 op-env rm guild BAD >/dev/null
 
 # ── clear ─────────────────────────────────────────────────────────────────────
-op-clear-env >/dev/null
-chk "op-clear-env clears everything loaded" '[[ -z "${NPM_TOKEN:-}${NANOLEAF_TOKEN:-}" ]]'
-op-load-env >/dev/null; rm "$sets/guild.tsv"; op-clear-env >/dev/null
-chk "op-clear-env works after the definition is gone" '[[ -z "${NPM_TOKEN:-}" ]]'
+op-env clear >/dev/null
+chk "op-env clear clears everything loaded" '[[ -z "${NPM_TOKEN:-}${NANOLEAF_TOKEN:-}" ]]'
+op-env load >/dev/null; rm "$sets/guild.tsv"; op-env clear >/dev/null
+chk "op-env clear works after the definition is gone" '[[ -z "${NPM_TOKEN:-}" ]]'
 
 # ── failed sign-in ────────────────────────────────────────────────────────────
 # Start from a clean dir *before* creating the fixture, so KEEP_ME really loads.
 clean_sets; printf 'KEEP_ME\top://v/i/k\n' > "$sets/x.tsv"
-op-load-env >/dev/null
+op-env load >/dev/null
 chk "failed sign-in: precondition, KEEP_ME loaded" '[[ "$KEEP_ME" == val-of-k ]]'
 
 # Definition unchanged: a failed sign-in must not disturb what is still defined.
-FAKE_OP_SIGNED_OUT=1 op-load-env >/dev/null 2>&1; rc=$?
+FAKE_OP_SIGNED_OUT=1 op-env load >/dev/null 2>&1; rc=$?
 chk "failed sign-in: rc 1" '[[ $rc -ne 0 ]]'
 chk "failed sign-in: a still-defined variable stays set" '[[ "$KEEP_ME" == val-of-k ]]'
-op-clear-env >/dev/null
-chk "failed sign-in: op-clear-env then clears it" '[[ -z "${KEEP_ME:-}" ]]'
+op-env clear >/dev/null
+chk "failed sign-in: op-env clear then clears it" '[[ -z "${KEEP_ME:-}" ]]'
 
 # List changed, then sign-in fails: the new list must not be recorded as loaded
 # (nothing from it was), and the variable the old list set must still be cleared.
-clean_sets; printf 'KEEP_ME\top://v/i/k\n' > "$sets/x.tsv"; op-load-env >/dev/null
+clean_sets; printf 'KEEP_ME\top://v/i/k\n' > "$sets/x.tsv"; op-env load >/dev/null
 chk "failed sign-in: precondition, memory holds the loaded list" '[[ "$_OP_LOADED_VARS" == KEEP_ME ]]'
 printf 'OTHER\top://v/i/o\n' > "$sets/x.tsv"
-FAKE_OP_SIGNED_OUT=1 op-load-env >/dev/null 2>&1
+FAKE_OP_SIGNED_OUT=1 op-env load >/dev/null 2>&1
 chk "failed sign-in: memory not advanced to a list that never loaded" '[[ "$_OP_LOADED_VARS" == KEEP_ME && -z "${OTHER:-}" ]]'
 chk "failed sign-in: the removed variable was unset" '[[ -z "${KEEP_ME:-}" ]]'
-op-clear-env >/dev/null; clean_sets
+op-env clear >/dev/null; clean_sets
 
 # ── CRLF edits (WSL users editing from Windows) ───────────────────────────────
 printf 'CRLF_VAR\top://v/i/f\r\n' > "$sets/w.tsv"
 printf 'w\r\n' > "$sets/.active"
-op-load-env >/dev/null
+op-env load >/dev/null
 chk "CRLF .tsv and .active: value has no CR" '[[ "$CRLF_VAR" == val-of-f ]]'
 chk "CRLF: list output has no CR" '[[ "$(op-env list)" != *$'"'"'\r'"'"'* ]]'
 clean_sets
@@ -209,12 +209,12 @@ clean_sets
 
 # ── legacy OP_SECRETS + migrate ───────────────────────────────────────────────
 OP_SECRETS=($'LEGACY_A\top://v/i/a' $'bad name\top://v/i/z' $'NOREF\tnotop')
-op-load-env >/dev/null
+op-env load >/dev/null
 chk "legacy array loads, invalid entries dropped" '[[ "$LEGACY_A" == val-of-a && -z "${NOREF:-}" ]]'
 out=$(op-env migrate legacy 2>&1)
 chk "migrate wrote the valid key" 'grep -q "^LEGACY_A	op://v/i/a" "$sets/legacy.tsv"'
 chk "migrate skipped the malformed ones" '! grep -q "bad name\|NOREF" "$sets/legacy.tsv"'
-unset OP_SECRETS; op-load-env >/dev/null
+unset OP_SECRETS; op-env load >/dev/null
 chk "loads from the set once the array is gone" '[[ "$LEGACY_A" == val-of-a ]]'
 clean_sets
 
@@ -280,26 +280,28 @@ unset OP_SECRETS; clean_sets
 
 # ── upgrade: a leftover pre-rename lib/1password.sh must keep working ──────────
 # Old file: defined its own op-load-env and an OP_SECRETS array. It sorts before
-# onepassword.sh, so the new functions must win while its array is still honored.
+# onepassword.sh. The new loader (op-env load) must not use the old file's function, while
+# the array is still honored. (A leftover op-load-env is not ours to remove; it just is not called.)
 cat > "$PREFLIGHT_DIR/lib/1password.sh" <<'OLD'
 op-load-env() { echo "OLD LOADER RAN"; }
 OP_SECRETS=( $'OLD_LIST_VAR\top://v/i/old' )
 OLD
-unset -f op-load-env op-env op-clear-env; OP_SECRETS=()
+unset -f op-load-env op-clear-env op-env _op_env_load _op_env_clear; OP_SECRETS=()
 for f in "$PREFLIGHT_DIR"/lib/*.sh; do source "$f"; done
-op-load-env > "$T/out" 2>&1   # not $(...): that would load into a subshell
+op-env load > "$T/out" 2>&1   # not $(...): that would load into a subshell
 out=$(cat "$T/out")
-chk "upgrade: new loader overrides the old file's" '[[ "$out" != *"OLD LOADER RAN"* ]]'
+chk "upgrade: op-env load does not run the old file's loader" '[[ "$out" != *"OLD LOADER RAN"* ]]'
 chk "upgrade: old OP_SECRETS still loads" '[[ "$OLD_LIST_VAR" == val-of-old ]]'
 out=$(op-env migrate 2>&1)
 chk "upgrade: migrate tells the user to delete the leftover file" '[[ "$out" == *"lib/1password.sh is a leftover"* ]]'
 rm -f "$PREFLIGHT_DIR/lib/1password.sh"
+unset -f op-load-env op-clear-env   # the fixture's leftover, so the later "old names are gone" check sees only ours
 
 # ── a failed secret says why (op's own error), not just "failed to load" ───────
 # The loader used to discard op's stderr, so a wrong OP_ACCOUNT looked like a broken
 # reference: "failed to load" with nothing to go on.
 printf 'VAULTY\top://Employee/Item/credential\n' > "$sets/v.tsv"
-out=$(FAKE_OP_NOVAULT_ACCT=test op-load-env 2>&1); rc=$?
+out=$(FAKE_OP_NOVAULT_ACCT=test op-env load 2>&1); rc=$?
 chk "error detail: op's message is shown" '[[ "$out" == *"isn'"'"'t a vault in this account"* ]]'
 chk "error detail: names the account that was used" '[[ "$out" == *"account test"* ]]'
 chk "error detail: the repeated reference and item lead-in is dropped" '[[ "$out" != *"could not read secret"* && "$out" != *"could not get item"* ]]'
@@ -311,7 +313,7 @@ clean_sets
 
 # A reference that genuinely is wrong gets op's text; a good one next to it gets no detail.
 printf 'GOODONE\top://v/i/good\nBADONE\top://v/broken/x\n' > "$sets/v.tsv"
-out=$(FAKE_OP_READ_ERR='could not read secret: item not found' op-load-env 2>&1)
+out=$(FAKE_OP_READ_ERR='could not read secret: item not found' op-env load 2>&1)
 chk "error detail: a bad reference shows op's error" '[[ "$out" == *"BADONE (failed to load)"* && "$out" == *"item not found"* ]]'
 chk "error detail: a secret that loaded has no detail line" '[[ "$out" == *"GOODONE"* && "$out" != *"GOODONE (failed"* ]]'
 chk "error detail: no secret value is ever printed" '[[ "$out" != *val-of-* ]]'
@@ -319,40 +321,40 @@ clean_sets
 
 # Only the first line, with control characters stripped, and bounded in length.
 printf 'BADONE\top://v/broken/x\n' > "$sets/v.tsv"
-out=$(FAKE_OP_READ_ERR=$'first line \033[31mred\r\nSECOND LINE SHOULD NOT APPEAR' op-load-env 2>&1)
+out=$(FAKE_OP_READ_ERR=$'first line \033[31mred\r\nSECOND LINE SHOULD NOT APPEAR' op-env load 2>&1)
 chk "error detail: only the first line" '[[ "$out" == *"first line"* && "$out" != *"SECOND LINE"* ]]'
 chk "error detail: control characters removed" '[[ "$out" != *$'"'"'\033'"'"'* && "$out" != *$'"'"'\r'"'"'* ]]'
 long=$(printf 'x%.0s' $(seq 1 500))
-out=$(FAKE_OP_READ_ERR="$long" op-load-env 2>&1)
+out=$(FAKE_OP_READ_ERR="$long" op-env load 2>&1)
 longest=$(printf '%s\n' "$out" | awk '{ if (length($0) > m) m = length($0) } END { print m }')
 chk "error detail: a very long message is cut" '[[ "$longest" -lt 260 ]]'
 clean_sets
 
 # op exits 0 but prints nothing: say so instead of staying silent.
 printf 'EMPTYV\top://v/broken-emptyval/f\n' > "$sets/v.tsv"
-out=$(op-load-env 2>&1)
+out=$(op-env load 2>&1)
 chk "error detail: an empty value with exit 0 is called out" '[[ "$out" == *"EMPTYV (failed to load)"* && "$out" == *"empty value (exit 0)"* ]]'
 clean_sets
 
 # op fails and says nothing: still a line, with the exit status.
 printf 'MUTE\top://v/broken/x\n' > "$sets/v.tsv"
-out=$(op-load-env 2>&1)
+out=$(op-env load 2>&1)
 chk "error detail: a silent failure reports the exit status" '[[ "$out" == *"MUTE (failed to load)"* && "$out" == *"exited 1"* ]]'
 clean_sets
 
 # With several accounts, the detail names the account that failed, and the others load.
 printf 'HOMEV\top://v/i/home\nWORKV\top://Employee/Item/credential\twork\n' > "$sets/v.tsv"
-FAKE_OP_NOVAULT_ACCT=work op-load-env > "$T/out" 2>&1   # not $(...): that loads into a subshell
+FAKE_OP_NOVAULT_ACCT=work op-env load > "$T/out" 2>&1   # not $(...): that loads into a subshell
 out=$(cat "$T/out")
 chk "error detail: multi-account names the failing account" '[[ "$out" == *"WORKV (failed to load, via work)"* && "$out" == *"account work: "* ]]'
 chk "error detail: the healthy account still loaded" '[[ "$out" == *"HOMEV (via test)"* && "${HOMEV:-}" == val-of-home ]]'
-op-clear-env >/dev/null; clean_sets
+op-env clear >/dev/null; clean_sets
 
 # Capturing stderr must not leave files behind, and must not depend on a writable tmp.
 printf 'BADONE\top://v/broken/x\n' > "$sets/v.tsv"
-mkdir -p "$T/tmpd"; TMPDIR="$T/tmpd" FAKE_OP_READ_ERR='some error' op-load-env >/dev/null 2>&1
+mkdir -p "$T/tmpd"; TMPDIR="$T/tmpd" FAKE_OP_READ_ERR='some error' op-env load >/dev/null 2>&1
 chk "error detail: no temp files left behind" '[[ -z "$(find "$T/tmpd" -type f 2>/dev/null)" ]]'
-out=$(TMPDIR="$T/does-not-exist" FAKE_OP_READ_ERR='some error' op-load-env 2>&1); rc=$?
+out=$(TMPDIR="$T/does-not-exist" FAKE_OP_READ_ERR='some error' op-env load 2>&1); rc=$?
 chk "error detail: still reports a failure when there is no usable tmp dir" '[[ $rc -eq 1 && "$out" == *"BADONE (failed to load)"* ]]'
 clean_sets
 
@@ -477,50 +479,50 @@ unset OP_SECRETS; clean_sets
 # A stray line after a record is part of that record's value, not a new variable.
 printf 'REAL\top://v/i/r\n' > "$sets/n.tsv"
 export FAKE_OP_INJECT_EXTRA='EVIL_PATH=/tmp/evil'
-op-load-env > "$T/out" 2>&1; rc=$?
+op-env load > "$T/out" 2>&1; rc=$?
 unset FAKE_OP_INJECT_EXTRA
 chk "newline value: unrequested name not exported" '[[ -z "${EVIL_PATH:-}" && $rc -eq 0 ]]'
 want_real=$'val-of-r\nEVIL_PATH=/tmp/evil'
 chk "newline value: kept intact inside its own secret" '[[ "$REAL" == "$want_real" ]]'
-op-clear-env >/dev/null; clean_sets
+op-env clear >/dev/null; clean_sets
 
 # Copilot's case: a multi-line value forges "SAFE=..." where SAFE is ALSO a requested
 # secret. A name check alone can't tell them apart; the per-call record tag does.
 printf 'SAFE\top://v/i/safefield\nEVIL\top://v/i/evilfield\n' > "$sets/f.tsv"
-FAKE_OP_MULTILINE=evilfield op-load-env >/dev/null 2>&1
+FAKE_OP_MULTILINE=evilfield op-env load >/dev/null 2>&1
 chk "forged line cannot overwrite another requested secret" '[[ "$SAFE" == val-of-safefield ]]'
 want_evil=$'x\nSAFE=pwned'
 chk "the multi-line secret itself loads whole" '[[ "$EVIL" == "$want_evil" ]]'
 # the same, with the forging secret FIRST (order must not matter)
 printf 'EVIL\top://v/i/evilfield\nSAFE\top://v/i/safefield\n' > "$sets/f.tsv"
-FAKE_OP_MULTILINE=evilfield op-load-env >/dev/null 2>&1
+FAKE_OP_MULTILINE=evilfield op-env load >/dev/null 2>&1
 chk "forged line cannot overwrite a secret that comes later" '[[ "$SAFE" == val-of-safefield ]]'
-op-clear-env >/dev/null; clean_sets
+op-env clear >/dev/null; clean_sets
 
 # ── set -u (no OP_SECRETS, OP_BIN unset): nothing may hit an unbound variable ──
 # OP_SECRETS is unset on a fresh install, so these paths must not read it bare.
 printf 'SU\top://v/i/su\n' > "$sets/su.tsv"
 unset OP_SECRETS
 su=$( ( set -u
-        op-load-env 2>&1
+        op-env load 2>&1
         [ "${SU:-}" = val-of-su ] || echo "SU-NOT-LOADED"
-        op-env list 2>&1; op-env migrate 2>&1; op-clear-env 2>&1
+        op-env list 2>&1; op-env migrate 2>&1; op-env clear 2>&1
         OP_BIN= ; op-status 2>&1 ) 2>&1 )
 chk "set -u: no unbound-variable errors" '[[ "$su" != *"unbound variable"* && "$su" != *"parameter not set"* ]]'
-chk "set -u: op-load-env still loads from the set" '[[ "$su" != *"SU-NOT-LOADED"* && "$su" != *"No secrets configured"* ]]'
+chk "set -u: op-env load still loads from the set" '[[ "$su" != *"SU-NOT-LOADED"* && "$su" != *"No secrets configured"* ]]'
 clean_sets; OP_SECRETS=()
 
 # ── per-secret account: one set spanning two 1Password accounts ────────────────
 # `op` resolves a reference against exactly one account per call, so entries naming
-# different accounts cannot share one `op inject`. op-load-env groups by account and
+# different accounts cannot share one `op inject`. op-env load groups by account and
 # issues one batch each. A line with no third column means $OP_ACCOUNT, so the
 # two-column lines every install already has are unaffected.
-op-clear-env >/dev/null; clean_sets
+op-env clear >/dev/null; clean_sets
 export FAKE_OP_LOG="$T/oplog"
 
 printf 'DEF\top://v/i/d\nALT\top://v/i/a\twork\n' > "$sets/acct.tsv"
 : > "$FAKE_OP_LOG"
-op-load-env > "$T/out" 2>&1; rc=$?
+op-env load > "$T/out" 2>&1; rc=$?
 out=$(cat "$T/out")
 chk "two accounts: both secrets load" '[[ $rc -eq 0 && "$DEF" == val-of-d && "$ALT" == val-of-a ]]'
 chk "two accounts: one inject per account" '[[ $(grep -c "^inject " "$FAKE_OP_LOG") -eq 2 ]]'
@@ -533,7 +535,7 @@ chk "two accounts: output says where each secret came from" '[[ "$out" == *"DEF 
 # still exactly one call and its output carries no "(via ...)" decoration.
 clean_sets; printf 'ONE\top://v/i/o\n' > "$sets/one.tsv"
 : > "$FAKE_OP_LOG"
-op-load-env > "$T/out" 2>&1
+op-env load > "$T/out" 2>&1
 out=$(cat "$T/out")
 chk "one account: still a single inject" '[[ $(grep -c "^inject " "$FAKE_OP_LOG") -eq 1 ]]'
 chk "one account: output is unchanged (no account decoration)" '[[ "$out" == *"✅ ONE"* && "$out" != *"(via"* ]]'
@@ -544,14 +546,14 @@ chk "one account: output is unchanged (no account decoration)" '[[ "$out" == *"�
 clean_sets
 printf 'DEF_BAD\top://v/broken/d\nALT\top://v/i/a\twork\n' > "$sets/acct.tsv"
 : > "$FAKE_OP_LOG"
-op-load-env > "$T/out" 2>&1; rc=$?
+op-env load > "$T/out" 2>&1; rc=$?
 out=$(cat "$T/out")
 chk "one account broken: the other still loads" '[[ "$ALT" == val-of-a && -z "${DEF_BAD:-}" ]]'
 chk "one account broken: rc 1" '[[ $rc -eq 1 ]]'
 chk "one account broken: the good account still used the batch path" 'grep -qx "inject --account work" "$FAKE_OP_LOG"'
 chk "one account broken: fallback reads targeted the failing account" 'grep -qx "read --account test" "$FAKE_OP_LOG" && ! grep -qx "read --account work" "$FAKE_OP_LOG"'
 chk "one account broken: the message names the account" '[[ "$out" == *"Batch resolve failed for test"* && "$out" == *"DEF_BAD (failed to load, via test)"* ]]'
-op-clear-env >/dev/null
+op-env clear >/dev/null
 
 # An `op inject` that exits 0 while substituting an empty value is a failed batch, not
 # a secret that resolved to nothing — real op.exe does this against a second account
@@ -561,14 +563,14 @@ op-clear-env >/dev/null
 clean_sets
 printf 'SILENT\top://v/i/s\twork\nQUIET\top://v/i/q\twork\n' > "$sets/acct.tsv"
 : > "$FAKE_OP_LOG"
-FAKE_OP_SILENT_EMPTY_ACCT=work op-load-env > "$T/out" 2>&1; rc=$?
+FAKE_OP_SILENT_EMPTY_ACCT=work op-env load > "$T/out" 2>&1; rc=$?
 out=$(cat "$T/out")
 chk "silent empty batch: fell back to per-secret reads" 'grep -qx "read --account work" "$FAKE_OP_LOG"'
 chk "silent empty batch: both secrets still load" '[[ "$SILENT" == val-of-s && "$QUIET" == val-of-q ]]'
 chk "silent empty batch: rc 0 (recovered, nothing actually failed)" '[[ $rc -eq 0 ]]'
 chk "silent empty batch: says it fell back" '[[ "$out" == *"Batch resolve failed"* ]]'
 chk "silent empty batch: does not report a failure for a secret it recovered" '[[ "$out" != *"SILENT (failed to load"* && "$out" != *"QUIET (failed to load"* ]]'
-op-clear-env >/dev/null
+op-env clear >/dev/null
 
 # A malformed account column is dropped rather than passed to op as a flag value, and
 # a line with more columns than the format allows is dropped too.
@@ -579,23 +581,23 @@ chk "an over-long line is dropped" '[[ "$(_op_env_entries)" != *EXTRA* ]]'
 chk "the well-formed lines survive, account column and all" '[[ "$(_op_env_entries)" == *"GOOD"$'"'"'\t'"'"'"op://v/i/g"* && "$(_op_env_entries)" == *"NAMED"$'"'"'\t'"'"'"op://v/i/n"$'"'"'\t'"'"'"work" ]]'
 
 # Each account needs its own session on native op. If one cannot be established the
-# load must fail *before* recording anything, so op-clear-env still knows what is set.
+# load must fail *before* recording anything, so op-env clear still knows what is set.
 clean_sets
 printf 'SESS\top://v/i/s\nSESSA\top://v/i/sa\twork\n' > "$sets/acct.tsv"
-op-clear-env >/dev/null
-FAKE_OP_SIGNED_OUT_ACCT=work op-load-env >/dev/null 2>&1; rc=$?
+op-env clear >/dev/null
+FAKE_OP_SIGNED_OUT_ACCT=work op-env load >/dev/null 2>&1; rc=$?
 chk "unreachable account: rc 1" '[[ $rc -ne 0 ]]'
 chk "unreachable account: loaded-vars memory not advanced" '[[ -z "${_OP_LOADED_VARS}" && -z "${SESS:-}" ]]'
 # …and sign-in is attempted for that account, not just the default one. The account
 # stays signed out until `signin` runs (the stub flips it then), so a load that never
 # calls signin cannot pass this.
 : > "$FAKE_OP_LOG"
-FAKE_OP_SIGNED_OUT_ACCT=work FAKE_OP_SIGNIN_OK_ACCT=work op-load-env >/dev/null 2>&1; rc=$?
+FAKE_OP_SIGNED_OUT_ACCT=work FAKE_OP_SIGNIN_OK_ACCT=work op-env load >/dev/null 2>&1; rc=$?
 chk "sign-in is attempted for the named account" 'grep -qx "signin --account work" "$FAKE_OP_LOG"'
 chk "sign-in is not attempted for an account that is already signed in" '! grep -qx "signin --account test" "$FAKE_OP_LOG"'
 chk "after that sign-in the whole set loads" '[[ $rc -eq 0 && "$SESSA" == val-of-sa && "$SESS" == val-of-s ]]'
 rm -f "$T"/signed-in-*
-op-clear-env >/dev/null
+op-env clear >/dev/null
 
 # op.exe has no `signin`: op-signin unlocks via `vault list`. A second account that
 # cannot be unlocked must still fail the load before anything is exported, rather than
@@ -603,7 +605,7 @@ op-clear-env >/dev/null
 mkdir -p "$T/winbin"; cp "$OP_BIN" "$T/winbin/op.exe"
 : > "$FAKE_OP_LOG"
 ( OP_BIN="$T/winbin/op.exe" FAKE_OP_SIGNED_OUT_ACCT=work; export FAKE_OP_SIGNED_OUT_ACCT
-  op-load-env >/dev/null 2>&1; rc=$?
+  op-env load >/dev/null 2>&1; rc=$?
   echo "$rc|${SESS:-}|${SESSA:-}|${_OP_LOADED_VARS}" > "$T/exe-result" )
 IFS='|' read -r exe_rc exe_sess exe_sessa exe_memory < "$T/exe-result"
 chk "op.exe: every account is checked up front (unlock tried for the second)" 'grep -qx "vault --account work" "$FAKE_OP_LOG"'
@@ -613,7 +615,7 @@ chk "op.exe: no inject ran before the failure" '! grep -q "^inject " "$FAKE_OP_L
 unset FAKE_OP_SIGNED_OUT_ACCT FAKE_OP_SIGNIN_OK_ACCT
 
 # ── add / list / rm with an account ────────────────────────────────────────────
-clean_sets; op-clear-env >/dev/null
+clean_sets; op-env clear >/dev/null
 op-env add guild WORK_TOKEN 'op://Other/Item/credential' work >/dev/null
 chk "add writes the account as a third column" 'grep -qx "WORK_TOKEN$(printf "\t")op://Other/Item/credential$(printf "\t")work" "$sets/guild.tsv"'
 chk "list shows the account when it is not the default" '[[ "$(op-env list)" == *"WORK_TOKEN"* && "$(op-env list)" == *"[account: work]"* ]]'
@@ -628,20 +630,188 @@ out=$(op-env add guild NOPE 'op://Other/Item/c' 'bad account!' 2>&1); rc=$?
 chk "add rejects a malformed account" '[[ $rc -ne 0 && "$out" == *"Invalid account"* ]]'
 chk "a rejected add writes nothing" '! grep -q NOPE "$sets/guild.tsv"'
 chk "rm removes a key that carries an account" 'op-env rm guild WORK_TOKEN >/dev/null && ! grep -q WORK_TOKEN "$sets/guild.tsv"'
-# op-clear-env only cares about names, so the account column must not confuse it.
-op-clear-env >/dev/null
-chk "op-clear-env clears a secret defined with an account" '[[ -z "${SAME_TOKEN:-}" ]]'
+# op-env clear only cares about names, so the account column must not confuse it.
+op-env clear >/dev/null
+chk "op-env clear clears a secret defined with an account" '[[ -z "${SAME_TOKEN:-}" ]]'
 
 # Two-column lines must come out of op-env add exactly as they always did, or every
 # existing install's set files churn on the next edit.
 clean_sets
 op-env add guild PLAIN 'op://v/i/p' >/dev/null
 chk "add without an account still writes exactly the two-column line" '[[ "$(cat "$sets/guild.tsv"; echo x)" == "$(printf "PLAIN\top://v/i/p\nx")" ]]'
-unset FAKE_OP_LOG; clean_sets; op-clear-env >/dev/null
+unset FAKE_OP_LOG; clean_sets; op-env clear >/dev/null
 
 # ── hooks ─────────────────────────────────────────────────────────────────────
 source "$R/lib/nanoleaf.sh"; source "$R/lib/onepassword.sh"
 chk "after-load hook registered exactly once across re-sourcing" '[[ ${#_OP_AFTER_LOAD_HOOKS[@]} -eq 1 ]]'
+
+# ── op-env load / clear (named sets) ──────────────────────────────────────────
+# `op-env load` is op-env load; with set names it loads just those sets, adds to what is loaded,
+# unsets nothing, and works on an inactive set. A plain load stays authoritative.
+export FAKE_OP_LOG="$T/oplog"
+op-env clear >/dev/null 2>&1; clean_sets; mkdir -p "$sets"
+oplog_reset() { : > "$FAKE_OP_LOG"; }
+oplog_count() { grep -c . "$FAKE_OP_LOG" 2>/dev/null || true; }
+mkset() { local name=$1; shift; printf '%s\n' "$@" > "$sets/$name.tsv"; }
+mkset a $'A1\top://v/i/a1'
+mkset b $'B1\top://v/i/b1' $'B2\top://v/i/b2'
+
+# The plain forms: what `op-env load` and `op-env clear` print and do with no set names.
+oplog_reset
+out=$(op-env load 2>&1); rc=$?
+chk "plain load: rc 0, a line per secret with no label (single account)" '[[ $rc -eq 0 && "$out" == *"✅ A1"* && "$out" == *"✅ B1"* && "$out" == *"✅ B2"* && "$out" != *"via "* ]]'
+out=$(op-env clear 2>&1)
+chk "plain clear: the usual message" '[[ "$out" == *"Secure environment variables cleared"* && -z "${A1:-}${B1:-}${B2:-}" ]]'
+
+# A subset is additive: the other set's variables stay, and so does the memory of them.
+op-env load >/dev/null 2>&1
+chk "full load: all three set" '[[ "$A1" == val-of-a1 && "$B1" == val-of-b1 && "$B2" == val-of-b2 ]]'
+unset B1 B2
+op-env load b >/dev/null 2>&1
+chk "subset load: the named set's variables come back" '[[ "$B1" == val-of-b1 && "$B2" == val-of-b2 ]]'
+chk "subset load: the other set's variable is untouched"  '[[ "$A1" == val-of-a1 ]]'
+chk "subset load: the loaded-vars memory still lists every set" '[[ "$_OP_LOADED_VARS" == *A1* && "$_OP_LOADED_VARS" == *B1* && "$_OP_LOADED_VARS" == *B2* ]]'
+chk "subset load: names are not duplicated in the memory"       '[[ $(printf "%s\n" "$_OP_LOADED_VARS" | grep -cx B1) -eq 1 ]]'
+
+# Subset clear: only the named set's variables, and the memory keeps the rest.
+op-env clear b >/dev/null 2>&1
+chk "subset clear: the named set's variables are unset"  '[[ -z "${B1:-}${B2:-}" ]]'
+chk "subset clear: the other set stays loaded"           '[[ "$A1" == val-of-a1 ]]'
+chk "subset clear: the memory keeps only what is still loaded" '[[ "$_OP_LOADED_VARS" == A1 ]]'
+out=$(op-env clear b 2>&1)
+chk "subset clear: names the sets in its message"        '[[ "$out" == *"b"* && "$out" != *"Secure environment variables cleared"* ]]'
+op-env clear >/dev/null 2>&1
+chk "a later full clear still clears what is left"       '[[ -z "${A1:-}" && -z "$_OP_LOADED_VARS" ]]'
+
+# A subset load unsets nothing, even when other loaded variables are no longer defined.
+op-env load >/dev/null 2>&1
+rm "$sets/a.tsv"
+op-env load b >/dev/null 2>&1
+chk "subset load: a variable whose set is gone is not unset (only a full load does that)" '[[ "$A1" == val-of-a1 ]]'
+op-env load >/dev/null 2>&1
+chk "a plain load is authoritative: the same variable is unset now" '[[ -z "${A1:-}" && "$B1" == val-of-b1 ]]'
+op-env clear >/dev/null 2>&1; mkset a $'A1\top://v/i/a1'
+
+# An inactive set: naming it loads it, with a note; the next plain load unsets it again.
+printf 'a\n' > "$sets/.active"
+oplog_reset
+out=$(op-env load b 2>&1)
+op-env load b >/dev/null 2>&1
+chk "inactive set: loads when named"                  '[[ "$B1" == val-of-b1 && "$B2" == val-of-b2 ]]'
+chk "inactive set: says it is not active, and how to keep it" '[[ "$out" == *"not active"* && "$out" == *"op-env use b"* ]]'
+chk "inactive set: an active set gives no such note"  '[[ "$(op-env load a 2>&1)" != *"not active"* ]]'
+op-env load >/dev/null 2>&1
+chk "inactive set: the next plain load unsets it (documented)" '[[ -z "${B1:-}${B2:-}" && "$A1" == val-of-a1 ]]'
+op-env clear >/dev/null 2>&1; rm -f "$sets/.active"
+
+# Bad names stop before anything changes or signs in.
+op-env load >/dev/null 2>&1; before="$_OP_LOADED_VARS"; oplog_reset
+for bad in nope Bad "../x" "a b"; do
+  out=$(op-env load "$bad" 2>&1); rc=$?
+  chk "load '$bad' fails with the name in the message" '[[ $rc -ne 0 && "$out" == *"Nothing was changed"* ]]'
+done
+out=$(op-env load a nope 2>&1); rc=$?
+chk "load: one bad name among good ones loads none of them" '[[ $rc -ne 0 && "$(oplog_count)" == 0 && "$_OP_LOADED_VARS" == "$before" ]]'
+out=$(op-env clear nope 2>&1); rc=$?
+chk "clear: an unknown set fails and unsets nothing"       '[[ $rc -ne 0 && "$A1" == val-of-a1 && "$_OP_LOADED_VARS" == "$before" ]]'
+chk "bad names: no op call was made (no sign-in either)"   '[[ "$(oplog_count)" == 0 ]]'
+op-env clear >/dev/null 2>&1
+
+# A failed sign-in during a subset load leaves the memory and the environment as they were.
+op-env load a >/dev/null 2>&1; before="$_OP_LOADED_VARS"
+FAKE_OP_SIGNED_OUT=1 op-env load b >/dev/null 2>&1; rc=$?
+chk "subset load: a failed sign-in fails"               '[[ $rc -ne 0 ]]'
+chk "subset load: ...sets nothing from the set"         '[[ -z "${B1:-}${B2:-}" ]]'
+chk "subset load: ...and leaves the memory unchanged"   '[[ "$_OP_LOADED_VARS" == "$before" && "$A1" == val-of-a1 ]]'
+op-env clear >/dev/null 2>&1
+
+# A set may be called "note" (a legal name): it is validated like any other, not read as a flag.
+oplog_reset
+out=$(op-env clear note 2>&1); rc=$?
+chk "clear note (no such set): fails with the name, like any other set" '[[ $rc -ne 0 && "$out" == *"No env set"*note* ]]'
+out=$(op-env load a note 2>&1); rc=$?
+chk "load a note (no such set): fails, nothing loaded, no op call"      '[[ $rc -ne 0 && "$out" == *"No env set"*note* && "$(oplog_count)" == 0 ]]'
+mkset note $'N1\top://v/i/n1'
+op-env load note >/dev/null 2>&1
+chk "a real set called note loads by name"  '[[ "$N1" == val-of-n1 ]]'
+op-env clear note >/dev/null 2>&1
+chk "...and clears by name"                '[[ -z "${N1:-}" ]]'
+rm "$sets/note.tsv"; op-env clear >/dev/null 2>&1
+
+# Provenance: a variable two sets define belongs to the first (as the loader decides), so clearing the
+# other set does not remove it.
+mkset s1 $'SHARED\top://v/i/from-s1' $'ONLY1\top://v/i/only1'
+mkset s2 $'SHARED\top://v/i/from-s2' $'ONLY2\top://v/i/only2'
+op-env load s1 s2 >/dev/null 2>&1
+chk "shared variable: the first set named supplies it" '[[ "$SHARED" == val-of-from-s1 && "$ONLY1" == val-of-only1 && "$ONLY2" == val-of-only2 ]]'
+op-env clear s2 >/dev/null 2>&1
+chk "clear the set that lost: its own variable goes"           '[[ -z "${ONLY2:-}" ]]'
+chk "clear the set that lost: the shared variable stays"       '[[ "$SHARED" == val-of-from-s1 && "$ONLY1" == val-of-only1 ]]'
+chk "clear the set that lost: the shared one stays in the memory" '[[ "$_OP_LOADED_VARS" == *SHARED* && "$_OP_LOADED_VARS" != *ONLY2* ]]'
+op-env clear s1 >/dev/null 2>&1
+chk "clear the set that won: the shared variable goes now"     '[[ -z "${SHARED:-}${ONLY1:-}" && -z "$_OP_LOADED_VARS" ]]'
+
+# Loading the losing set by name afterwards makes it the supplier of that variable.
+op-env load s1 s2 >/dev/null 2>&1
+op-env load s2 >/dev/null 2>&1
+chk "a later named load re-points the variable at the set that just loaded it" '[[ "$SHARED" == val-of-from-s2 ]]'
+op-env clear s1 >/dev/null 2>&1
+chk "...so clearing s1 leaves it"   '[[ "$SHARED" == val-of-from-s2 && -z "${ONLY1:-}" ]]'
+op-env clear s2 >/dev/null 2>&1
+chk "...and clearing s2 removes it" '[[ -z "${SHARED:-}" ]]'
+
+# A plain load records the same provenance (first active set wins).
+op-env load >/dev/null 2>&1
+op-env clear s2 >/dev/null 2>&1
+chk "after a plain load, clearing the losing active set keeps the shared variable" '[[ "$SHARED" == val-of-from-s1 && -z "${ONLY2:-}" ]]'
+op-env clear >/dev/null 2>&1
+
+# A variable that was never loaded (exported by hand) is not cleared by naming a set that defines it.
+ONLY1=mine; export ONLY1
+op-env clear s1 >/dev/null 2>&1
+chk "clear <set> does not unset a same-named variable it never loaded" '[[ "$ONLY1" == mine ]]'
+unset ONLY1; rm "$sets/s1.tsv" "$sets/s2.tsv"
+
+# Several sets, in the order given; the first definition wins.
+mkset c $'B1\top://v/i/from-c' $'C1\top://v/i/c1'
+op-env load c b >/dev/null 2>&1
+chk "several sets: the first one named wins a clash"  '[[ "$B1" == val-of-from-c && "$B2" == val-of-b2 && "$C1" == val-of-c1 ]]'
+op-env clear c b >/dev/null 2>&1
+chk "several sets: clear takes them all"              '[[ -z "${B1:-}${B2:-}${C1:-}" ]]'
+rm "$sets/c.tsv"
+
+# The legacy OP_SECRETS array belongs to no set: only a plain load includes it.
+OP_SECRETS=( $'LEG\top://v/i/leg' )
+op-env load a >/dev/null 2>&1
+chk "legacy OP_SECRETS is not part of a named-set load" '[[ -z "${LEG:-}" && "$A1" == val-of-a1 ]]'
+op-env load >/dev/null 2>&1
+chk "legacy OP_SECRETS is still part of a plain load"   '[[ "$LEG" == val-of-leg ]]'
+op-env clear >/dev/null 2>&1; unset OP_SECRETS
+
+# An empty set: nothing to load, nothing signed in.
+: > "$sets/empty.tsv"; oplog_reset
+out=$(op-env load empty 2>&1); rc=$?
+chk "an empty set loads nothing, says so, and makes no op call" '[[ $rc -eq 0 && "$out" == *"No secrets in: empty"* && "$(oplog_count)" == 0 ]]'
+rm "$sets/empty.tsv"
+
+# After-load hooks run after a named-set load too.
+_hooks_saved=("${_OP_AFTER_LOAD_HOOKS[@]}")
+HOOK_RAN=0
+_test_hook() { HOOK_RAN=$((HOOK_RAN + 1)); }
+_OP_AFTER_LOAD_HOOKS+=(_test_hook)
+op-env load a >/dev/null 2>&1
+chk "hooks: a named-set load runs the after-load hooks" '[[ $HOOK_RAN -eq 1 ]]'
+op-env load >/dev/null 2>&1
+chk "hooks: and so does a plain load"                   '[[ $HOOK_RAN -eq 2 ]]'
+_OP_AFTER_LOAD_HOOKS=("${_hooks_saved[@]}")
+op-env clear >/dev/null 2>&1
+
+# Help, and the old names are gone: `op-env load` / `op-env clear` are the only entry points.
+chk "op-env help documents load and clear" '[[ "$(op-env help)" == *"op-env load [set...]"* && "$(op-env help)" == *"op-env clear [set...]"* ]]'
+chk "op-load-env and op-clear-env no longer exist" '! declare -f op-load-env >/dev/null 2>&1 && ! declare -f op-clear-env >/dev/null 2>&1 && ! command -v op-load-env >/dev/null 2>&1 && ! command -v op-clear-env >/dev/null 2>&1'
+chk "the implementations are internal (op-env dispatches to them)" 'declare -f _op_env_load >/dev/null && declare -f _op_env_clear >/dev/null'
+chk "op-env help does not mention the removed names" '[[ "$(op-env help)" != *"op-load-env"* && "$(op-env help)" != *"op-clear-env"* ]]'
+clean_sets; unset FAKE_OP_LOG
 
 # ── shared fixture ────────────────────────────────────────────────────────────
 # tests/fixtures/envsets/ plus envsets.expected is the contract for the .tsv format

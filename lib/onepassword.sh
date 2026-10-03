@@ -3,7 +3,7 @@
 #
 # Generic helpers only: this file knows how to talk to 1Password, not which
 # secrets you use. The VAR -> op:// reference lists live in env sets
-# (lib/envsets.sh, envsets/<set>.tsv); op-load-env asks _op_env_entries
+# (lib/envsets.sh, envsets/<set>.tsv); `op-env load` asks _op_env_entries
 # for them. Nothing here needs editing per install.
 #
 # Load order: init.sh sources lib/*.sh by glob, and this file relies on sorting after
@@ -104,19 +104,21 @@ op-import-csv <csv-path> [--vault <vault>] [--tag <tag>] [--dry-run]
                        Default: title,url,username,password,notes
     --dry-run          Show what would be created without calling op.
 
-op-load-env
-  Load the active env sets' secrets from 1Password into environment variables.
+op-env load [set...]
+  Load the active env sets' secrets from 1Password into environment variables
+  (or only the named sets: additive, works on an inactive set).
   Signs in to every account the active sets name, then resolves each account's
   secrets in one `op inject` call (a single-account set is a single call). Under
   WSL the sign-in step triggers the desktop unlock; native op uses the cached
   session. Falls back to per-secret reads for an account whose batch fails.
 
-op-env [add|list|rm|use|migrate]
+op-env [load|clear|add|list|rm|use|migrate]
   Manage named env sets (guild, personal, ...) of VAR -> op:// references.
   This is where the list of secrets lives. Run `op-env help` for details.
 
-op-clear-env
-  Unset every variable op-load-env set (and any the active sets define).
+op-env clear [set...]
+  Unset every variable `op-env load` set (and any the active sets define), or
+  only the named sets' variables.
 
 Configuration:
 --------------
@@ -179,12 +181,17 @@ op-signin() {
   fi
 }
 
-# Variables op-load-env exported last time (newline-separated). Lets the next
+# Variables `op-env load` exported last time (newline-separated). Lets the next
 # load unset anything that has since been removed from the env sets, and lets
-# op-clear-env clear them even if the definition is already gone.
+# `op-env clear` clear them even if the definition is already gone.
 _OP_LOADED_VARS="${_OP_LOADED_VARS:-}"
 
-# Functions to call after op-load-env finishes, whether or not every secret
+# Which set supplied each loaded variable, as `VAR<TAB>set` lines (from _op_env_sources in
+# lib/envsets.sh). `op-env clear <set>` unsets only what that set supplied, so a variable two
+# sets define is not lost when the set that did not win is cleared.
+_OP_LOADED_SRC="${_OP_LOADED_SRC:-}"
+
+# Functions to call after `op-env load` finishes, whether or not every secret
 # loaded. Register with:  _OP_AFTER_LOAD_HOOKS+=(my_function)
 declare -p _OP_AFTER_LOAD_HOOKS &>/dev/null || _OP_AFTER_LOAD_HOOKS=()
 
@@ -212,29 +219,48 @@ _op_err_line() {
 # `op` resolves a reference against exactly one account per call, so entries are
 # grouped by the account they resolve against (their own column, else
 # $OP_ACCOUNT) and each group becomes one `op inject` call.
-op-load-env() {
+#
+# This is what `op-env load` runs (lib/envsets.sh dispatches here; there is no other entry
+# point, the old op-load-env name is gone). With no argument it loads the active sets and is
+# authoritative (anything a previous load set that is no longer defined is unset). With set
+# names it loads just those sets, adds to what is already loaded, unsets nothing, and works
+# on a set that is not active. It signs in to every account it needs before it sets a single
+# variable, and a refused set name stops it before anything is touched or signed in.
+_op_env_load() {
   if ! declare -f _op_env_entries >/dev/null; then
     echo "❌ No env source loaded (lib/envsets.sh is missing)"
     return 1
   fi
 
-  local _op_entries _op_names _op_line _op_stale
-  _op_entries=$(_op_env_entries)
+  local _op_entries _op_names _op_line _op_stale _op_subset=$#
+  if [[ $_op_subset -gt 0 ]]; then
+    declare -f _op_env_check_sets >/dev/null && { _op_env_check_sets --note "$@" || return 1; }
+  fi
+  _op_entries=$(_op_env_entries "$@")
   _op_names=$(printf '%s\n' "$_op_entries" | cut -f1 | awk 'NF')
 
   # Anything a previous load set that the sets no longer define is stale: unset
   # it so a removed or deactivated secret can't outlive its definition. This is
-  # safe before signing in, since it depends only on the definitions.
-  while IFS= read -r _op_stale; do
-    [[ -n "$_op_stale" ]] || continue
-    grep -qxF -- "$_op_stale" <<< "$_op_names" || unset "$_op_stale"
-  done <<< "$_OP_LOADED_VARS"
+  # safe before signing in, since it depends only on the definitions. Only a full
+  # load is authoritative: with named sets the other sets' variables are not stale,
+  # they are just not part of this call.
+  if [[ $_op_subset -eq 0 ]]; then
+    while IFS= read -r _op_stale; do
+      [[ -n "$_op_stale" ]] || continue
+      grep -qxF -- "$_op_stale" <<< "$_op_names" || unset "$_op_stale"
+    done <<< "$_OP_LOADED_VARS"
+  fi
 
   # Nothing to load: return before resolving `op` or signing in, so a machine
   # with no secrets configured never triggers a desktop unlock.
   if [[ -z "$_op_names" ]]; then
-    _OP_LOADED_VARS=""
-    echo "ℹ️  No secrets configured — add one with: op-env add"
+    if [[ $_op_subset -eq 0 ]]; then
+      _OP_LOADED_VARS=""
+      _OP_LOADED_SRC=""
+      echo "ℹ️  No secrets configured — add one with: op-env add"
+    else
+      echo "ℹ️  No secrets in: $*"
+    fi
     return 0
   fi
 
@@ -261,8 +287,21 @@ op-load-env() {
   done <<< "$_op_accts"
 
   # Only now record what this load manages. If sign-in failed above, the
-  # previous list stays, so op-clear-env still knows what is in the environment.
-  _OP_LOADED_VARS="$_op_names"
+  # previous list stays, so op-env clear still knows what is in the environment. A full
+  # load replaces the list; a named-set load adds to it.
+  local _op_src
+  _op_src=$(declare -f _op_env_sources >/dev/null && _op_env_sources "$@")
+  if [[ $_op_subset -eq 0 ]]; then
+    _OP_LOADED_VARS="$_op_names"
+    _OP_LOADED_SRC="$_op_src"
+  else
+    _OP_LOADED_VARS=$(printf '%s\n%s\n' "$_OP_LOADED_VARS" "$_op_names" | awk 'NF && !seen[$0]++')
+    # What this call loaded now comes from the named sets, whatever supplied it before.
+    _OP_LOADED_SRC=$( { printf '%s\n' "$_OP_LOADED_SRC" | PF_NEW="$_op_src" awk -F'\t' '
+          BEGIN { n = split(ENVIRON["PF_NEW"], L, "\n"); for (i = 1; i <= n; i++) { split(L[i], f, "\t"); drop[f[1]] = 1 } }
+          NF && !($1 in drop)'
+        printf '%s\n' "$_op_src"; } | awk 'NF')
+  fi
 
   # No header here — when run under `preflight` the orchestrator prints the
   # "--- Secrets ---" section header. Standalone callers still get the
@@ -356,7 +395,7 @@ op-load-env() {
       # vault or a bad item name all come back as "failed to load" otherwise, with
       # nothing to say which. No temp file (none to write, or no usable tmp dir)
       # just means less detail, never a failed load.
-      _op_errf=$(mktemp "${TMPDIR:-/tmp}/op-load-env.XXXXXX" 2>/dev/null) || _op_errf=/dev/null
+      _op_errf=$(mktemp "${TMPDIR:-/tmp}/op-env-load.XXXXXX" 2>/dev/null) || _op_errf=/dev/null
       while IFS= read -r _op_line; do
         [[ -n "$_op_line" ]] || continue
         _op_name2="${_op_line%%$'\t'*}"
@@ -653,7 +692,7 @@ EOF
     return 1
   fi
 
-  # Sign-in handled the same way as op-load-env.
+  # Sign-in handled the same way as `op-env load`.
   if ! "$OP_BIN" whoami --account "$OP_ACCOUNT" >/dev/null 2>&1; then
     op-signin "$OP_ACCOUNT" || return 1
   fi
@@ -904,9 +943,36 @@ PYEOF
   return 0
 }
 
-# Clear the variables op-load-env set, plus any the active env sets define.
-op-clear-env() {
-  local _op_names _op_var
+# Clear the variables `op-env load` set, plus any the active env sets define. This is what
+# `op-env clear` runs; with set names, only those sets' variables.
+_op_env_clear() {
+  local _op_names _op_var _op_keep
+  if [[ $# -gt 0 ]]; then
+    # Only what the named sets supplied. Whatever else was loaded stays loaded, and stays in
+    # the loaded-vars memory so a later full clear or load still knows about it. A variable
+    # another set supplied (two sets defining one name: the first wins) is not theirs to clear,
+    # and one that was never loaded here (say, exported by hand) is left alone.
+    declare -f _op_env_check_sets >/dev/null && { _op_env_check_sets "$@" || return 1; }
+    local _op_set
+    _op_names=""
+    for _op_set in "$@"; do
+      _op_names="${_op_names:+$_op_names$'\n'}$(printf '%s\n' "$_OP_LOADED_SRC" | awk -F'\t' -v s="$_op_set" '$2 == s { print $1 }')"
+    done
+    while IFS= read -r _op_var; do
+      [[ -n "$_op_var" ]] && unset "$_op_var"
+    done <<< "$_op_names"
+    _op_keep=""
+    while IFS= read -r _op_var; do
+      [[ -n "$_op_var" ]] || continue
+      grep -qxF -- "$_op_var" <<< "$_op_names" || _op_keep="${_op_keep:+$_op_keep$'\n'}$_op_var"
+    done <<< "$_OP_LOADED_VARS"
+    _OP_LOADED_VARS="$_op_keep"
+    _OP_LOADED_SRC=$(printf '%s\n' "$_OP_LOADED_SRC" | PF_GONE="$_op_names" awk -F'\t' '
+          BEGIN { n = split(ENVIRON["PF_GONE"], L, "\n"); for (i = 1; i <= n; i++) gone[L[i]] = 1 }
+          NF && !($1 in gone)')
+    echo "🧹 Cleared the variables of: $*"
+    return 0
+  fi
   _op_names=$( {
       declare -f _op_env_entries >/dev/null && _op_env_entries | cut -f1
       printf '%s\n' "$_OP_LOADED_VARS"
@@ -915,5 +981,7 @@ op-clear-env() {
     [[ -n "$_op_var" ]] && unset "$_op_var"
   done <<< "$_op_names"
   _OP_LOADED_VARS=""
+  _OP_LOADED_SRC=""
   echo "🧹 Secure environment variables cleared."
 }
+
