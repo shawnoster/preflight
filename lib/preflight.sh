@@ -1527,7 +1527,7 @@ GITIGNORE
       [[ "$_n" -gt 0 ]] && _bridge_verified=true
     fi
     if [[ "$_bridge_verified" != true ]]; then
-      echo "ℹ️  Bridge not verified yet, so ~/.profile, and ~/.ssh/config are left alone."
+      echo "ℹ️  Bridge not verified yet, so ~/.profile and ~/.ssh/config are left alone."
       echo "   Fix the problem above, or unlock 1Password with 'Use the SSH agent' on, then re-run: preflight configure"
       echo ""
     fi
