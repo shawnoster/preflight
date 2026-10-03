@@ -643,5 +643,16 @@ unset FAKE_OP_LOG; clean_sets; op-clear-env >/dev/null
 source "$R/lib/nanoleaf.sh"; source "$R/lib/onepassword.sh"
 chk "after-load hook registered exactly once across re-sourcing" '[[ ${#_OP_AFTER_LOAD_HOOKS[@]} -eq 1 ]]'
 
+# ── shared fixture ────────────────────────────────────────────────────────────
+# tests/fixtures/envsets/ plus envsets.expected is the contract for the .tsv format
+# (first definition wins, CRs stripped, malformed lines skipped, .active order, an
+# optional third column). The PowerShell port reads the same files and must produce the
+# same merged output, so the two implementations cannot drift.
+clean_sets; export OP_ACCOUNT=default.1password.com
+cp -R "$R/tests/fixtures/envsets/." "$sets/"
+got=$(_op_env_entries)
+chk "shared fixture: merged entries match the expected file" '[[ "$got" == "$(cat "$R/tests/fixtures/envsets.expected")" ]]'
+rm -rf "$sets"; mkdir -p "$sets"
+
 echo "$passes passed, $fails failed"
 [[ $fails -eq 0 ]]

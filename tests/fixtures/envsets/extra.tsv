@@ -1,0 +1,4 @@
+SHARED	op://second/loses/field
+CRLF_VAR	op://v/item/field
+SPACES	op://Private/Item With Spaces/field
+BAD_ACCT	op://v/i/f	-nope

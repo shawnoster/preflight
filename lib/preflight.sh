@@ -9,6 +9,7 @@
 #   preflight update     - pull latest changes from the upstream repo
 #   preflight uninstall [--purge]  - remove preflight and undo shell profile changes
 #                        (--purge also deletes your config, state and cache)
+#   preflight config <cmd>     - path | get | set | edit | check (settings in config.json)
 #   preflight configure        - interactively apply recommended settings (git globals, etc.)
 #   preflight configure --yes  - apply all without prompting
 #   preflight help       - show this usage (also -h / --help)
@@ -19,6 +20,7 @@ preflight() {
     update)         _preflight_update;        return ;;
     uninstall)      _preflight_uninstall "${@:2}"; return ;;
     configure)      _preflight_configure "${@:2}";     return ;;
+    config)         _pf_config_cmd "${@:2}";           return ;;
     help|-h|--help) _preflight_help;          return ;;
   esac
 
@@ -111,6 +113,29 @@ preflight() {
   local updates_available=0
   local issue_msgs=()
   local update_msgs=()
+
+  # ── Settings (config.json) ────────────────────────────────────────────────
+  # A bad or unreadable file is a failed check, not a note: the built-in defaults
+  # include a placeholder OP_ACCOUNT, so running on them silently would mislead.
+
+  _pf_section "Settings"
+  if [[ "${_PF_CONFIG_STATUS:-ok}" != ok ]]; then
+    issue_msgs+=("Settings: ${_PF_CONFIG_ERROR:-config.json was not loaded}")
+    _pf_line "❌ Settings: ${_PF_CONFIG_ERROR:-config.json was not loaded}"
+    ((issues++))
+  else
+    local _cfg_problems _cfg_line
+    if _cfg_problems=$(_pf_config_check 2>&1); then
+      _pf_line "✅ Settings: $PREFLIGHT_CONFIG_DIR/config.json"
+    else
+      while IFS= read -r _cfg_line; do
+        [[ -n "$_cfg_line" ]] || continue
+        issue_msgs+=("Settings: $_cfg_line")
+        _pf_line "⚠️  Settings: $_cfg_line"
+        ((issues++))
+      done <<< "$_cfg_problems"
+    fi
+  fi
 
   # ── Secrets ───────────────────────────────────────────────────────────────
 
@@ -862,6 +887,7 @@ preflight starts a session and checks the health of your environment.
 Usage:
   preflight [-v] [-u] [--no-login]   Run the health check
   preflight configure [--yes]        Apply recommended git/SSH settings
+  preflight config <command>         Read and change settings (config.json); see: preflight config help
   preflight update                   Pull latest changes from upstream
   preflight uninstall [--purge]      Remove preflight and shell profile changes
                                      (--purge also deletes your config, state and cache)
@@ -1304,7 +1330,7 @@ GITIGNORE
       echo "ℹ️  No AWS profiles configured in ~/.aws/config — skipping"
       echo ""
     elif [[ -n "$current_default" ]]; then
-      echo "✅ AWS_PROFILE_DEFAULT = $current_default (set in $PREFLIGHT_CONFIG_DIR/accounts.sh)"
+      echo "✅ AWS_PROFILE_DEFAULT = $current_default (preflight config set aws.default_profile NAME)"
       ((kept++))
       echo ""
     else
@@ -1318,23 +1344,25 @@ GITIGNORE
         local first_profile
         first_profile=$(echo "$profiles" | head -1)
         echo "   → Setting AWS_PROFILE_DEFAULT = $first_profile"
-        echo "   Add to $PREFLIGHT_CONFIG_DIR/accounts.sh:"
-        echo "     export AWS_PROFILE_DEFAULT=\"$first_profile\""
+        if _pf_config_set_cmd aws.default_profile "$first_profile" >/dev/null; then
+          export AWS_PROFILE_DEFAULT="$first_profile"
+        else
+          echo "   Could not write it; run: preflight config set aws.default_profile $first_profile"
+        fi
         ((applied++))
       else
         _pf_ask chosen_profile "   Select default profile (or Enter to skip): "
         echo ""
         if [[ -n "$chosen_profile" ]]; then
           if echo "$profiles" | grep -qxF "$chosen_profile"; then
-            local accounts_file="$PREFLIGHT_CONFIG_DIR/accounts.sh"
-            if grep -q '^export AWS_PROFILE_DEFAULT=' "$accounts_file" 2>/dev/null; then
-              sed -i "s|^export AWS_PROFILE_DEFAULT=.*|export AWS_PROFILE_DEFAULT=\"$chosen_profile\"|" "$accounts_file"
+            if _pf_config_set_cmd aws.default_profile "$chosen_profile" >/dev/null; then
+              export AWS_PROFILE_DEFAULT="$chosen_profile"
+              echo "   ✅ Set AWS_PROFILE_DEFAULT = $chosen_profile"
+              ((applied++))
             else
-              printf '\n# Default AWS profile\nexport AWS_PROFILE_DEFAULT="%s"\n' "$chosen_profile" >> "$accounts_file"
+              echo "   ❌ Could not write config.json — run: preflight config check"
+              ((skipped++))
             fi
-            export AWS_PROFILE_DEFAULT="$chosen_profile"
-            echo "   ✅ Set AWS_PROFILE_DEFAULT = $chosen_profile"
-            ((applied++))
           else
             echo "   Profile '$chosen_profile' not found — skipped."
             ((skipped++))

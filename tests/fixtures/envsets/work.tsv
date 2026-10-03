@@ -1,0 +1,7 @@
+NPM_TOKEN	op://Employee/npm/credential
+GITEA_TOKEN	op://Private/Gitea/pat	personal.1password.com
+# a comment is skipped
+bad name	op://v/i/f
+NO_REF	not-a-ref
+TOO_MANY	op://v/i/f	acct	extra
+SHARED	op://first/wins/field

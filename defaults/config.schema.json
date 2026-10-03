@@ -1,0 +1,77 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "preflight config.json",
+  "description": "Settings for preflight. Environment variables you set yourself win over these values. Docs: docs/config.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string", "description": "Optional: path or URL of this schema, for editor help." },
+    "version": { "type": "integer", "const": 1, "description": "Schema version. Always 1." },
+    "op": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "account": {
+          "type": "string", "default": "my.1password.com",
+          "description": "Default 1Password account (OP_ACCOUNT): the sign-in address for WSL desktop integration (e.g. my-team.1password.com), or the `op account add` shorthand for native op. Env-set entries that name no account use this one."
+        }
+      }
+    },
+    "projects": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "dirs": {
+          "type": "array", "items": { "type": "string" }, "default": ["~/projects", "~/work", "~/src"],
+          "description": "Directories searched by `proj` (PROJ_DIRS, joined with ':'). A leading ~/ or $HOME/ is expanded."
+        }
+      }
+    },
+    "aws": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "default_profile": {
+          "type": "string", "default": "",
+          "description": "AWS profile that `preflight` exports as AWS_PROFILE at session start (AWS_PROFILE_DEFAULT). Empty means none."
+        }
+      }
+    },
+    "git": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "main_branch": {
+          "type": "string", "default": "main",
+          "description": "Branch the git helpers treat as the trunk (GIT_MAIN_BRANCH)."
+        }
+      }
+    },
+    "gitea": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "username": { "type": "string", "default": "", "description": "Gitea user name (GITEA_USERNAME), used to store an HTTPS credential when GITEA_TOKEN is loaded." },
+        "host": { "type": "string", "default": "", "description": "Gitea host name (GITEA_HOST)." }
+      }
+    },
+    "checks": {
+      "type": "object", "additionalProperties": false,
+      "description": "Which sections of the `preflight` health check run.",
+      "properties": {
+        "aws": { "type": "boolean", "default": true, "description": "AWS session check (_CHECK_AWS)." },
+        "gh": { "type": "boolean", "default": true, "description": "GitHub CLI auth check (_CHECK_GH)." },
+        "ssh": { "type": "boolean", "default": true, "description": "SSH agent check (_CHECK_SSH)." },
+        "git_config": { "type": "boolean", "default": true, "description": "Global git configuration check (_CHECK_GIT_CONFIG)." }
+      }
+    },
+    "optional_env_vars": {
+      "type": "array", "items": { "type": "string" }, "default": [],
+      "description": "Environment variables `preflight` reports on, as a note rather than an error, when unset (_OPTIONAL_ENV_VARS, joined with a space)."
+    },
+    "owl": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "omp_config": {
+          "type": "string", "default": "$PREFLIGHT_STATE_DIR/owl/theme-catppuccin.omp.json",
+          "description": "Oh My Posh JSON that owl-theme patches (OWL_OMP_CONFIG). Empty turns Oh My Posh integration off; owl-theme still switches splash colors. A leading $PREFLIGHT_STATE_DIR/ or $PREFLIGHT_CONFIG_DIR/ is expanded."
+        }
+      }
+    }
+  }
+}

@@ -80,12 +80,12 @@ Configuration:
 --------------
 
 Location: ~/.preflight/
-Config:   $PREFLIGHT_CONFIG_DIR/accounts.sh
+Config:   $PREFLIGHT_CONFIG_DIR/config.json  (preflight config help)
 Modules:  ~/.preflight/lib/*.sh
 
 Environment Variables:
   OP_ACCOUNT          - 1Password account shorthand
-  AWS_PROFILE_DEFAULT - Default AWS profile (set in $PREFLIGHT_CONFIG_DIR/accounts.sh)
+  AWS_PROFILE_DEFAULT - Default AWS profile (preflight config set aws.default_profile NAME)
   AWS_PROFILE         - Active AWS profile (set at runtime by preflight/awsp)
   PROJ_DIRS           - Project directories for 'proj' command
   PREFLIGHT_DIR       - Install location (default: ~/.preflight)
@@ -96,7 +96,7 @@ Getting Started:
 ----------------
 
 1. Configure your accounts:
-   Edit $PREFLIGHT_CONFIG_DIR/accounts.sh
+   preflight config set op.account my-team.1password.com
 
 2. Run preflight to start your session:
    preflight

@@ -276,7 +276,7 @@ _op_env_list() {
   local legacy; legacy=$(_op_legacy_secrets)
   if [[ -z "$only" && -n "$legacy" ]]; then
     found=1
-    echo "◆ OP_SECRETS array (legacy, from $PREFLIGHT_CONFIG_DIR/accounts.sh or lib/1password.sh) — move it with: op-env migrate"
+    echo "◆ OP_SECRETS array (legacy, from lib/1password.sh) — move it with: op-env migrate"
     while IFS= read -r line; do
       printf '    %-28s %s\n' "${line%%$'\t'*}" "${line#*$'\t'}"
     done <<< "$legacy"
@@ -330,7 +330,7 @@ _op_env_use() {
   echo "✅ Active sets: $(printf '%s\n' "$chosen" | paste -sd' ' -)"
 }
 
-# Move a legacy OP_SECRETS array ($PREFLIGHT_CONFIG_DIR/accounts.sh, or a leftover per-install
+# Move a legacy OP_SECRETS array (from a leftover per-install
 # lib/1password.sh) into a set. The legacy array wins over sets today, so the move
 # must not change which reference a variable resolves to once the array is deleted.
 # Everything is checked before anything is written; on a problem nothing changes.
@@ -451,7 +451,6 @@ _op_env_migrate() {
   fi
   echo ""
   echo "Moved $moved key(s) ($same already there). Now remove the old list so the set is the only source:"
-  echo "  - an OP_SECRETS=( ... ) block in $PREFLIGHT_CONFIG_DIR/accounts.sh: delete the block"
   if [[ -f "${PREFLIGHT_DIR:-$HOME/.preflight}/lib/1password.sh" ]]; then
     echo "  - lib/1password.sh is a leftover from before the rename to lib/onepassword.sh:"
     echo "    delete it (${PREFLIGHT_DIR:-$HOME/.preflight}/lib/1password.sh) if it holds nothing else you need"
@@ -509,7 +508,7 @@ _op_legacy_secrets() {
 # Everything op-load-env / op-clear-env need to know: one `VAR<TAB>op://ref` line
 # per secret, from the active sets, carrying an optional third `TABaccount` column
 # when the set names one (otherwise $OP_ACCOUNT). An OP_SECRETS array still defined
-# by an older $PREFLIGHT_CONFIG_DIR/accounts.sh is honored too (and wins on a name clash) until it
+# by a leftover lib/1password.sh is honored too (and wins on a name clash) until it
 # is moved with `op-env migrate`. The first definition of a name wins (sets are read
 # in the order of envsets/.active, or alphabetically when that file is absent);
 # anything that isn't a valid variable name, an op:// reference, or a well-formed

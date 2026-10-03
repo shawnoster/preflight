@@ -31,6 +31,8 @@ fresh() {
   mkdir -p "$T/home" "$T/pf"
   cp -R "$R/lib" "$R/defaults" "$R/init.sh" "$T/pf/"
   unset PREFLIGHT_CONFIG_DIR PREFLIGHT_STATE_DIR PREFLIGHT_CACHE_DIR XDG_CONFIG_HOME XDG_STATE_HOME XDG_CACHE_HOME
+  # Settings a developer already has exported would win over config.json.
+  unset OP_ACCOUNT PROJ_DIRS AWS_PROFILE_DEFAULT GIT_MAIN_BRANCH GITEA_USERNAME GITEA_HOST OWL_OMP_CONFIG _CHECK_AWS _CHECK_GH _CHECK_SSH _CHECK_GIT_CONFIG _OPTIONAL_ENV_VARS
   export HOME="$T/home" PREFLIGHT_DIR="$T/pf" PREFLIGHT_NO_SPLASH=1
 }
 
@@ -69,21 +71,22 @@ chk "guard allows a preflight subdirectory" '_pf_safe_rm_dir "$T/xc/preflight"'
 # ── first run (init.sh sourced non-interactively) ─────────────────────────────
 fresh
 out=$(source "$PREFLIGHT_DIR/init.sh" 2>&1 </dev/null)
-chk "first run creates accounts.sh in the config dir" '[[ -f "$HOME/.config/preflight/accounts.sh" ]]'
-chk "first run creates owl.sh in the config dir"      '[[ -f "$HOME/.config/preflight/owl.sh" ]]'
+chk "first run creates config.json in the config dir" 'jq -e . "$HOME/.config/preflight/config.json" >/dev/null'
+chk "first run uses the general profile when non-interactive" 'cmp -s "$HOME/.config/preflight/config.json" "$R/defaults/config.general.json"'
 chk "first run seeds the owl theme in the state dir"  '[[ -f "$HOME/.local/state/preflight/owl/theme-catppuccin.omp.json" ]]'
 chk "first run writes nothing into the clone"         '[[ ! -e "$PREFLIGHT_DIR/config" && ! -e "$PREFLIGHT_DIR/state" ]]'
-chk "owl.sh points the OMP theme at the state dir"    'grep -q "PREFLIGHT_STATE_DIR/owl/theme-catppuccin" "$HOME/.config/preflight/owl.sh"'
+chk "first run loads the profile into the shell"      '[[ "$(source "$PREFLIGHT_DIR/init.sh" >/dev/null 2>&1 </dev/null; printf %s "$OWL_OMP_CONFIG")" == "$HOME/.local/state/preflight/owl/theme-catppuccin.omp.json" ]]'
 
-# An existing accounts.sh is never overwritten.
-echo '# mine' > "$HOME/.config/preflight/accounts.sh"
+# An existing config.json is never overwritten.
+echo '{"version":1,"op":{"account":"mine"}}' > "$HOME/.config/preflight/config.json"
 out=$(source "$PREFLIGHT_DIR/init.sh" 2>&1 </dev/null)
-chk "second run keeps an edited accounts.sh" '[[ "$(cat "$HOME/.config/preflight/accounts.sh")" == "# mine" ]]'
+chk "second run keeps an edited config.json" '[[ "$(jq -r .op.account "$HOME/.config/preflight/config.json")" == mine ]]'
+chk "second run loads the edited value"      '[[ "$(source "$PREFLIGHT_DIR/init.sh" >/dev/null 2>&1 </dev/null; printf %s "$OP_ACCOUNT")" == mine ]]'
 
 # init.sh refuses a config dir that is the clone, and creates nothing there.
 fresh; export PREFLIGHT_CONFIG_DIR="$PREFLIGHT_DIR"
 out=$(source "$PREFLIGHT_DIR/init.sh" 2>&1 </dev/null); rc=$?
-chk "init.sh stops on a shared config dir" '[[ $rc -ne 0 && "$out" == *"also the config or state directory"* && ! -e "$PREFLIGHT_DIR/accounts.sh" ]]'
+chk "init.sh stops on a shared config dir" '[[ $rc -ne 0 && "$out" == *"also the config or state directory"* && ! -e "$PREFLIGHT_DIR/config.json" ]]'
 
 # ── uninstall ─────────────────────────────────────────────────────────────────
 # Run in a subshell: uninstall unsets preflight's own functions.
@@ -97,7 +100,7 @@ fresh
 mkdir -p "$HOME/.cache/preflight"; echo x > "$HOME/.cache/preflight/c"
 out=$(run_uninstall y)
 chk "uninstall removes the clone"            '[[ ! -d "$PREFLIGHT_DIR" ]]'
-chk "uninstall keeps the config dir"         '[[ -f "$HOME/.config/preflight/accounts.sh" ]]'
+chk "uninstall keeps the config dir"         '[[ -f "$HOME/.config/preflight/config.json" ]]'
 chk "uninstall keeps the state dir"          '[[ -d "$HOME/.local/state/preflight/owl" ]]'
 chk "uninstall keeps the cache dir"          '[[ -f "$HOME/.cache/preflight/c" ]]'
 chk "uninstall says where the kept data is"  '[[ "$out" == *"$HOME/.config/preflight"* ]]'
@@ -120,7 +123,7 @@ chk "--purge refuses the bare XDG config dir" '[[ "$out" == *"refusing to remove
 fresh
 ( source "$PREFLIGHT_DIR/init.sh" >/dev/null 2>&1 </dev/null )
 out=$(run_uninstall n --purge)
-chk "declining uninstall deletes nothing" '[[ -d "$PREFLIGHT_DIR" && -f "$HOME/.config/preflight/accounts.sh" ]]'
+chk "declining uninstall deletes nothing" '[[ -d "$PREFLIGHT_DIR" && -f "$HOME/.config/preflight/config.json" ]]'
 
 echo "$passes passed, $fails failed"
 [[ $fails -eq 0 ]]
