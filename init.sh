@@ -24,6 +24,18 @@ case ":$PATH:" in
   *) PATH="$PREFLIGHT_DIR/bin:$PATH" ;;
 esac
 
+# ~/.local/bin holds oh-my-posh and the npiperelay bridge preflight installs. A login
+# shell sources .bashrc (and so this file) from ~/.profile, and Ubuntu's stock
+# ~/.profile does that *before* it adds ~/.local/bin to PATH, so without this the
+# `command -v oh-my-posh` check below silently skips the prompt. Guarded, so it is
+# a no-op when PATH is already right and never creates duplicates on re-source.
+if [[ -d "$HOME/.local/bin" ]]; then
+  case ":$PATH:" in
+    *":$HOME/.local/bin:"*) ;;
+    *) PATH="$HOME/.local/bin:$PATH" ;;
+  esac
+fi
+
 # Point SSH at the 1Password agent bridge when it exists (docs/wsl-ssh-setup.md).
 # ~/.profile covers login shells and scripts, but zsh and non-login Bash never read
 # it, so interactive shells that source this file get the export here. An agent
