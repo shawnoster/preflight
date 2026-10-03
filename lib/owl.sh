@@ -7,17 +7,21 @@
 #   owl-theme --current     — print active theme name
 #   _owl_splash             — MOTD called once per interactive top-level shell
 #
-# Configuration (set in config/owl.sh, auto-created from config/owl.sh.template):
-#   OWL_THEME_DIR     — directory where theme state is stored  (default: $PREFLIGHT_DIR/state/owl)
-#   OWL_OMP_CONFIG    — path to your Oh My Posh JSON config    (default: empty — set in config/owl.sh)
+# Configuration (set in $PREFLIGHT_CONFIG_DIR/owl.sh, auto-created from defaults/owl.sh.template):
+#   OWL_THEME_DIR     — directory where theme state is stored  (default: $PREFLIGHT_STATE_DIR/owl)
+#   OWL_OMP_CONFIG    — path to your Oh My Posh JSON config    (default: empty — set in owl.sh)
 #
 # Oh My Posh is OPTIONAL. If OWL_OMP_CONFIG is unset or the file doesn't exist,
 # owl-theme still switches splash colors — it just skips the OMP palette patch
 # and prompt reload.
 
 PREFLIGHT_DIR="${PREFLIGHT_DIR:-$HOME/.preflight}"
-OWL_THEME_DIR="${OWL_THEME_DIR:-$PREFLIGHT_DIR/state/owl}"
-OWL_OMP_CONFIG="${OWL_OMP_CONFIG:-}"   # set in config/owl.sh; empty = OMP disabled
+# init.sh resolves the state dir first; a library sourced on its own does it here.
+# A refused layout must stop here: carrying on would leave OWL_THEME_DIR empty and aim
+# owl-theme at /current.
+[[ -n "${PREFLIGHT_STATE_DIR:-}" ]] || { source "$PREFLIGHT_DIR/lib/paths.sh" && _pf_resolve_dirs || return 1; }
+OWL_THEME_DIR="${OWL_THEME_DIR:-${PREFLIGHT_STATE_DIR:+$PREFLIGHT_STATE_DIR/owl}}"
+OWL_OMP_CONFIG="${OWL_OMP_CONFIG:-}"   # set in owl.sh; empty = OMP disabled
 
 # ── Theme definitions ─────────────────────────────────────────────────────────
 # Each theme sets:

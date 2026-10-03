@@ -6,6 +6,8 @@
 #
 # Env var overrides:
 #   PREFLIGHT_DIR      Install location (default: ~/.preflight)
+#   PREFLIGHT_CONFIG_DIR  Your config (default: $XDG_CONFIG_HOME/preflight, ~/.config/preflight)
+#   PREFLIGHT_STATE_DIR   Your state  (default: $XDG_STATE_HOME/preflight, ~/.local/state/preflight)
 #   PREFLIGHT_REPO     Git repo URL (default: https://github.com/shawnoster/preflight.git)
 #   PREFLIGHT_BRANCH   Branch to clone (default: main)
 #   PREFLIGHT_PROFILE  RC file to modify (default: auto-detected)
@@ -143,6 +145,18 @@ main() {
     _pf_die "git clone failed"
   fi
 
+  # Resolve where the user's own data lives (config and state are outside the clone;
+  # see lib/paths.sh) and refuse a layout that would mix it with the code. This runs
+  # before the shell profile is touched, and a refusal removes the clone this run just
+  # made, so correcting the variables and re-running starts clean instead of stopping
+  # at "already installed".
+  # shellcheck source=lib/paths.sh
+  source "$PREFLIGHT_DIR/lib/paths.sh"
+  if ! _pf_resolve_dirs; then
+    if _pf_safe_rm_dir "$PREFLIGHT_DIR" 2>/dev/null; then rm -rf -- "$PREFLIGHT_DIR"; fi
+    _pf_die "Nothing was installed. Choose a PREFLIGHT_DIR that is not (or does not contain) your config or state directory."
+  fi
+
   # Dotfile modification
   local shell_name
   shell_name=$(basename "${SHELL:-bash}")
@@ -158,23 +172,25 @@ main() {
     _pf_add_to_profile "$profile" "$shell_name"
   fi
 
+  mkdir -p "$PREFLIGHT_CONFIG_DIR"
+
   # First-time config setup (init.sh handles this too, but do it now so the
   # user sees the files immediately)
-  if [[ ! -f "$PREFLIGHT_DIR/config/accounts.sh" ]] \
-      && [[ -f "$PREFLIGHT_DIR/config/accounts.sh.template" ]]; then
-    cp "$PREFLIGHT_DIR/config/accounts.sh.template" "$PREFLIGHT_DIR/config/accounts.sh"
-    _pf_ok "Created config/accounts.sh from template"
+  if [[ ! -f "$PREFLIGHT_CONFIG_DIR/accounts.sh" ]] \
+      && [[ -f "$PREFLIGHT_DIR/defaults/accounts.sh.template" ]]; then
+    cp "$PREFLIGHT_DIR/defaults/accounts.sh.template" "$PREFLIGHT_CONFIG_DIR/accounts.sh"
+    _pf_ok "Created $PREFLIGHT_CONFIG_DIR/accounts.sh from template"
   fi
 
-  # Owl base theme: place the bundled OMP theme in the gitignored state dir so
-  # owl-theme has a user-owned config to patch (it refuses to touch Oh My
-  # Posh's own theme directory). init.sh re-ensures this on later updates.
-  mkdir -p "$PREFLIGHT_DIR/state/owl"
-  if [[ ! -f "$PREFLIGHT_DIR/state/owl/theme-catppuccin.omp.json" ]] \
-      && [[ -f "$PREFLIGHT_DIR/config/theme-catppuccin.omp.json" ]]; then
-    cp "$PREFLIGHT_DIR/config/theme-catppuccin.omp.json" \
-       "$PREFLIGHT_DIR/state/owl/theme-catppuccin.omp.json"
-    _pf_ok "Created state/owl/theme-catppuccin.omp.json (owl-theme OMP base theme)"
+  # Owl base theme: place the bundled OMP theme in the state dir so owl-theme
+  # has a user-owned config to patch (it refuses to touch Oh My Posh's own
+  # theme directory). init.sh re-ensures this on later updates.
+  mkdir -p "$PREFLIGHT_STATE_DIR/owl"
+  if [[ ! -f "$PREFLIGHT_STATE_DIR/owl/theme-catppuccin.omp.json" ]] \
+      && [[ -f "$PREFLIGHT_DIR/defaults/theme-catppuccin.omp.json" ]]; then
+    cp "$PREFLIGHT_DIR/defaults/theme-catppuccin.omp.json" \
+       "$PREFLIGHT_STATE_DIR/owl/theme-catppuccin.omp.json"
+    _pf_ok "Created $PREFLIGHT_STATE_DIR/owl/theme-catppuccin.omp.json (owl-theme OMP base theme)"
   fi
 
   # Done
@@ -189,13 +205,13 @@ main() {
   _pf_info "  1. Reload your shell:  $reload_cmd  (or open a new terminal)"
   _pf_info "     — on first load, you'll be prompted to pick a config profile."
   _pf_info "  2. Register your 1Password secrets:  op-env add"
-  _pf_info "     (set OP_ACCOUNT in config/accounts.sh first)"
+  _pf_info "     (set OP_ACCOUNT in $PREFLIGHT_CONFIG_DIR/accounts.sh first)"
   _pf_info "  3. Run: preflight"
   _pf_info ""
   _pf_info "Available profiles:"
-  _pf_info "  config/accounts.general.sh  — Individual dev (Gitea, GitHub, minimal)"
-  _pf_info "  config/accounts.company.sh  — Company/team (AWS, NPM, full toolchain)"
-  _pf_info "  config/accounts.sh.template — Reference doc for all options"
+  _pf_info "  defaults/accounts.general.sh  — Individual dev (Gitea, GitHub, minimal)"
+  _pf_info "  defaults/accounts.company.sh  — Company/team (AWS, NPM, full toolchain)"
+  _pf_info "  defaults/accounts.sh.template — Reference doc for all options"
   _pf_info ""
   _pf_info "To add custom shell functions, create $PREFLIGHT_DIR/lib/local.sh"
   _pf_info "To check for updates later, run: preflight update"

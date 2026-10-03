@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# ~/.preflight/config/accounts.sh — Per-install configuration (gitignored)
+# $PREFLIGHT_CONFIG_DIR/accounts.sh — Per-install configuration (kept outside the clone)
 #
 # This file contains all user-configurable values. It is created from a profile
 # template the first time you source init.sh (or by install.sh).
 #
 # Available profile templates:
-#   config/accounts.general.sh   — Individual dev: Gitea, GitHub, minimal tools
-#   config/accounts.company.sh   — Company/team dev: AWS, NPM, full toolchain
+#   defaults/accounts.general.sh   — Individual dev: Gitea, GitHub, minimal tools
+#   defaults/accounts.company.sh   — Company/team dev: AWS, NPM, full toolchain
 #
-# Any file matching config/accounts.*.sh (except .template and accounts.sh itself)
+# Any file matching defaults/accounts.*.sh (except .template and accounts.sh itself)
 # will be offered as a choice on first setup. Drop your own profile alongside the
 # built-in ones.
 #
@@ -27,7 +27,7 @@ export OP_ACCOUNT="my.1password.com"
 
 # ── 1Password secrets ────────────────────────────────────────────────────────
 # The list of secrets does not live in this file. Register VAR -> op:// pairs
-# with `op-env add`; they are stored in config/envsets/<set>.tsv and loaded by
+# with `op-env add`; they are stored in envsets/<set>.tsv and loaded by
 # op-load-env. For example:
 #   op-env add default NPM_TOKEN 'op://Private/npmjs/credential'
 # A reference in a different account takes an optional 4th argument (a sign-in
