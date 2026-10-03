@@ -25,7 +25,7 @@ if [[ ! -f "$PREFLIGHT_CONFIG_DIR/config.json" ]]; then
 fi
 ```
 
-Missing-file copying is the only behavior: it never overwrites an existing live file, so a change to a profile does not retroactively rewrite an already-generated `config.json` — the user sets the new value with `preflight config set` (or deletes the file to regenerate it). Say so in the PR's upgrade notes when you change a profile. There is no migration from the old in-clone `config/` and `state/` locations, nor from `accounts.sh` / `owl.sh`; the README's upgrade notes tell the user what to do by hand.
+Missing-file copying is the only behavior: it never overwrites an existing live file, so a change to a profile does not retroactively rewrite an already-generated `config.json` — the user sets the new value with `preflight config set` (or deletes the file to regenerate it). Say so in the PR's upgrade notes when you change a profile. Preflight carries no migration or legacy code paths: when a layout changes, the PR's upgrade notes tell the user what to do by hand.
 
 **Settings.** `lib/config.sh` holds one table (key, shell variable, type, export flag, default) that drives the loader, the built-in defaults, `preflight config set|get|check`, and `tests/config.sh`'s drift check against `defaults/config.schema.json` and both profiles. To add a setting: add a row, a schema entry, a value in both profiles, and a line in `docs/config.md`. A variable that is already set when the file loads wins over it, so **no library may assign a setting variable at load time** (not even `X="${X:-default}"`): it would look user-set and the file could never change it. `tests/config.sh` fails if one does. `jq` is required.
 
@@ -56,7 +56,7 @@ Read this repo when working on:
 
 - **Developer onboarding shell setup** — `init.sh` and `bashrc-snippet.sh` show exactly what to add to dotfiles; `install.sh` is the one-line curl installer
 - **AWS SSO profile workflow issues** — `lib/aws.sh` has the profile switching and SSO login flow; `aws.default_profile` in `config.json` sets the session default
-- **WSL SSH setup with 1Password** — `docs/wsl-ssh-setup.md` covers prerequisites; `preflight configure` installs the systemd + npiperelay agent bridge and migrates off the old `ssh.exe` aliases
+- **WSL SSH setup with 1Password** — `docs/wsl-ssh-setup.md` covers prerequisites; `preflight configure` installs the systemd + npiperelay agent bridge 
 - **Adding new shell utilities for all engineers** — add a new `lib/<domain>.sh` file
 - **1Password CLI integration for secrets** — `lib/onepassword.sh` has the sign-in flow for WSL/headless environments; `lib/envsets.sh` has the list of secrets
 - **Shell MOTD or theme customization** — `lib/owl.sh` has the theme engine and splash; the `owl.omp_config` key controls `OWL_OMP_CONFIG`; `OWL_THEME_DIR` is environment-only

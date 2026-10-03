@@ -135,15 +135,6 @@ mutate). Set `owl.omp_config` to use your own theme, or to an empty string to tu
 The profile guard no longer exports `OWL_OMP_CONFIG` or `OWL_THEME_DIR` (a value set before the module loads would
 override `config.json`); `OWL_THEME_DIR` remains an environment-only override.
 
-**Upgrading from `accounts.ps1`.** It is no longer read, and the module warns while it is still there. An existing
-install has the old installer, so first run `Update-Preflight` twice: the first run brings the new module (and a new
-`Update-Preflight`), the second also fetches the new `install.ps1` and `defaults\`. Then run
-`& "$HOME\.preflight\pwsh\install.ps1"` (it seeds `config.json` and replaces the old profile guard), and move what you had: your
-`$env:OP_ACCOUNT`, `PROJ_DIRS`, `AWS_PROFILE_DEFAULT` and `OWL_OMP_CONFIG` values become keys in `config.json`, and
-each `VAR = 'op://...'` entry of `$script:OpEnvMap` becomes a `VAR<TAB>op://...` line in an env set. Aliases and
-other code you kept in `accounts.ps1` belong in your `$PROFILE`. If you have owl state under
-`$HOME\.preflight\state\owl`, move it to `~\.local\state\preflight\owl`.
-
 For Windows desktop-app integration (Settings → Developer → "Integrate with
 1Password CLI"), set `op.account` to your sign-in address
 (for example `my-team.1password.com`). If you manually added an account with

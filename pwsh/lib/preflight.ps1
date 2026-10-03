@@ -743,25 +743,12 @@ function Update-Preflight {
         } else {
             Write-Host ("  {0} file(s) updated, {1} unchanged" -f $copied, $skipped) -ForegroundColor Green
 
-            # An install from before config.json has no settings file yet (and may still have
-            # accounts.ps1): the installer seeds it and refreshes the profile guard. Decided before the
-            # reload below, which removes this module's internal functions from under us.
-            $cfgPath      = Get-PreflightConfigPath
-            $legacyCfg    = Join-Path (Join-Path $installRoot 'config') 'accounts.ps1'
-            $needsInstaller = (-not $cfgPath) -or (-not (Test-Path -LiteralPath $cfgPath)) -or (Test-Path -LiteralPath $legacyCfg)
-
             if ($copied -gt 0) {
                 Write-Host '  Reloading module...' -ForegroundColor DarkGray
                 $manifest = Join-Path $installRoot 'Preflight.psd1'
                 Remove-Module Preflight -Force -ErrorAction SilentlyContinue
                 Import-Module $manifest -Force -Global
                 Write-Host '  ✅ Preflight reloaded' -ForegroundColor Green
-            }
-
-            if ($needsInstaller) {
-                Write-Host ''
-                Write-Host "  ℹ️  Settings moved to config.json. Run this once to seed it and refresh your profile:" -ForegroundColor Yellow
-                Write-Host "      & '$(Join-Path $installRoot 'install.ps1')' -InstallRoot '$installParent'" -ForegroundColor Yellow
             }
         }
         Write-Host ''

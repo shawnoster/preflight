@@ -1640,39 +1640,6 @@ GITIGNORE
       echo ""
     fi
 
-    # 7. Migrate away from the old ssh.exe interop approach, but only once the
-    #    bridge is verified: until then those aliases are what makes SSH work.
-    local _bashrc="$HOME/.bashrc" _cur_ssh_cmd
-    if [[ "$_bridge_verified" == true ]]; then
-    if grep -qE "^alias ssh(-add)?='/mnt/c/Windows/System32/OpenSSH/|^# 1Password SSH agent via WSL interop" "$_bashrc" 2>/dev/null; then
-      echo "💡 ~/.bashrc has the old ssh.exe aliases / SSH_AUTH_SOCK block (they shadow the native agent)"
-      echo "   Removes them (backup: ~/.bashrc.preflight-bak)"
-      if _pf_yes; then
-        cp "$_bashrc" "$HOME/.bashrc.preflight-bak"
-        sed -i -E "/^# 1Password SSH agent via WSL interop\$/d; /^export SSH_AUTH_SOCK=\\\$HOME\/\.1password\/agent\.sock\$/d; /^alias ssh(-add)?='\/mnt\/c\/Windows\/System32\/OpenSSH\/ssh(-add)?\.exe'\$/d" "$_bashrc"
-        echo "   ✅ Removed (open a new terminal to drop the aliases)"
-        ((applied++))
-      else
-        echo "   Skipped."; ((skipped++))
-      fi
-      echo ""
-    fi
-    _cur_ssh_cmd=$(git config --global core.sshCommand 2>/dev/null || true)
-    if [[ "$_cur_ssh_cmd" == *ssh.exe* ]]; then
-      echo "💡 git core.sshCommand = $_cur_ssh_cmd (uses the Windows ssh, bypassing the native agent and ~/.ssh/config)"
-      echo "   Unsets it"
-      if _pf_yes; then
-        git config --global --unset core.sshCommand
-        echo "   ✅ Unset"
-        ((applied++))
-      else
-        echo "   Skipped."; ((skipped++))
-      fi
-      echo ""
-    fi
-
-    fi # _bridge_verified
-
     # 8. 1Password CLI: prefer the Windows op.exe (desktop-app approval, no WSL
     #    install). Windows PATH is often not appended, so use the resolver.
     unset OP_BIN

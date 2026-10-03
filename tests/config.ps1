@@ -306,8 +306,7 @@ esac
     $o = & $inst
     chk 'install: refuses a config dir inside the install root, before touching anything' { $o -match 'Refusing' -and -not (Test-Path (Join-Path $ih '.preflight/inside')) }
 
-    # ---- upgrade path: an install from before config.json -----------------------
-    # Update-Preflight must ship install.ps1 and defaults\, or re-running the (old) installer from the
+    # ---- Update-Preflight must ship install.ps1 and defaults\, or re-running the installer from the
     # install directory cannot seed config.json. The "upstream" is a throwaway git repo holding this
     # working tree, so uncommitted changes are tested too.
     if (Get-Command git -ErrorAction SilentlyContinue) {
@@ -323,10 +322,8 @@ esac
         $uh = Join-Path $T 'uhome/.preflight'
         New-Item -ItemType Directory -Path (Join-Path $uh 'pwsh') -Force | Out-Null
         Copy-Item -Recurse -Path (Join-Path $Repo 'pwsh/*') -Destination (Join-Path $uh 'pwsh')
-        # Make it look like an install from before: a legacy installer, no defaults, an accounts.ps1.
-        Set-Content (Join-Path $uh 'pwsh/install.ps1') '# LEGACY INSTALLER'
-        New-Item -ItemType Directory -Path (Join-Path $uh 'pwsh/config') -Force | Out-Null
-        Set-Content (Join-Path $uh 'pwsh/config/accounts.ps1') '$env:OP_ACCOUNT = "x"'
+        # Make it look like a stale install: a stub installer and no defaults.
+        Set-Content (Join-Path $uh 'pwsh/install.ps1') '# STALE INSTALLER'
         $ucfg = Join-Path $T 'ucfg'; $ust = Join-Path $T 'ust'
 
         $run = {
@@ -336,12 +333,11 @@ esac
         }
         $o = & $run "Update-Preflight -RepoUrl '$up' -DryRun"
         chk 'update: a dry run lists install.ps1 and the defaults' { $o -match 'would update: install.ps1' -and $o -match 'defaults.config.general.json' }
-        chk 'update: a dry run changes nothing' { (Get-Content (Join-Path $uh 'pwsh/install.ps1') -Raw) -match 'LEGACY' -and -not (Test-Path (Join-Path $uh 'defaults')) }
+        chk 'update: a dry run changes nothing' { (Get-Content (Join-Path $uh 'pwsh/install.ps1') -Raw) -match 'STALE' -and -not (Test-Path (Join-Path $uh 'defaults')) }
 
         $o = & $run "Update-Preflight -RepoUrl '$up'"
         chk 'update: install.ps1 is replaced by the current installer' { (Get-Content (Join-Path $uh 'pwsh/install.ps1') -Raw) -ceq (Get-Content (Join-Path $Repo 'pwsh/install.ps1') -Raw) }
         chk 'update: the bundled defaults are delivered beside pwsh\' { (Test-Path (Join-Path $uh 'defaults/config.general.json')) -and (Test-Path (Join-Path $uh 'defaults/theme-catppuccin.omp.json')) }
-        chk 'update: it tells you to run the installer once' { $o -match 'Settings moved to config.json' -and $o -match 'install.ps1' }
         chk 'update: user config is never written by an update' { -not (Test-Path (Join-Path $ucfg 'config.json')) }
 
         # Now the documented step works from the installed tree, with no checkout.
@@ -352,8 +348,6 @@ esac
         chk 'update then install: config.json is seeded from the delivered defaults' { Test-Path (Join-Path $ucfg 'config.json') }
         chk 'update then install: the owl theme is seeded into the state dir' { Test-Path (Join-Path $ust 'owl/theme-catppuccin.omp.json') }
         chk 'update then install: the old profile guard is replaced by one that sets no OWL_ variable' { $pc = Get-Content $uprof -Raw; $pc -match 'Import-Module' -and $pc -notmatch 'OWL_' -and $pc -notmatch 'Import-Module x' }
-        $o = & $run 'Write-Output ready'
-        chk 'after the upgrade the old-installer warning is gone' { $o -notmatch 'old installer' }
     } else {
         Write-Host 'skipped: upgrade-path tests (git not installed)'
     }
