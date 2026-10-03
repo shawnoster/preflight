@@ -355,7 +355,7 @@ op-load-env() {
       # vault or a bad item name all come back as "failed to load" otherwise, with
       # nothing to say which. No temp file (none to write, or no usable tmp dir)
       # just means less detail, never a failed load.
-      _op_errf=$(mktemp 2>/dev/null) || _op_errf=/dev/null
+      _op_errf=$(mktemp "${TMPDIR:-/tmp}/op-load-env.XXXXXX" 2>/dev/null) || _op_errf=/dev/null
       while IFS= read -r _op_line; do
         [[ -n "$_op_line" ]] || continue
         _op_name2="${_op_line%%$'\t'*}"
