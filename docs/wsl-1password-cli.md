@@ -29,11 +29,13 @@ WSL shell ──> op.exe (Windows) ──> 1Password desktop app (Windows)
 
 ## Configure preflight
 
-In `~/.config/preflight/accounts.sh`, set `OP_ACCOUNT` to your **sign-in address**, not a shorthand. The desktop-fed `op.exe` lists accounts by address and does not carry the manual `op account add` shorthand:
+Set `op.account` (`OP_ACCOUNT`) to your **sign-in address**, with `preflight config set op.account ADDRESS`, not a shorthand. The desktop-fed `op.exe` lists accounts by address and does not carry the manual `op account add` shorthand:
 
 ```bash
-export OP_ACCOUNT="my-team.1password.com"
+preflight config set op.account my-team.1password.com
 ```
+
+This writes `config.json` (and applies to the current shell), so it persists; an `export` in a shell or rc file would only last for that shell and, once set, would also override the file.
 
 Find your address with:
 
@@ -58,7 +60,7 @@ op-signin && "$OP_BIN" read --account "$OP_ACCOUNT" "op://<Vault>/<Item>/<field>
 
 ## Notes and gotchas
 
-- **Account reference:** use the sign-in address (`my-team.1password.com`) under desktop integration, not a shorthand. A stale `op account add` shorthand, or a leftover `OP_ACCOUNT` from a shell opened before you edited `accounts.sh`, fails every read. `op-load-env` prints `op`'s own error under each failed secret (for example `"Employee" isn't a vault in this account`) along with the account it used, so compare that account with `echo $OP_ACCOUNT`.
+- **Account reference:** use the sign-in address (`my-team.1password.com`) under desktop integration, not a shorthand. A stale `op account add` shorthand, or a leftover `OP_ACCOUNT` from a shell opened before you changed `op.account`, fails every read. `op-load-env` prints `op`'s own error under each failed secret (for example `"Employee" isn't a vault in this account`) along with the account it used, so compare that account with `echo $OP_ACCOUNT`.
 - **`op inject`, not `op run`:** the `op run --env-file -- bash -c …` trick does **not** work with `op.exe` — being a Windows binary, its `-- bash -c` child is a Windows process, not WSL bash. `op-load-env` batches each account's secrets into one `op inject` call instead (no child process). If one reference is bad that account's batch fails, so it falls back to per-secret `op read` calls to report which one; with the app unlocked those are authorized without re-prompting.
 - **Editing sets from Windows:** CRLF line endings in `~/.config/preflight/envsets/*.tsv` are tolerated.
 - **First-read prompt:** the desktop app prompts on the first authorized call per session; subsequent reads are silent per the app's "remember" policy.

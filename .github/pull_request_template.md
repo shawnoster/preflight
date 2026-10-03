@@ -25,10 +25,10 @@
 
 <!-- Keep this section so every PR has the same shape. If nothing here affects an
      existing install, write "None".
-     init.sh and install.sh normally copy a *.template into its live counterpart only
-     when the live file is missing, so a template change does not reach an existing
-     install on its own, and there is no automatic migration. So if you change a
-     template, or rename/move a tracked file or anything under the user's config or
+     init.sh copies a defaults/ profile to the live config.json only when that file is
+     missing, so a profile change does not reach an existing install on its own, and
+     there is no automatic migration. So if you change a profile, add or rename a
+     setting, or rename/move a tracked file or anything under the user's config or
      state directory, say what an existing install must do. -->
 
 ## Test plan
@@ -43,5 +43,5 @@
 - [ ] If this is a breaking change, Upgrade notes say what an existing install must do
 - [ ] Tracked files stay generic: no secrets, work-specific account references, or machine-specific paths
 - [ ] Works when sourced from both Bash and zsh (`_pf_ask`, not `read -p`; no `read -a`, `mapfile`/`readarray`, or 0-based array indexes)
-- [ ] Edited the `*.template` files, not the generated live copies
+- [ ] Edited the `defaults/` profiles, not the generated live copy (and added any new setting to the table in `lib/config.sh`, the schema, both profiles and `docs/config.md`)
 - [ ] README / AGENTS.md / `--help` text updated where behavior changed

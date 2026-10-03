@@ -10,22 +10,24 @@
 
 There are two copies of this code on disk, and they serve different roles. Know which one you're editing before you change anything.
 
-- **The template (source) repo** — wherever you cloned it (e.g. `~/dev/code/preflight`; the source checkout location is arbitrary — only the working install path is fixed by default). This is the git working tree people clone and install from. Tracked files live here: `lib/*.sh`, the `*.template` files and profiles under `defaults/` (`defaults/accounts.sh.template`, `defaults/owl.sh.template`), `init.sh`, `install.sh`, docs, and this `AGENTS.md`. Everything here must stay **generic** — no personal secrets, no work-specific account references, no machine-specific paths. **All tracked changes (and all PRs) are made here.**
-- **`~/.preflight` — the working install (`PREFLIGHT_DIR`).** This is what `init.sh` actually sources at shell startup. It is a disposable clone: it holds no user data. On first load `init.sh` copies the committed `defaults/*.template` files into their **live counterparts outside the clone**, in `PREFLIGHT_CONFIG_DIR` (default `~/.config/preflight`: `accounts.sh`, `owl.sh`, `envsets/*.tsv`). Owl state lives in `PREFLIGHT_STATE_DIR` (default `~/.local/state/preflight`). Both are resolved once by `lib/paths.sh` (override variables, then `XDG_CONFIG_HOME` / `XDG_STATE_HOME`, then the defaults), which refuses a `PREFLIGHT_DIR` equal to either. Those live files are where the user's **work-specific** bits live: real `op://` secret references (in env sets), the `OP_ACCOUNT` sign-in address, AWS profile defaults, etc. Because they live outside the repo, personal config can never land in the template, and `preflight update` / `uninstall` (without `--purge`) never touch them.
+- **The template (source) repo** — wherever you cloned it (e.g. `~/dev/code/preflight`; the source checkout location is arbitrary — only the working install path is fixed by default). This is the git working tree people clone and install from. Tracked files live here: `lib/*.sh`, the profiles and schema under `defaults/` (`defaults/config.general.json`, `defaults/config.company.json`, `defaults/config.schema.json`), `init.sh`, `install.sh`, docs, and this `AGENTS.md`. Everything here must stay **generic** — no personal secrets, no work-specific account references, no machine-specific paths. **All tracked changes (and all PRs) are made here.**
+- **`~/.preflight` — the working install (`PREFLIGHT_DIR`).** This is what `init.sh` actually sources at shell startup. It is a disposable clone: it holds no user data. On first load `init.sh` copies a committed profile (`defaults/config.<name>.json`) to its **live counterpart outside the clone**, `PREFLIGHT_CONFIG_DIR/config.json` (default `~/.config/preflight`, beside `envsets/*.tsv`). `lib/config.sh` loads it into the shell variables (see "Settings" below). Owl state lives in `PREFLIGHT_STATE_DIR` (default `~/.local/state/preflight`). Both are resolved once by `lib/paths.sh` (override variables, then `XDG_CONFIG_HOME` / `XDG_STATE_HOME`, then the defaults), which refuses a `PREFLIGHT_DIR` equal to either. Those live files are where the user's **work-specific** bits live: real `op://` secret references (in env sets), the `OP_ACCOUNT` sign-in address, AWS profile defaults, etc. Because they live outside the repo, personal config can never land in the template, and `preflight update` / `uninstall` (without `--purge`) never touch them.
 
 `~/.preflight` is itself a clone of the same repo, so its *tracked* files can be edited and committed — but doing so risks drift between the two checkouts and accidentally committing local config. **Default to editing tracked files in the source checkout and opening a PR;** treat `~/.preflight` as a runtime install whose only intentional local edits are the gitignored live files.
 
 **No separate source checkout on this machine?** Check before assuming one exists — don't guess a path like `~/dev/code/preflight` and treat its absence as "must not apply here." If `~/.preflight` really is the only clone, it's still not a license to commit tracked-file changes straight to its local `main`: `git fetch origin` first (main may have moved — another machine or a prior session may have pushed since this clone last pulled), then branch off `origin/main` (not local `main`, which `fetch` alone does not update — fast-forward it too if you want it current, but branch from the remote ref regardless), commit there, push, and open a PR from that branch, exactly as if this were the source checkout. Never land a tracked-file change directly on local `main` in any checkout, single or not.
 
-Note that both `init.sh` (on every shell load) and `install.sh` (at install time) normally copy a `*.template` into its live counterpart only when the live file is **missing** *and* the template exists — e.g. for owl:
+Note that `init.sh` (on every shell load) copies a profile to `config.json` only when the live file is **missing**:
 
 ```bash
-if [[ ! -f "$PREFLIGHT_CONFIG_DIR/owl.sh" ]] && [[ -f "$PREFLIGHT_DIR/defaults/owl.sh.template" ]]; then
-  cp "$PREFLIGHT_DIR/defaults/owl.sh.template" "$PREFLIGHT_CONFIG_DIR/owl.sh"
+if [[ ! -f "$PREFLIGHT_CONFIG_DIR/config.json" ]]; then
+  cp "$_pf_pick" "$PREFLIGHT_CONFIG_DIR/config.json"
 fi
 ```
 
-Missing-file copying is the only behavior: it never overwrites an existing live file, so a template change does not retroactively rewrite an already-generated live file — the user hand-merges the new template content into their live file (or deletes the live file to regenerate it from scratch). Say so in the PR's upgrade notes when you change a template. (The old sha256-based refresh of an untouched `owl.sh` was removed with the move to `PREFLIGHT_CONFIG_DIR`.) There is no migration from the old in-clone `config/` and `state/` locations; the README's upgrade note tells the user how to move them by hand.
+Missing-file copying is the only behavior: it never overwrites an existing live file, so a change to a profile does not retroactively rewrite an already-generated `config.json` — the user sets the new value with `preflight config set` (or deletes the file to regenerate it). Say so in the PR's upgrade notes when you change a profile. There is no migration from the old in-clone `config/` and `state/` locations, nor from `accounts.sh` / `owl.sh`; the README's upgrade notes tell the user what to do by hand.
+
+**Settings.** `lib/config.sh` holds one table (key, shell variable, type, export flag, default) that drives the loader, the built-in defaults, `preflight config set|get|check`, and `tests/config.sh`'s drift check against `defaults/config.schema.json` and both profiles. To add a setting: add a row, a schema entry, a value in both profiles, and a line in `docs/config.md`. A variable that is already set when the file loads wins over it, so **no library may assign a setting variable at load time** (not even `X="${X:-default}"`): it would look user-set and the file could never change it. `tests/config.sh` fails if one does. `jq` is required.
 
 ## Domains Covered
 
@@ -35,29 +37,29 @@ Missing-file copying is the only behavior: it never overwrites an existing live 
 - **Docker** — `lib/docker.sh`: container/image management utilities (`dex` tries bash first, falls back to sh)
 - **PostgreSQL** — `lib/postgres.sh`: cluster start/stop (`pg-up`, `pg-down`) for clusters set to `manual` in `start.conf`. Goes through `pg_ctlcluster`, which self-redirects to `systemctl` when systemd is running and the caller is root, so one code path covers systemd and non-systemd hosts. Debian/Ubuntu only — needs `postgresql-common`.
 - **1Password** — `lib/onepassword.sh`: generic, data-agnostic helpers (`op-status`, `op-signin`, `op-load-env`, `op-clear-env`, `op-new`, `op-import-csv`). It is a plain tracked file and must never name a specific secret; after-load side effects register through `_OP_AFTER_LOAD_HOOKS` (e.g. `lib/nanoleaf.sh`).
-- **Env sets** — `lib/envsets.sh`: `op-env add|list|rm|use|migrate`. The only place that defines which secrets load: named sets of `VAR → op://` refs in `$PREFLIGHT_CONFIG_DIR/envsets/<set>.tsv`. `_op_env_entries` is the contract between it and `op-load-env`/`op-clear-env`; it passes lines through as written, so a set line may carry an optional third TAB column naming a 1Password account (absent = `$OP_ACCOUNT`), and `op-load-env` groups entries by that account and runs one `op inject` per account. A legacy `OP_SECRETS` array in an older `accounts.sh` is still honored until `op-env migrate` moves it.
+- **Env sets** — `lib/envsets.sh`: `op-env add|list|rm|use|migrate`. The only place that defines which secrets load: named sets of `VAR → op://` refs in `$PREFLIGHT_CONFIG_DIR/envsets/<set>.tsv`. `_op_env_entries` is the contract between it and `op-load-env`/`op-clear-env`; it passes lines through as written, so a set line may carry an optional third TAB column naming a 1Password account (absent = `$OP_ACCOUNT`), and `op-load-env` groups entries by that account and runs one `op inject` per account. A legacy `OP_SECRETS` array in a leftover `lib/1password.sh` is still honored until `op-env migrate` moves it. `tests/fixtures/envsets/` plus `tests/fixtures/envsets.expected` are the shared contract for the `.tsv` format, checked by `tests/op-env.sh`.
 - **Project navigation** — `lib/project.sh`: workspace/project switching helpers
 - **Paths** — `lib/paths.sh`: `_pf_resolve_dirs` (exports `PREFLIGHT_CONFIG_DIR` / `PREFLIGHT_STATE_DIR`, refuses a layout that shares the clone) and `_pf_safe_rm_dir` (the guard every `rm -rf` of a directory goes through, including `preflight uninstall --purge`)
 - **Prompting** — `lib/prompt.sh`: `_pf_ask`, the Bash/zsh-portable replacement for `read -p`
-- **OOO Theme Engine** — `lib/owl.sh`: shell MOTD splash (`_owl_splash`) and Oh My Posh theme switcher (`owl-theme`). 8 themes, each with a name, color palette for the splash, and hex palette for OMP. Theme state persists in `$PREFLIGHT_STATE_DIR/owl/current`. OMP integration is optional — configured via `$PREFLIGHT_CONFIG_DIR/owl.sh` (auto-copied from `defaults/owl.sh.template` on first load).
+- **OOO Theme Engine** — `lib/owl.sh`: shell MOTD splash (`_owl_splash`) and Oh My Posh theme switcher (`owl-theme`). 8 themes, each with a name, color palette for the splash, and hex palette for OMP. Theme state persists in `$PREFLIGHT_STATE_DIR/owl/current`. OMP integration is optional — configured via the `owl.omp_config` key in `config.json`.
 
 ## Patterns & Tech
 
 - **Stack**: Bash
-- **Architecture**: Library of shell functions loaded via `init.sh` sourcing `lib/*.sh`; `defaults/accounts.sh.template`, `defaults/owl.sh.template` are committed and auto-copied to their live counterparts in `PREFLIGHT_CONFIG_DIR` by `init.sh` on first load — edit the templates, not the generated copies
+- **Architecture**: Library of shell functions loaded via `init.sh` sourcing `lib/*.sh`; `defaults/config.<profile>.json` are committed and one is copied to `PREFLIGHT_CONFIG_DIR/config.json` by `init.sh` on first load — edit the profiles, not the generated copy
 - **Key libraries**: `fzf` (interactive selection), `aws` CLI, `gh` CLI, `op` (1Password CLI), `git`, `docker`, `oh-my-posh` (optional, for `owl-theme`)
-- **Notable patterns**: Libraries are sourced from both Bash and zsh, so avoid Bash-only constructs: prompt with `_pf_ask` (`lib/prompt.sh`) instead of `read -p`, and do not use `read -a`, `mapfile`/`readarray` or relying on 0-based array indexes. A prompt whose empty answer means yes must treat a failed read as a decline (`_pf_ask reply "..." || reply=n`). All functions are shell aliases/functions — no subcommand framework; `PREFLIGHT_DIR` env var controls install location (default `~/.preflight`); `PREFLIGHT_BRANCH` controls the branch used by `preflight update` (default `main`); `PREFLIGHT_VERBOSE=1` for load confirmation; `AWS_PROFILE_DEFAULT` sets the default AWS profile that `preflight` exports as `AWS_PROFILE` at session start; `OWL_OMP_CONFIG` in `owl.sh` (in `PREFLIGHT_CONFIG_DIR`) points to the Oh My Posh JSON — leave empty to use owl themes without OMP
+- **Notable patterns**: Libraries are sourced from both Bash and zsh, so avoid Bash-only constructs: prompt with `_pf_ask` (`lib/prompt.sh`) instead of `read -p`, and do not use `read -a`, `mapfile`/`readarray` or relying on 0-based array indexes. A prompt whose empty answer means yes must treat a failed read as a decline (`_pf_ask reply "..." || reply=n`). All functions are shell aliases/functions — no subcommand framework; `PREFLIGHT_DIR` env var controls install location (default `~/.preflight`); `PREFLIGHT_BRANCH` controls the branch used by `preflight update` (default `main`); `PREFLIGHT_VERBOSE=1` for load confirmation; `AWS_PROFILE_DEFAULT` (`aws.default_profile` in `config.json`) sets the default AWS profile that `preflight` exports as `AWS_PROFILE` at session start; `OWL_OMP_CONFIG` (`owl.omp_config`) points to the Oh My Posh JSON — leave empty to use owl themes without OMP
 
 ## When to Dive Deeper
 
 Read this repo when working on:
 
 - **Developer onboarding shell setup** — `init.sh` and `bashrc-snippet.sh` show exactly what to add to dotfiles; `install.sh` is the one-line curl installer
-- **AWS SSO profile workflow issues** — `lib/aws.sh` has the profile switching and SSO login flow; `AWS_PROFILE_DEFAULT` in `accounts.sh` (in `PREFLIGHT_CONFIG_DIR`) sets the session default
+- **AWS SSO profile workflow issues** — `lib/aws.sh` has the profile switching and SSO login flow; `aws.default_profile` in `config.json` sets the session default
 - **WSL SSH setup with 1Password** — `docs/wsl-ssh-setup.md` covers prerequisites; `preflight configure` installs the systemd + npiperelay agent bridge and migrates off the old `ssh.exe` aliases
 - **Adding new shell utilities for all engineers** — add a new `lib/<domain>.sh` file
 - **1Password CLI integration for secrets** — `lib/onepassword.sh` has the sign-in flow for WSL/headless environments; `lib/envsets.sh` has the list of secrets
-- **Shell MOTD or theme customization** — `lib/owl.sh` has the theme engine and splash; `defaults/owl.sh.template` controls `OWL_OMP_CONFIG` and `OWL_THEME_DIR`
+- **Shell MOTD or theme customization** — `lib/owl.sh` has the theme engine and splash; the `owl.omp_config` key controls `OWL_OMP_CONFIG`; `OWL_THEME_DIR` is environment-only
 
 **Skip this repo when**: You need CI/CD automation, GitHub Actions, deployed tooling, or anything that runs outside a developer's local shell.
 
@@ -74,12 +76,13 @@ Read this repo when working on:
 | PostgreSQL cluster control | `lib/postgres.sh` |
 | 1Password utilities | `lib/onepassword.sh` |
 | Which secrets load (`op-env`) | `lib/envsets.sh` (data in `$PREFLIGHT_CONFIG_DIR/envsets/*.tsv`, outside the clone) |
-| Account/env config | `defaults/accounts.sh.template` (auto-copied to `$PREFLIGHT_CONFIG_DIR/accounts.sh` on first load) |
-| Owl theme + OMP config | `defaults/owl.sh.template` (auto-copied to `$PREFLIGHT_CONFIG_DIR/owl.sh` on first load) |
+| Account/env config | `lib/config.sh` (table + loader + `preflight config`), `docs/config.md`, `defaults/config.*.json` (profile auto-copied to `$PREFLIGHT_CONFIG_DIR/config.json` on first load) |
+| Owl theme + OMP config | `owl.omp_config` in `config.json`; base theme in `defaults/theme-catppuccin.omp.json` |
 | Config/state directories, safe-rm guard | `lib/paths.sh` |
 | WSL SSH setup guide | `docs/wsl-ssh-setup.md` |
 | Tests (env sets, `op-load-env`; bash + zsh, fake `op`) | `tests/op-env.sh` |
 | Tests (directory layout, first run, `uninstall --purge`; bash + zsh) | `tests/paths.sh` |
+| Tests (`config.json` loader, `preflight config`, table/schema/profile drift; bash + zsh) | `tests/config.sh` |
 
 ## Upstream / Downstream
 

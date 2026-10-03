@@ -1,0 +1,5 @@
+NPM_TOKEN	op://Employee/npm/credential
+GITEA_TOKEN	op://Private/Gitea/pat	personal.1password.com
+SHARED	op://first/wins/field
+CRLF_VAR	op://v/item/field
+SPACES	op://Private/Item With Spaces/field

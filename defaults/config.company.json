@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "op": { "account": "my.1password.com" },
+  "projects": { "dirs": ["~/projects", "~/work", "~/src"] },
+  "aws": { "default_profile": "my-dev-profile" },
+  "git": { "main_branch": "main" },
+  "gitea": { "username": "", "host": "" },
+  "checks": { "aws": true, "gh": true, "ssh": true, "git_config": true },
+  "owl": { "omp_config": "$PREFLIGHT_STATE_DIR/owl/theme-catppuccin.omp.json" }
+}

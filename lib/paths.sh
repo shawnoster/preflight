@@ -4,7 +4,7 @@
 # ~/.preflight is a disposable clone (code, defaults, templates). Everything the
 # user owns lives outside it, so `preflight update` and `uninstall` cannot touch it:
 #
-#   PREFLIGHT_CONFIG_DIR   accounts.sh, owl.sh, envsets/     default ~/.config/preflight
+#   PREFLIGHT_CONFIG_DIR   config.json, envsets/         default ~/.config/preflight
 #   PREFLIGHT_STATE_DIR    owl/ (current theme, patched OMP)  default ~/.local/state/preflight
 #
 # Priority for each: the PREFLIGHT_*_DIR override, then XDG_CONFIG_HOME /

@@ -17,21 +17,24 @@ if ! mkdir -p "$PREFLIGHT_CONFIG_DIR"; then
   return 1
 fi
 
-# An install updated in place still has its settings, env sets and owl state inside the
-# clone, where nothing reads them any more. Say so instead of silently starting from
-# fresh defaults (which would drop OP_ACCOUNT and every env set). While they are there,
-# create nothing in the new locations, so moving them over does not collide.
+# An install updated in place still has its env sets and owl state inside the clone, and
+# an old accounts.sh / owl.sh, where nothing reads them any more. Say so instead of
+# silently starting from built-in defaults (which would drop every env set and the
+# account). While the owl state is there, seed nothing into the new state dir, so moving
+# it over does not collide.
 _pf_legacy=""
-if [[ ! -f "$PREFLIGHT_CONFIG_DIR/accounts.sh" ]] \
-    && { [[ -f "$PREFLIGHT_DIR/config/accounts.sh" ]] || [[ -d "$PREFLIGHT_DIR/config/envsets" ]] \
-         || [[ -d "$PREFLIGHT_DIR/state/owl" ]]; }; then
-  _pf_legacy=1
-  echo "⚠️  preflight: your settings are still inside $PREFLIGHT_DIR (config/, state/)." >&2
-  echo "   They now live outside the clone and nothing is loading them. Move them once:" >&2
+if [[ -f "$PREFLIGHT_DIR/config/accounts.sh" || -f "$PREFLIGHT_DIR/config/owl.sh" \
+      || -d "$PREFLIGHT_DIR/config/envsets" || -d "$PREFLIGHT_DIR/state/owl" ]]; then
+  [[ -d "$PREFLIGHT_DIR/state/owl" ]] && _pf_legacy=1
+  echo "⚠️  preflight: settings from an older install are still inside $PREFLIGHT_DIR (config/, state/)." >&2
+  echo "   Env sets and owl state now live outside the clone; settings live in config.json:" >&2
   echo "     mkdir -p \"$PREFLIGHT_CONFIG_DIR\" \"$PREFLIGHT_STATE_DIR\"" >&2
-  echo "     mv \"$PREFLIGHT_DIR\"/config/{accounts.sh,owl.sh,envsets} \"$PREFLIGHT_CONFIG_DIR\"/" >&2
-  echo "     mv \"$PREFLIGHT_DIR\"/state/owl \"$PREFLIGHT_STATE_DIR\"/" >&2
-  echo "   (see the README upgrade note; \$OWL_OMP_CONFIG in owl.sh may need \$PREFLIGHT_STATE_DIR)" >&2
+  [[ -d "$PREFLIGHT_DIR/config/envsets" ]] && echo "     mv \"$PREFLIGHT_DIR\"/config/envsets \"$PREFLIGHT_CONFIG_DIR\"/" >&2
+  [[ -d "$PREFLIGHT_DIR/state/owl" ]] && echo "     mv \"$PREFLIGHT_DIR\"/state/owl \"$PREFLIGHT_STATE_DIR\"/" >&2
+  if [[ -f "$PREFLIGHT_DIR/config/accounts.sh" || -f "$PREFLIGHT_DIR/config/owl.sh" ]]; then
+    echo "   accounts.sh and owl.sh are no longer read: set their values with 'preflight config set'" >&2
+    echo "   (docs/config.md maps each old variable to its key), then delete them." >&2
+  fi
 fi
 
 # Add bin/ to PATH so distributed scripts (light-remind, nanoleaf-*) are
@@ -49,22 +52,23 @@ if [[ -z "${SSH_AUTH_SOCK:-}" && -S "$HOME/.1password/agent.sock" ]]; then
   export SSH_AUTH_SOCK="$HOME/.1password/agent.sock"
 fi
 
-# ── First-time setup: pick a profile if config doesn't exist ────────────────
+# ── First-time setup: pick a profile if there is no config.json yet ──────────
 
-if [[ -z "$_pf_legacy" && ! -f "$PREFLIGHT_CONFIG_DIR/accounts.sh" ]]; then
+if [[ ! -f "$PREFLIGHT_CONFIG_DIR/config.json" ]]; then
   # NOTE: this file is *sourced*, so we are not inside a function — `local` is
-  # an error here ("local: can only be used in a function"). It used to appear
-  # seven times below, which meant a fresh install greeted the user with seven
-  # error messages. Plain vars + an explicit unset at the end instead.
+  # an error here ("local: can only be used in a function"). Plain vars + an
+  # explicit unset at the end instead.
   #
-  # Collect available profiles (files matching accounts.*.sh, excluding .template and itself)
+  # Profiles are defaults/config.<name>.json; the schema is not one.
   _pf_profiles=()
-  for _pf_file in "$PREFLIGHT_DIR/defaults/accounts."*.sh; do
+  for _pf_file in "$PREFLIGHT_DIR/defaults/config."*.json; do
     [[ -f "$_pf_file" ]] || continue
     _pf_base=$(basename "$_pf_file")
-    [[ "$_pf_base" == "accounts.sh" || "$_pf_base" == "accounts.sh.template" ]] && continue
+    [[ "$_pf_base" == "config.schema.json" ]] && continue
     _pf_profiles+=("$_pf_file")
   done
+  _pf_pick=""
+  [[ -f "$PREFLIGHT_DIR/defaults/config.general.json" ]] && _pf_pick="$PREFLIGHT_DIR/defaults/config.general.json"
 
   # Only prompt when there is a human to answer. A non-interactive shell (a
   # script sourcing .bashrc, a provisioning run) would otherwise block on
@@ -72,7 +76,7 @@ if [[ -z "$_pf_legacy" && ! -f "$PREFLIGHT_CONFIG_DIR/accounts.sh" ]]; then
   if [[ ${#_pf_profiles[@]} -gt 0 && $- == *i* ]]; then
     echo "🔧 First-time setup — pick a config profile:"
     for _pf_idx in "${!_pf_profiles[@]}"; do
-      _pf_label=$(basename "${_pf_profiles[$_pf_idx]}" | sed 's/accounts\.\(.*\)\.sh/\1/')
+      _pf_label=$(basename "${_pf_profiles[$_pf_idx]}" | sed 's/config\.\(.*\)\.json/\1/')
       printf "  %d) %s\n" "$((_pf_idx + 1))" "$_pf_label"
     done
     printf "  Choice [1-%d]: " "${#_pf_profiles[@]}"
@@ -85,30 +89,19 @@ if [[ -z "$_pf_legacy" && ! -f "$PREFLIGHT_CONFIG_DIR/accounts.sh" ]]; then
       _pf_choice=-1
     fi
     if [[ $_pf_choice -ge 0 && $_pf_choice -lt ${#_pf_profiles[@]} ]]; then
-      cp "${_pf_profiles[$_pf_choice]}" "$PREFLIGHT_CONFIG_DIR/accounts.sh"
-      _pf_label=$(basename "${_pf_profiles[$_pf_choice]}" | sed 's/accounts\.\(.*\)\.sh/\1/')
-      echo "📋 Created $PREFLIGHT_CONFIG_DIR/accounts.sh from $_pf_label profile."
-      echo "   Edit it to customize your settings."
+      _pf_pick="${_pf_profiles[$_pf_choice]}"
     else
-      cp "$PREFLIGHT_DIR/defaults/accounts.sh.template" "$PREFLIGHT_CONFIG_DIR/accounts.sh"
-      echo "📋 Created $PREFLIGHT_CONFIG_DIR/accounts.sh from template (invalid choice)."
+      echo "   (invalid choice — using the general profile)"
     fi
-  elif [[ -f "$PREFLIGHT_DIR/defaults/accounts.sh.template" ]]; then
-    cp "$PREFLIGHT_DIR/defaults/accounts.sh.template" "$PREFLIGHT_CONFIG_DIR/accounts.sh"
-    echo "📋 Creating $PREFLIGHT_CONFIG_DIR/accounts.sh from template..."
-    echo "✅ Created. Edit $PREFLIGHT_CONFIG_DIR/accounts.sh to customize your settings."
+  fi
+  if [[ -n "$_pf_pick" ]]; then
+    cp "$_pf_pick" "$PREFLIGHT_CONFIG_DIR/config.json"
+    echo "📋 Created $PREFLIGHT_CONFIG_DIR/config.json from $(basename "$_pf_pick")."
+    echo "   Change settings with: preflight config set KEY VALUE  (preflight config help)"
   fi
   # These are globals (see the `local` note above) — don't leak them into the
   # user's interactive shell.
-  unset _pf_profiles _pf_file _pf_base _pf_idx _pf_label _pf_choice
-fi
-
-if [[ -z "$_pf_legacy" && ! -f "$PREFLIGHT_CONFIG_DIR/owl.sh" ]] && [[ -f "$PREFLIGHT_DIR/defaults/owl.sh.template" ]]; then
-  echo "📋 Creating $PREFLIGHT_CONFIG_DIR/owl.sh from template..."
-  cp "$PREFLIGHT_DIR/defaults/owl.sh.template" "$PREFLIGHT_CONFIG_DIR/owl.sh"
-  echo "✅ Created. Edit $PREFLIGHT_CONFIG_DIR/owl.sh to set your Oh My Posh config path."
-  echo "   If you previously had owl setup in ~/.bashrc, you can remove those lines —"
-  echo "   init.sh now handles _owl_theme_load, _owl_splash, and oh-my-posh init."
+  unset _pf_profiles _pf_file _pf_base _pf_idx _pf_label _pf_choice _pf_pick
 fi
 
 # Owl base theme: ensure the user-owned OMP copy that owl-theme patches exists
@@ -141,10 +134,9 @@ done
 [[ "$_pf_lib_err" != /dev/null ]] && rm -f "$_pf_lib_err"
 unset _pf_lib_err lib
 
-# ── Source config (non-secret environment setup) ──────────────────────────────
+# ── Load settings (config.json; see docs/config.md) ───────────────────────────
 
-[[ -f "$PREFLIGHT_CONFIG_DIR/accounts.sh" ]] && source "$PREFLIGHT_CONFIG_DIR/accounts.sh"
-[[ -f "$PREFLIGHT_CONFIG_DIR/owl.sh" ]]      && source "$PREFLIGHT_CONFIG_DIR/owl.sh"
+_pf_config_load
 
 # ── Owl theme + splash ────────────────────────────────────────────────────────
 

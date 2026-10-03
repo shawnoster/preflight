@@ -25,11 +25,12 @@
 #   • op installed, account added:  op account add --shorthand <your-account>
 #
 # ── Account reference ────────────────────────────────────────────────────────
-# Set OP_ACCOUNT in $PREFLIGHT_CONFIG_DIR/accounts.sh:
+# Set it with `preflight config set op.account ADDRESS` (OP_ACCOUNT):
 #   • WSL + desktop op.exe → the sign-in ADDRESS (e.g. my.1password.com). The
 #     desktop-fed op.exe does not carry a manual `op account add` shorthand.
 #   • Native op → the shorthand you created with `op account add --shorthand`.
-OP_ACCOUNT="${OP_ACCOUNT:-my.1password.com}"
+# Not assigned here: lib/config.sh sets OP_ACCOUNT from config.json, and a value assigned
+# at load time would look like one you set yourself, so the file could never change it.
 # Initialised (not left unset) so these libs also work in a shell running `set -u`.
 OP_BIN="${OP_BIN:-}"
 
@@ -120,7 +121,7 @@ op-clear-env
 Configuration:
 --------------
 Default account: $OP_ACCOUNT
-Set OP_ACCOUNT in $PREFLIGHT_CONFIG_DIR/accounts.sh to override.
+Override with: preflight config set op.account ADDRESS
 EOF
 }
 

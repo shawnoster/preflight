@@ -122,6 +122,7 @@ main() {
 
   # Prerequisites
   _pf_has git || _pf_die "git is required but not found — please install git and retry"
+  _pf_has jq  || _pf_die "jq is required (settings are read from config.json) — install it and retry: https://jqlang.github.io/jq/download/ (apt install jq, brew install jq)"
 
   # Already installed?
   if [[ -d "$PREFLIGHT_DIR/.git" ]]; then
@@ -174,13 +175,8 @@ main() {
 
   mkdir -p "$PREFLIGHT_CONFIG_DIR"
 
-  # First-time config setup (init.sh handles this too, but do it now so the
-  # user sees the files immediately)
-  if [[ ! -f "$PREFLIGHT_CONFIG_DIR/accounts.sh" ]] \
-      && [[ -f "$PREFLIGHT_DIR/defaults/accounts.sh.template" ]]; then
-    cp "$PREFLIGHT_DIR/defaults/accounts.sh.template" "$PREFLIGHT_CONFIG_DIR/accounts.sh"
-    _pf_ok "Created $PREFLIGHT_CONFIG_DIR/accounts.sh from template"
-  fi
+  # config.json is created by init.sh on the first shell load, which also offers
+  # the profile choice; doing it here would skip that prompt.
 
   # Owl base theme: place the bundled OMP theme in the state dir so owl-theme
   # has a user-owned config to patch (it refuses to touch Oh My Posh's own
@@ -205,13 +201,12 @@ main() {
   _pf_info "  1. Reload your shell:  $reload_cmd  (or open a new terminal)"
   _pf_info "     — on first load, you'll be prompted to pick a config profile."
   _pf_info "  2. Register your 1Password secrets:  op-env add"
-  _pf_info "     (set OP_ACCOUNT in $PREFLIGHT_CONFIG_DIR/accounts.sh first)"
+  _pf_info "     (set your account first: preflight config set op.account ADDRESS)"
   _pf_info "  3. Run: preflight"
   _pf_info ""
-  _pf_info "Available profiles:"
-  _pf_info "  defaults/accounts.general.sh  — Individual dev (Gitea, GitHub, minimal)"
-  _pf_info "  defaults/accounts.company.sh  — Company/team (AWS, NPM, full toolchain)"
-  _pf_info "  defaults/accounts.sh.template — Reference doc for all options"
+  _pf_info "Available profiles (offered on first load; settings go in $PREFLIGHT_CONFIG_DIR/config.json):"
+  _pf_info "  defaults/config.general.json — Individual dev (Gitea, GitHub, minimal)"
+  _pf_info "  defaults/config.company.json — Company/team (AWS, NPM, full toolchain)"
   _pf_info ""
   _pf_info "To add custom shell functions, create $PREFLIGHT_DIR/lib/local.sh"
   _pf_info "To check for updates later, run: preflight update"

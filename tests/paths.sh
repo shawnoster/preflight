@@ -30,7 +30,9 @@ fresh() {
   rm -rf "$T/home" "$T/pf"
   mkdir -p "$T/home" "$T/pf"
   cp -R "$R/lib" "$R/defaults" "$R/init.sh" "$T/pf/"
-  unset PREFLIGHT_CONFIG_DIR PREFLIGHT_STATE_DIR PREFLIGHT_CACHE_DIR XDG_CONFIG_HOME XDG_STATE_HOME XDG_CACHE_HOME
+  unset PREFLIGHT_CONFIG_DIR PREFLIGHT_STATE_DIR PREFLIGHT_CACHE_DIR XDG_CONFIG_HOME XDG_STATE_HOME XDG_CACHE_HOME OWL_THEME_DIR
+  # Settings a developer already has exported would win over config.json.
+  unset OP_ACCOUNT PROJ_DIRS AWS_PROFILE_DEFAULT GIT_MAIN_BRANCH GITEA_USERNAME GITEA_HOST OWL_OMP_CONFIG _CHECK_AWS _CHECK_GH _CHECK_SSH _CHECK_GIT_CONFIG
   export HOME="$T/home" PREFLIGHT_DIR="$T/pf" PREFLIGHT_NO_SPLASH=1
 }
 
@@ -92,21 +94,33 @@ chk "guard allows a preflight subdirectory" '_pf_safe_rm_dir "$T/xc/preflight"'
 # ── first run (init.sh sourced non-interactively) ─────────────────────────────
 fresh
 out=$(source "$PREFLIGHT_DIR/init.sh" 2>&1 </dev/null)
-chk "first run creates accounts.sh in the config dir" '[[ -f "$HOME/.config/preflight/accounts.sh" ]]'
-chk "first run creates owl.sh in the config dir"      '[[ -f "$HOME/.config/preflight/owl.sh" ]]'
+chk "first run creates config.json in the config dir" 'jq -e . "$HOME/.config/preflight/config.json" >/dev/null'
+chk "first run uses the general profile when non-interactive" 'cmp -s "$HOME/.config/preflight/config.json" "$R/defaults/config.general.json"'
 chk "first run seeds the owl theme in the state dir"  '[[ -f "$HOME/.local/state/preflight/owl/theme-catppuccin.omp.json" ]]'
 chk "first run writes nothing into the clone"         '[[ ! -e "$PREFLIGHT_DIR/config" && ! -e "$PREFLIGHT_DIR/state" ]]'
-chk "owl.sh points the OMP theme at the state dir"    'grep -q "PREFLIGHT_STATE_DIR/owl/theme-catppuccin" "$HOME/.config/preflight/owl.sh"'
+chk "first run loads the profile into the shell"      '[[ "$(source "$PREFLIGHT_DIR/init.sh" >/dev/null 2>&1 </dev/null; printf %s "$OWL_OMP_CONFIG")" == "$HOME/.local/state/preflight/owl/theme-catppuccin.omp.json" ]]'
 
-# An existing accounts.sh is never overwritten.
-echo '# mine' > "$HOME/.config/preflight/accounts.sh"
+# An existing config.json is never overwritten.
+echo '{"version":1,"op":{"account":"mine"}}' > "$HOME/.config/preflight/config.json"
 out=$(source "$PREFLIGHT_DIR/init.sh" 2>&1 </dev/null)
-chk "second run keeps an edited accounts.sh" '[[ "$(cat "$HOME/.config/preflight/accounts.sh")" == "# mine" ]]'
+chk "second run keeps an edited config.json" '[[ "$(jq -r .op.account "$HOME/.config/preflight/config.json")" == mine ]]'
+chk "second run loads the edited value"      '[[ "$(source "$PREFLIGHT_DIR/init.sh" >/dev/null 2>&1 </dev/null; printf %s "$OP_ACCOUNT")" == mine ]]'
+
+# Re-sourcing init.sh in the SAME shell (source ~/.bashrc) must still pick up edits:
+# the managed list has to survive the libs being sourced again.
+fresh
+source "$PREFLIGHT_DIR/init.sh" >/dev/null 2>&1 </dev/null
+echo '{"version":1,"git":{"main_branch":"first"}}' > "$HOME/.config/preflight/config.json"
+source "$PREFLIGHT_DIR/init.sh" >/dev/null 2>&1 </dev/null
+chk "same-shell reload: first value loaded" '[[ "$GIT_MAIN_BRANCH" == first ]]'
+echo '{"version":1,"git":{"main_branch":"second"}}' > "$HOME/.config/preflight/config.json"
+source "$PREFLIGHT_DIR/init.sh" >/dev/null 2>&1 </dev/null
+chk "same-shell reload: edited value follows the file" '[[ "$GIT_MAIN_BRANCH" == second ]]'
 
 # init.sh refuses a config dir that is the clone, and creates nothing there.
 fresh; export PREFLIGHT_CONFIG_DIR="$PREFLIGHT_DIR"
 out=$(source "$PREFLIGHT_DIR/init.sh" 2>&1 </dev/null); rc=$?
-chk "init.sh stops on a shared config dir" '[[ $rc -ne 0 && "$out" == *"is the install directory"* && ! -e "$PREFLIGHT_DIR/accounts.sh" ]]'
+chk "init.sh stops on a shared config dir" '[[ $rc -ne 0 && "$out" == *"is the install directory"* && ! -e "$PREFLIGHT_DIR/config.json" ]]'
 
 # ── uninstall ─────────────────────────────────────────────────────────────────
 # Run in a subshell: uninstall unsets preflight's own functions.
@@ -120,7 +134,7 @@ fresh
 mkdir -p "$HOME/.cache/preflight"; echo x > "$HOME/.cache/preflight/c"
 out=$(run_uninstall y)
 chk "uninstall removes the clone"            '[[ ! -d "$PREFLIGHT_DIR" ]]'
-chk "uninstall keeps the config dir"         '[[ -f "$HOME/.config/preflight/accounts.sh" ]]'
+chk "uninstall keeps the config dir"         '[[ -f "$HOME/.config/preflight/config.json" ]]'
 chk "uninstall keeps the state dir"          '[[ -d "$HOME/.local/state/preflight/owl" ]]'
 chk "uninstall keeps the cache dir"          '[[ -f "$HOME/.cache/preflight/c" ]]'
 chk "uninstall says where the kept data is"  '[[ "$out" == *"$HOME/.config/preflight"* ]]'
@@ -144,7 +158,7 @@ fresh
 ( source "$PREFLIGHT_DIR/init.sh" >/dev/null 2>&1 </dev/null )
 for args in "--purge typo" "typo" "--purge --purge" "--purge=1"; do
   out=$(run_uninstall y $args)
-  chk "uninstall '$args' is rejected and deletes nothing" '[[ "$out" == *"Usage: preflight uninstall"* && -d "$PREFLIGHT_DIR" && -f "$HOME/.config/preflight/accounts.sh" ]]'
+  chk "uninstall '$args' is rejected and deletes nothing" '[[ "$out" == *"Usage: preflight uninstall"* && -d "$PREFLIGHT_DIR" && -f "$HOME/.config/preflight/config.json" ]]'
 done
 
 # Only PREFLIGHT_CONFIG_DIR in the environment: --purge still resolves the state dir.
@@ -167,24 +181,25 @@ before=$(cat "$HOME/.bashrc")
 out=$( ( source "$PREFLIGHT_DIR/init.sh" >/dev/null 2>&1 </dev/null; PREFLIGHT_DIR="$HOME/.config"; printf 'y\n' | preflight uninstall ) 2>&1 )
 chk "uninstall with a protected PREFLIGHT_DIR refuses" '[[ "$out" == *"refusing to remove"* ]]'
 chk "...and leaves the shell profile untouched"     '[[ "$(cat "$HOME/.bashrc")" == "$before" ]]'
-chk "...and deletes nothing"                         '[[ -d "$HOME/.config" && -f "$HOME/.config/preflight/accounts.sh" ]]'
+chk "...and deletes nothing"                         '[[ -d "$HOME/.config" && -f "$HOME/.config/preflight/config.json" ]]'
 
 fresh
 ( source "$PREFLIGHT_DIR/init.sh" >/dev/null 2>&1 </dev/null )
 out=$(run_uninstall n --purge)
-chk "declining uninstall deletes nothing" '[[ -d "$PREFLIGHT_DIR" && -f "$HOME/.config/preflight/accounts.sh" ]]'
+chk "declining uninstall deletes nothing" '[[ -d "$PREFLIGHT_DIR" && -f "$HOME/.config/preflight/config.json" ]]'
 
 # An install updated in place: settings still inside the clone are reported, not ignored.
 fresh; mkdir -p "$PREFLIGHT_DIR/config/envsets" "$PREFLIGHT_DIR/state/owl"
 echo 'export OP_ACCOUNT=legacy' > "$PREFLIGHT_DIR/config/accounts.sh"
 out=$(source "$PREFLIGHT_DIR/init.sh" 2>&1 </dev/null)
 chk "legacy in-clone settings: warns and says how to move them" '[[ "$out" == *"still inside $PREFLIGHT_DIR"* && "$out" == *"mv "* ]]'
-chk "legacy: creates nothing in the new locations" '[[ ! -e "$HOME/.config/preflight/accounts.sh" && ! -e "$HOME/.local/state/preflight/owl" ]]'
-chk "legacy: no first-run prompt text"            '[[ "$out" != *"First-time setup"* ]]'
-mkdir -p "$HOME/.config/preflight" "$HOME/.local/state/preflight"
-mv "$PREFLIGHT_DIR/config/accounts.sh" "$HOME/.config/preflight/"
+chk "legacy: points accounts.sh at preflight config set"       '[[ "$out" == *"preflight config set"* ]]'
+chk "legacy: seeds nothing into the new owl state dir"         '[[ ! -e "$HOME/.local/state/preflight/owl" ]]'
+chk "legacy: still creates config.json (nothing to collide with)" '[[ -f "$HOME/.config/preflight/config.json" ]]'
+mkdir -p "$HOME/.local/state/preflight"
+rm -rf "$PREFLIGHT_DIR/config" "$PREFLIGHT_DIR/state"
 out=$(source "$PREFLIGHT_DIR/init.sh" 2>&1 </dev/null)
-chk "after moving accounts.sh the warning is gone" '[[ "$out" != *"still inside"* ]]'
+chk "after the old files are gone the warning is gone" '[[ "$out" != *"still inside"* ]]'
 
 # A config dir that cannot be created stops init with a message.
 fresh; touch "$T/afile"; export PREFLIGHT_CONFIG_DIR="$T/afile/cfg"

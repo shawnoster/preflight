@@ -13,17 +13,18 @@ curl -fsSL https://raw.githubusercontent.com/shawnoster/preflight/main/install.s
 The installer:
 - Clones the repo to `~/.preflight` (override with `PREFLIGHT_DIR=/your/path`)
 - Adds a source line to your shell rc file (`.bashrc` or `.zshrc`), with the correct syntax for your shell
-- Creates `~/.config/preflight/accounts.sh` from its template (your config lives outside the clone; see [Where things live](#where-things-live))
+- Requires `jq` (settings are read from `config.json` with it) and stops with an install hint if it is missing
+- On the first shell load, creates `~/.config/preflight/config.json` from a profile you pick (your config lives outside the clone; see [Where things live](#where-things-live))
 - Seeds a user-owned owl base theme into `~/.local/state/preflight/owl/theme-catppuccin.omp.json`, so `owl-theme` has an OMP config to patch out of the box
 
 After installing:
 
 ```bash
-# 1. Configure your accounts
-vim ~/.config/preflight/accounts.sh   # set OP_ACCOUNT, PROJ_DIRS, etc.
-
-# 2. Reload your shell (op-env and the other commands only exist after this)
+# 1. Reload your shell (preflight, op-env and the other commands only exist after this)
 source ~/.bashrc   # or open a new terminal
+
+# 2. Configure your accounts
+preflight config set op.account my-team.1password.com   # and projects.dirs, etc.; see `preflight config help`
 
 # 3. Register your 1Password secrets (VAR -> op:// ref)
 op-env add
@@ -50,17 +51,19 @@ preflight update
 
 Pulls the latest changes from the upstream repo, shows incoming commits, and warns if any tracked files have local modifications. Your config, env sets and state live outside the clone (`~/.config/preflight`, `~/.local/state/preflight`), so an update never touches them.
 
-> **Upgrading from a version where `lib/1password.sh` was a per-install copy:** the generic helpers are now the tracked file `lib/onepassword.sh`, so `preflight update` does not touch your old `lib/1password.sh` (it is gitignored and still loaded). An `OP_SECRETS=( ... )` list in it, or in `accounts.sh`, keeps working. Run `op-env migrate` to move it into a set (it refuses rather than silently switch a credential; see the command table), then delete the old list (and `lib/1password.sh` if it holds nothing else).
+> **Upgrading from a version where `lib/1password.sh` was a per-install copy:** the generic helpers are now the tracked file `lib/onepassword.sh`, so `preflight update` does not touch your old `lib/1password.sh` (it is gitignored and still loaded). An `OP_SECRETS=( ... )` list in it keeps working. Run `op-env migrate` to move it into a set (it refuses rather than silently switch a credential; see the command table), then delete the old list (and `lib/1password.sh` if it holds nothing else).
 
 > **Upgrading from a version that kept config inside `~/.preflight`:** config and state moved out of the clone, and `config/` was renamed `defaults/`. There is no automatic migration or fallback; move your files once, by hand, before the next shell start:
 >
 > ```bash
 > mkdir -p ~/.config/preflight ~/.local/state/preflight
-> mv ~/.preflight/config/accounts.sh ~/.preflight/config/owl.sh ~/.preflight/config/envsets ~/.config/preflight/
+> mv ~/.preflight/config/envsets ~/.config/preflight/
 > mv ~/.preflight/state/owl ~/.local/state/preflight/
 > ```
 >
-> If your `owl.sh` sets `OWL_OMP_CONFIG` to `$PREFLIGHT_DIR/state/owl/...`, change it to `$PREFLIGHT_STATE_DIR/owl/...`. Anything of yours that reads `~/.preflight/config` needs the new path.
+> Your settings (`accounts.sh`, `owl.sh`) are replaced by `config.json`; see the next note. Anything of yours that reads `~/.preflight/config` needs the new path.
+
+> **Upgrading from `accounts.sh` / `owl.sh` to `config.json`:** settings are now one JSON file, and `accounts.sh` and `owl.sh` are no longer sourced. There is no automatic conversion: install `jq`, move your env sets as above, and on the next shell start pick a profile (or copy `defaults/config.general.json` to `~/.config/preflight/config.json`), then set what you had with `preflight config set KEY VALUE`. [docs/config.md](./docs/config.md) maps each old variable to its key. Until the file exists, built-in defaults are used, including a placeholder `OP_ACCOUNT`, and `preflight` reports it. Any alias or `export` you kept in `accounts.sh` moves to `lib/local.sh`.
 
 > **If you installed to `~/.config/preflight`** (the custom-location example this README used to show), the clone and your config share that directory, which the new layout refuses. Move the clone out first, then follow the steps above (your files are then under `~/.preflight`, so use that path in them):
 >
@@ -114,6 +117,7 @@ source ~/.bashrc
 │   ├── aws.sh           # AWS profile management
 │   ├── docker.sh        # Docker utilities
 │   ├── git.sh           # Git shortcuts
+│   ├── config.sh        # config.json loader + `preflight config`
 │   ├── envsets.sh       # op-env: named sets of VAR -> op:// refs (+ optional account)
 │   ├── help.sh          # Unified help system (dev-help / devhelp)
 │   ├── nanoleaf.sh      # op-load-env hook: hands NANOLEAF_TOKEN to the nanoleaf-* scripts
@@ -121,7 +125,7 @@ source ~/.bashrc
 │   ├── postgres.sh      # PostgreSQL cluster start/stop (pg-up / pg-down)
 │   ├── preflight.sh     # Session startup + environment health check
 │   └── project.sh       # Build tool wrappers
-├── defaults/            # Tracked starting points: accounts.*.sh profiles, *.template, owl base theme
+├── defaults/            # Tracked starting points: config.<profile>.json, config.schema.json, owl base theme
 ├── pwsh/                # PowerShell sibling — see pwsh/README.md
 │   ├── Preflight.psd1   # Module manifest
 │   ├── Preflight.psm1   # Entry — dot-sources lib/*.ps1
@@ -170,7 +174,7 @@ When something is behind, the suggested upgrade command is derived from **how th
 | `op-load-env` | Load the active sets' secrets from 1Password into env vars |
 | `op-env add [set] [VAR] [ref] [account]` | Add a VAR → `op://` reference to a named set (`guild`, `personal`, ...); prompts for an omitted set, variable or reference (never the optional account) |
 | `op-env list [set]` / `rm` / `use` | Show sets, remove a key, choose which sets are active (fzf pickers) |
-| `op-env migrate [set] [--force]` | Move a legacy `OP_SECRETS` array (from an older `accounts.sh`) into a set. Skips malformed refs, and stops without changing anything if the set already holds a different ref for a variable, if another active set would override it, or if the set exists but is not active (`--force` overwrites the set's conflicting refs with the legacy ones) |
+| `op-env migrate [set] [--force]` | Move a legacy `OP_SECRETS` array (from a leftover `lib/1password.sh`) into a set. Skips malformed refs, and stops without changing anything if the set already holds a different ref for a variable, if another active set would override it, or if the set exists but is not active (`--force` overwrites the set's conflicting refs with the legacy ones) |
 | `op-clear-env` | Unset every variable `op-load-env` set |
 
 **Which secrets load (`lib/envsets.sh`):** `lib/onepassword.sh` is generic and names no secret. The list lives in env sets: `op-env` keeps named groups of `VAR → op://` references in `~/.config/preflight/envsets/<set>.tsv` (outside the clone, one `VAR<TAB>op://vault/item/field` per line, safe to hand-edit). `op-load-env` and `op-clear-env` use the active sets (`op-env use`; with no `envsets/.active`, every set is active). Once `.active` exists, a `.tsv` you create by hand is **not** loaded until you add it with `op-env use` (`op-env list` shows it as `○ inactive`); `op-env add` to a new set activates it for you. If two sets define the same variable, the first one wins: sets are read in the order listed in `envsets/.active` (what `op-env use` writes), or alphabetically when that file does not exist. With no secrets configured, `op-load-env` does nothing and does not sign in. A variable removed from a set, or a set that is deactivated, is unset on the next `op-load-env`. When a secret fails to load, `op-load-env` prints the first line of `op`'s error under it, with the account it used, so a wrong `OP_ACCOUNT` or a missing vault is visible instead of a bare "failed to load".
@@ -182,7 +186,7 @@ ATLASSIAN_TOKEN<TAB>op://Employee/Some Item/credential<TAB>my-team.1password.com
 NPM_TOKEN<TAB>op://Private/Item/credential
 ```
 
-Leave the column out to use `$OP_ACCOUNT` (the default from `accounts.sh`), which is why two-column lines — every line written before this existed — keep working untouched. `op-env add` takes the account as an optional 4th argument and never prompts for it; re-adding a key without one keeps whatever the line already said, so changing a reference can't quietly move the secret to another account. `op` resolves a reference against exactly one account per call, so `op-load-env` groups the entries by account and runs one `op inject` per account (a set that stays single-account still resolves in one call, as before). Every account is signed in up front, so a sign-in failure aborts before any variable is set rather than leaving a half-loaded environment; a batch that fails falls back to per-secret reads so the broken reference is named. With more than one account in play, `op-load-env` labels each secret with the account it came from.
+Leave the column out to use `$OP_ACCOUNT` (the default from `op.account`), which is why two-column lines — every line written before this existed — keep working untouched. `op-env add` takes the account as an optional 4th argument and never prompts for it; re-adding a key without one keeps whatever the line already said, so changing a reference can't quietly move the secret to another account. `op` resolves a reference against exactly one account per call, so `op-load-env` groups the entries by account and runs one `op inject` per account (a set that stays single-account still resolves in one call, as before). Every account is signed in up front, so a sign-in failure aborts before any variable is set rather than leaving a half-loaded environment; a batch that fails falls back to per-secret reads so the broken reference is named. With more than one account in play, `op-load-env` labels each secret with the account it came from.
 
 To run extra code after a load (for example `lib/nanoleaf.sh` copying `NANOLEAF_TOKEN` for cron jobs), add a function name to `_OP_AFTER_LOAD_HOOKS`.
 
@@ -202,7 +206,7 @@ claude mcp add --transport http github \
 # WSL + Windows desktop app (recommended): enable the desktop app's
 # Settings → Developer → "Integrate with 1Password CLI", install op.exe
 # (winget install AgileBits.1Password.CLI), and set OP_ACCOUNT to your
-# sign-in address (e.g. my-team.1password.com) in ~/.config/preflight/accounts.sh.
+# sign-in address (e.g. my-team.1password.com) with `preflight config set op.account ADDRESS`.
 
 # Native Linux/macOS: add the account by shorthand instead.
 op account add --shorthand my-team
@@ -311,7 +315,7 @@ and stay quiet. (This previously keyed off `$SHLVL -eq 1`, which never fired in
 environments that start you at a deeper shell level — under WSL + VS Code the
 login shell begins at `SHLVL=3`, so the MOTD silently never appeared.)
 
-**Oh My Posh integration is optional.** `OWL_OMP_CONFIG` (`~/.config/preflight/owl.sh`, auto-created from `defaults/owl.sh.template`) defaults to `$PREFLIGHT_STATE_DIR/owl/theme-catppuccin.omp.json` — the bundled owl base theme the installer seeds into the state dir, which `owl-theme` patches. Point it at your own OMP JSON to use a different base, or leave it empty to disable OMP integration — `owl-theme` still switches splash colors, it just won't touch your prompt.
+**Oh My Posh integration is optional.** `OWL_OMP_CONFIG` (config key `owl.omp_config`) defaults to `$PREFLIGHT_STATE_DIR/owl/theme-catppuccin.omp.json` — the bundled owl base theme the installer seeds into the state dir, which `owl-theme` patches. Point it at your own OMP JSON to use a different base, or leave it empty to disable OMP integration — `owl-theme` still switches splash colors, it just won't touch your prompt.
 
 ```bash
 # After installing, switch themes live — owl-theme patches ~/.local/state/preflight/owl/theme-catppuccin.omp.json:
@@ -389,24 +393,38 @@ Commands that require interactive selection will exit with a usage message when 
 
 | What | Where | Override |
 |---|---|---|
-| Settings (`accounts.sh`, `owl.sh`) | `~/.config/preflight/` | `PREFLIGHT_CONFIG_DIR`, then `XDG_CONFIG_HOME` |
+| Settings (`config.json`) | `~/.config/preflight/` | `PREFLIGHT_CONFIG_DIR`, then `XDG_CONFIG_HOME` |
 | Env sets (`envsets/<set>.tsv`, `.active`) | `~/.config/preflight/envsets/` | same |
 | Owl state, patched OMP theme | `~/.local/state/preflight/owl/` | `PREFLIGHT_STATE_DIR`, then `XDG_STATE_HOME` |
 | Cache | `~/.cache/preflight/` | `PREFLIGHT_CACHE_DIR`, then `XDG_CACHE_HOME` |
 
 Setting `PREFLIGHT_DIR` to the config or state directory is refused at load time, since code and data would then share a directory.
 
-Edit `~/.config/preflight/accounts.sh` to customize:
+Settings live in `~/.config/preflight/config.json` and are changed with `preflight config`:
 
-- `OP_ACCOUNT` - 1Password account reference: sign-in address (e.g. `my-team.1password.com`) for WSL desktop integration, or the `op account add` shorthand for native `op`
-- `PROJ_DIRS` - Directories for `proj` command
-- `AWS_PROFILE_DEFAULT` - Default AWS profile (`preflight` sets `AWS_PROFILE` from this at startup)
+```bash
+preflight config set op.account my-team.1password.com
+preflight config set projects.dirs "~/dev:~/src"
+preflight config get aws.default_profile
+preflight config edit      # then validates the file
+preflight config check     # invalid JSON, unknown keys, wrong types
+```
+
+| Key | Meaning |
+|---|---|
+| `op.account` | 1Password account reference: sign-in address (e.g. `my-team.1password.com`) for WSL desktop integration, or the `op account add` shorthand for native `op` |
+| `projects.dirs` | Directories for the `proj` command |
+| `aws.default_profile` | Default AWS profile (`preflight` sets `AWS_PROFILE` from this at startup) |
+| `git.main_branch`, `gitea.username`, `gitea.host` | Git helper and Gitea credential settings |
+| `checks.aws`, `checks.gh`, `checks.ssh`, `checks.git_config` | Which `preflight` sections run |
+| `owl.omp_config` | Oh My Posh JSON that `owl-theme` patches (empty disables OMP integration) |
+
+A variable you have already set in your environment wins over the file. Every key, its variable, types, defaults and the loading rules are in [docs/config.md](./docs/config.md).
+
+Environment variables that are not settings:
+
 - `PREFLIGHT_DIR` - Install location (default: `~/.preflight`)
 - `PREFLIGHT_BRANCH` - Branch used by `preflight update` (default: `main`)
-
-Edit `~/.config/preflight/owl.sh` to customize:
-
-- `OWL_OMP_CONFIG` - Path to your Oh My Posh JSON config (leave empty to disable OMP integration)
 - `OWL_THEME_DIR` - Where theme state is persisted (default: `$PREFLIGHT_STATE_DIR/owl`)
 
 ## Adding Custom Scripts
@@ -416,7 +434,7 @@ Files in `~/.preflight/lib/` are automatically sourced. Create `~/.preflight/lib
 ## Dependencies
 
 - **fzf** - Fuzzy finder (required for interactive selection)
-- **jq** - JSON processor (for npm/package.json parsing and AWS output)
+- **jq** - JSON processor (required: `config.json` is read with it; also used for npm/package.json parsing and AWS output)
 - **op** - 1Password CLI (on WSL, the Windows `op.exe` is preferred — see [docs/wsl-1password-cli.md](./docs/wsl-1password-cli.md))
 - **aws** - AWS CLI v2
 - **gh** - GitHub CLI (optional, for `gpr` and `preflight -u`)
