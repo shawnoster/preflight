@@ -23,7 +23,7 @@ git-help
 
 op-help
   1Password CLI utilities: secrets management.
-  Commands: op-status, op-signin, op-load-env, op-env, op-clear-env
+  Commands: op-status, op-signin, op-env (load, clear, add, list, rm, use)
 
 pg-help
   PostgreSQL cluster control for manually-started clusters.
@@ -50,9 +50,9 @@ Quick Reference:
 ----------------
 
 Load secrets:
-  op-load-env              # Load secrets from 1Password
+  op-env load [set...]     # Load secrets from 1Password (active sets, or just the named ones)
   op-env add               # Add a VAR -> op:// ref to a set (guild, personal, ...);
-                           # sets are the only list of secrets op-load-env uses;
+                           # sets are the only list of secrets op-env load uses;
                            # pass a 4th arg for a ref in another 1Password account
   op-env use               # Choose which sets load
 
@@ -134,10 +134,10 @@ gstash [ref]         Pop a stash (use --apply to keep in stash list)
 gsync [main]         Sync fork with upstream
 gunwip               Undo last WIP commit
 gwip [msg]           Quick work-in-progress commit
-op-env [cmd]         Manage env sets of 1Password refs (add/list/rm/use)
-op-clear-env         Clear all sensitive environment variables
+op-env [cmd]         1Password env sets: load/clear secrets, add/list/rm/use
+op-env clear [set...] Clear all loaded secrets (or only the named sets)
 op-help              Show 1Password command help
-op-load-env          Load secrets from 1Password into env vars
+op-env load [set...] Load secrets from 1Password into env vars
 op-signin [account]  Sign in to 1Password
 op-status            Check 1Password sign-in status
 pg-down [version] [cluster] Stop a PostgreSQL cluster

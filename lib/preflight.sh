@@ -144,9 +144,9 @@ preflight() {
 
   if _op_resolve_bin; then
     if [[ "$verbose" == true ]]; then
-      # Print a newline first so op-load-env's password prompt lands on its own line
+      # Print a newline first so op-env load's password prompt lands on its own line
       printf "\n"
-      if ! op-load-env; then
+      if ! op-env load; then
         issue_msgs+=("1Password sign-in or secret loading failed")
         ((issues++))
       else
@@ -156,7 +156,7 @@ preflight() {
       # Clear status line before op runs — its /dev/tty password prompt can't
       # be redirected, so give it a clean line. Reprint status afterward.
       _pf_status_clear
-      if ! op-load-env &>/dev/null 2>&1; then
+      if ! op-env load &>/dev/null 2>&1; then
         issue_msgs+=("1Password sign-in or secret loading failed")
         ((issues++))
       fi
