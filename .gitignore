@@ -13,6 +13,8 @@ state/
 # (_op_legacy_secrets, op-env migrate) and the README upgrade note once existing
 # installs have migrated.
 lib/1password.sh
+# Legacy PowerShell settings, no longer read (see pwsh/README.md); kept ignored so an updated
+# install does not show it as untracked or commit its secret references.
 pwsh/config/accounts.ps1
 
 # Your own shell functions; sourced with the other lib/*.sh (install.sh and

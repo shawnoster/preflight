@@ -131,7 +131,7 @@ source ~/.bashrc
 │   ├── Preflight.psm1   # Entry — dot-sources lib/*.ps1
 │   ├── install.ps1      # Windows installer (mirrors install.sh)
 │   ├── lib/             # PowerShell helpers (1password.ps1, …)
-│   └── config/          # accounts.ps1 (gitignored, from template)
+│   └── ...              # settings and env sets live in ~/.config/preflight (see pwsh/README.md)
 └── docs/
     └── wsl-ssh-setup.md # WSL + 1Password SSH setup guide
 ```
