@@ -88,22 +88,3 @@ millisecond for sourcing a file.
 `tests/config.sh` compares the two loaders case by case, and the env-set fixture is checked by both. The
 differences: no `preflight config` command yet (edit the file; `Test-PreflightConfig` validates it), the `checks.*`
 flags are ignored, `projects.dirs` is joined with `;` on Windows, and an empty value leaves the variable unset.
-
-## Converting an old `accounts.sh` / `owl.sh`
-
-There is no automatic conversion. Pick the profile that is closest, then set what you had:
-
-| In `accounts.sh` / `owl.sh` | Now |
-|---|---|
-| `export OP_ACCOUNT="x"` | `preflight config set op.account x` |
-| `export PROJ_DIRS="$HOME/a:$HOME/b"` | `preflight config set projects.dirs "~/a:~/b"` |
-| `export AWS_PROFILE_DEFAULT="p"` | `preflight config set aws.default_profile p` |
-| `export GIT_MAIN_BRANCH="m"` | `preflight config set git.main_branch m` |
-| `export GITEA_USERNAME` / `GITEA_HOST` | `preflight config set gitea.username …` / `gitea.host …` |
-| `_CHECK_AWS=0` and the other `_CHECK_*` | `preflight config set checks.aws false` |
-| `_OPTIONAL_ENV_VARS="A B"` | not a setting: variables are env-set entries (`op-env add SET VAR op://...`), and `preflight` checks every variable in the active sets |
-| `export OWL_OMP_CONFIG="/path"` | `preflight config set owl.omp_config /path` |
-| `export EDITOR=…`, `VISUAL=…`, other exports | your shell rc file, or `lib/local.sh` |
-
-Anything else in `accounts.sh` that was code (an alias, an `export`) belongs in `lib/local.sh` now: the file is no
-longer sourced.

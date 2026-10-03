@@ -23,8 +23,7 @@
          uninstall can reverse the change.
       6. Append an Import-Module line that loads Preflight from
          $HOME\.preflight\pwsh\Preflight.psd1, guarded so reload is
-         idempotent. An older guard (which also set $env:OWL_OMP_CONFIG and
-         OWL_THEME_DIR) is replaced; those values now come from config.json.
+         idempotent. An existing guard is replaced in place.
 
     Safe to run repeatedly. Use -DryRun to preview without writing.
     Use -Uninstall to reverse everything.
@@ -383,8 +382,7 @@ function Add-ImportGuard {
         round-trips byte-for-byte.
 
         If an Import-Module guard is already present, it is removed and
-        re-added so an older guard (one that also set OWL_OMP_CONFIG and
-        OWL_THEME_DIR) is replaced in place rather than duplicated. The result is
+        re-added so a changed guard is replaced in place rather than duplicated. The result is
         byte-identical when nothing actually changed.
     #>
     param([string]$Content, [string]$ManifestPath)
@@ -431,7 +429,7 @@ function Remove-ImportGuard {
     # Anchored at end-of-string, with the leading separator newline.
     # The leading (\r\n|\r|\n){1,2} accounts for Add-ImportGuard's "<eol><eol>"
     # separator, while still matching guards inserted with only one separator
-    # newline in legacy installs.
+    # newline (a hand-edited profile).
     $beginEsc = [regex]::Escape($script:GuardBegin)
     $endEsc   = [regex]::Escape($script:GuardEnd)
     # The body may not contain another begin marker: without that, a lazy .*? starts

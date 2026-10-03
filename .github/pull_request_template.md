@@ -27,7 +27,7 @@
      existing install, write "None".
      init.sh copies a defaults/ profile to the live config.json only when that file is
      missing, so a profile change does not reach an existing install on its own, and
-     there is no automatic migration. So if you change a profile, add or rename a
+     preflight carries no migration code. So if you change a profile, add or rename a
      setting, or rename/move a tracked file or anything under the user's config or
      state directory, say what an existing install must do. -->
 

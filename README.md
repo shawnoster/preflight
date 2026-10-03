@@ -52,29 +52,6 @@ preflight update
 Pulls the latest changes from the upstream repo, shows incoming commits, and warns if any tracked files have local modifications. Your config, env sets and state live outside the clone (`~/.config/preflight`, `~/.local/state/preflight`), so an update never touches them.
 
 
-> **Upgrading from a version that kept config inside `~/.preflight`:** config and state moved out of the clone, and `config/` was renamed `defaults/`. There is no automatic migration or fallback; move your files once, by hand, before the next shell start:
->
-> ```bash
-> mkdir -p ~/.config/preflight ~/.local/state/preflight
-> mv ~/.preflight/config/envsets ~/.config/preflight/
-> mv ~/.preflight/state/owl ~/.local/state/preflight/
-> ```
->
-> Your settings (`accounts.sh`, `owl.sh`) are replaced by `config.json`; see the next note. Anything of yours that reads `~/.preflight/config` needs the new path.
-
-> **Upgrading from `accounts.sh` / `owl.sh` to `config.json`:** settings are now one JSON file, and `accounts.sh` and `owl.sh` are no longer sourced. There is no automatic conversion: install `jq`, move your env sets as above, and on the next shell start pick a profile (or copy `defaults/config.general.json` to `~/.config/preflight/config.json`), then set what you had with `preflight config set KEY VALUE`. [docs/config.md](./docs/config.md) maps each old variable to its key. Until the file exists, built-in defaults are used, including a placeholder `OP_ACCOUNT`, and `preflight` reports it. Any alias or `export` you kept in `accounts.sh` moves to `lib/local.sh`.
-
-> **If you installed to `~/.config/preflight`** (the custom-location example this README used to show), the clone and your config share that directory, which the new layout refuses. Move the clone out first, then follow the steps above (your files are then under `~/.preflight`, so use that path in them):
->
-> ```bash
-> mv ~/.config/preflight ~/.preflight
-> # -i.bak works with both GNU and BSD/macOS sed; whichever rc file has the source line is edited
-> sed -i.bak 's|\.config/preflight/init\.sh|.preflight/init.sh|' ~/.bashrc ~/.zshrc 2>/dev/null
-> rm -f ~/.bashrc.bak ~/.zshrc.bak
-> ```
->
-> Or keep the clone where it is and point the config elsewhere, setting `PREFLIGHT_CONFIG_DIR=~/.config/preflight-data` and `PREFLIGHT_STATE_DIR=~/.local/state/preflight-data` before the `source` line, and moving the files there instead.
-
 After updating, reload your shell:
 
 ```bash
