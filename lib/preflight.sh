@@ -1006,11 +1006,13 @@ _preflight_update() {
 _preflight_uninstall() {
   local dir="${PREFLIGHT_DIR:-$HOME/.preflight}"
   local purge=false
-  case "${1:-}" in
-    "") ;;
-    --purge) purge=true ;;
-    *) echo "Usage: preflight uninstall [--purge]" >&2; return 1 ;;
-  esac
+  # Fail closed: any argument other than a single --purge is a mistake, and the
+  # destructive path must not run on a half-understood command line.
+  if [[ $# -gt 1 ]] || { [[ $# -eq 1 ]] && [[ "$1" != "--purge" ]]; }; then
+    echo "Usage: preflight uninstall [--purge]" >&2
+    return 1
+  fi
+  [[ "${1:-}" == "--purge" ]] && purge=true
 
   # Your own data lives outside the clone (lib/paths.sh). Without --purge it stays.
   [[ -n "${PREFLIGHT_CONFIG_DIR:-}" ]] || _pf_resolve_dirs || return 1

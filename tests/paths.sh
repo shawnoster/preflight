@@ -142,6 +142,13 @@ chk "--purge refuses the bare XDG config dir" '[[ "$out" == *"refusing to remove
 
 fresh
 ( source "$PREFLIGHT_DIR/init.sh" >/dev/null 2>&1 </dev/null )
+for args in "--purge typo" "typo" "--purge --purge" "--purge=1"; do
+  out=$(run_uninstall y $args)
+  chk "uninstall '$args' is rejected and deletes nothing" '[[ "$out" == *"Usage: preflight uninstall"* && -d "$PREFLIGHT_DIR" && -f "$HOME/.config/preflight/accounts.sh" ]]'
+done
+
+fresh
+( source "$PREFLIGHT_DIR/init.sh" >/dev/null 2>&1 </dev/null )
 out=$(run_uninstall n --purge)
 chk "declining uninstall deletes nothing" '[[ -d "$PREFLIGHT_DIR" && -f "$HOME/.config/preflight/accounts.sh" ]]'
 
