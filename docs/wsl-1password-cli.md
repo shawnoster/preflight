@@ -1,6 +1,6 @@
 # WSL 1Password CLI with the Windows desktop app
 
-Authorize 1Password secret reads inside WSL2 using the **Windows** 1Password desktop app — so `op-load-env` (and `preflight`) unlock via Windows Hello / desktop approval instead of a password typed in WSL.
+Authorize 1Password secret reads inside WSL2 using the **Windows** 1Password desktop app — so `op-env load` (and `preflight`) unlock via Windows Hello / desktop approval instead of a password typed in WSL.
 
 ## Why this setup
 
@@ -43,13 +43,13 @@ Find your address with:
 op.exe account list
 ```
 
-Then register your items with `op-env add` (for example `op-env add default NPM_TOKEN 'op://Private/npmjs/credential'`). `op-load-env` first unlocks each account the sets use (one Windows Hello / desktop prompt), then resolves each account's secrets in one `op inject` call — a single call for the usual single-account set.
+Then register your items with `op-env add` (for example `op-env add default NPM_TOKEN 'op://Private/npmjs/credential'`). `op-env load` first unlocks each account the sets use (one Windows Hello / desktop prompt), then resolves each account's secrets in one `op inject` call — a single call for the usual single-account set.
 
 ## Verify
 
 ```bash
 op-status      # reports the resolved binary and account
-op-load-env    # prompts a desktop unlock per account, then loads all secrets
+op-env load    # prompts a desktop unlock per account, then loads all secrets
 ```
 
 A successful run prints `✅ <VAR>` for each secret. A one-off read to sanity-check a single reference — use `$OP_BIN` (set by `op-signin`) so it goes through the same binary the helpers resolved, not a bare `op` that would pick the native Linux CLI and skip desktop integration:
@@ -60,8 +60,8 @@ op-signin && "$OP_BIN" read --account "$OP_ACCOUNT" "op://<Vault>/<Item>/<field>
 
 ## Notes and gotchas
 
-- **Account reference:** use the sign-in address (`my-team.1password.com`) under desktop integration, not a shorthand. A stale `op account add` shorthand, or a leftover `OP_ACCOUNT` from a shell opened before you changed `op.account`, fails every read. `op-load-env` prints `op`'s own error under each failed secret (for example `"Employee" isn't a vault in this account`) along with the account it used, so compare that account with `echo $OP_ACCOUNT`.
-- **`op inject`, not `op run`:** the `op run --env-file -- bash -c …` trick does **not** work with `op.exe` — being a Windows binary, its `-- bash -c` child is a Windows process, not WSL bash. `op-load-env` batches each account's secrets into one `op inject` call instead (no child process). If one reference is bad that account's batch fails, so it falls back to per-secret `op read` calls to report which one; with the app unlocked those are authorized without re-prompting.
+- **Account reference:** use the sign-in address (`my-team.1password.com`) under desktop integration, not a shorthand. A stale `op account add` shorthand, or a leftover `OP_ACCOUNT` from a shell opened before you changed `op.account`, fails every read. `op-env load` prints `op`'s own error under each failed secret (for example `"Employee" isn't a vault in this account`) along with the account it used, so compare that account with `echo $OP_ACCOUNT`.
+- **`op inject`, not `op run`:** the `op run --env-file -- bash -c …` trick does **not** work with `op.exe` — being a Windows binary, its `-- bash -c` child is a Windows process, not WSL bash. `op-env load` batches each account's secrets into one `op inject` call instead (no child process). If one reference is bad that account's batch fails, so it falls back to per-secret `op read` calls to report which one; with the app unlocked those are authorized without re-prompting.
 - **Editing sets from Windows:** CRLF line endings in `~/.config/preflight/envsets/*.tsv` are tolerated.
 - **First-read prompt:** the desktop app prompts on the first authorized call per session; subsequent reads are silent per the app's "remember" policy.
 - **op.exe not on PATH:** the resolver also globs the WinGet package and `Program Files` locations, so PATH setup is optional.

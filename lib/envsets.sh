@@ -251,7 +251,7 @@ _op_env_add() {
   _op_envsets_put "$set" "$name" "$ref" "$acct" || return 1
   echo "✅ [$set] $name -> $ref"
   [[ -n "$acct" ]] && echo "   account: $acct"
-  echo "   Load it now: op-load-env"
+  echo "   Load it now: op-env load"
 }
 
 _op_env_list() {
@@ -307,7 +307,7 @@ _op_env_rm() {
   awk -F'\t' -v n="$name" '$1 != n' "$file" > "$tmp" && chmod 600 "$tmp" && mv "$tmp" "$file" \
     || { rm -f "$tmp"; return 1; }
   echo "🗑️  Removed $name from $set"
-  echo "   It is unset on the next op-load-env or op-clear-env, or now with: unset $name"
+  echo "   It is unset on the next op-env load or op-env clear, or now with: unset $name"
 }
 
 _op_env_use() {

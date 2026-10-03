@@ -120,7 +120,7 @@ source ~/.bashrc
 │   ├── config.sh        # config.json loader + `preflight config`
 │   ├── envsets.sh       # op-env: named sets of VAR -> op:// refs (+ optional account)
 │   ├── help.sh          # Unified help system (dev-help / devhelp)
-│   ├── nanoleaf.sh      # op-load-env hook: hands NANOLEAF_TOKEN to the nanoleaf-* scripts
+│   ├── nanoleaf.sh      # op-env load hook: hands NANOLEAF_TOKEN to the nanoleaf-* scripts
 │   ├── owl.sh           # OOO theme engine + MOTD splash
 │   ├── postgres.sh      # PostgreSQL cluster start/stop (pg-up / pg-down)
 │   ├── preflight.sh     # Session startup + environment health check
@@ -171,13 +171,15 @@ When something is behind, the suggested upgrade command is derived from **how th
 |---------|-------------|
 | `op-status` | Check if signed in to 1Password |
 | `op-signin [account]` | Sign in to 1Password |
-| `op-load-env` | Load the active sets' secrets from 1Password into env vars |
+| `op-env load [set...]` | Load the active sets' secrets from 1Password into env vars, or only the named sets (see below). `op-load-env` is the same command under its older name |
 | `op-env add [set] [VAR] [ref] [account]` | Add a VAR → `op://` reference to a named set (`guild`, `personal`, ...); prompts for an omitted set, variable or reference (never the optional account) |
 | `op-env list [set]` / `rm` / `use` | Show sets, remove a key, choose which sets are active (fzf pickers) |
 | `op-env migrate [set] [--force]` | Move a legacy `OP_SECRETS` array (from a leftover `lib/1password.sh`) into a set. Skips malformed refs, and stops without changing anything if the set already holds a different ref for a variable, if another active set would override it, or if the set exists but is not active (`--force` overwrites the set's conflicting refs with the legacy ones) |
-| `op-clear-env` | Unset every variable `op-load-env` set |
+| `op-env clear [set...]` | Unset every variable `op-env load` set, or only the named sets' variables. `op-clear-env` is the older name |
 
-**Which secrets load (`lib/envsets.sh`):** `lib/onepassword.sh` is generic and names no secret. The list lives in env sets: `op-env` keeps named groups of `VAR → op://` references in `~/.config/preflight/envsets/<set>.tsv` (outside the clone, one `VAR<TAB>op://vault/item/field` per line, safe to hand-edit). `op-load-env` and `op-clear-env` use the active sets (`op-env use`; with no `envsets/.active`, every set is active). Once `.active` exists, a `.tsv` you create by hand is **not** loaded until you add it with `op-env use` (`op-env list` shows it as `○ inactive`); `op-env add` to a new set activates it for you. If two sets define the same variable, the first one wins: sets are read in the order listed in `envsets/.active` (what `op-env use` writes), or alphabetically when that file does not exist. With no secrets configured, `op-load-env` does nothing and does not sign in. A variable removed from a set, or a set that is deactivated, is unset on the next `op-load-env`. When a secret fails to load, `op-load-env` prints the first line of `op`'s error under it, with the account it used, so a wrong `OP_ACCOUNT` or a missing vault is visible instead of a bare "failed to load".
+**Loading just some sets.** `op-env load work personal` loads only those sets, in that order (the first definition of a variable still wins), without changing which sets are active. It adds to what is already loaded and unsets nothing, signs in to every account it needs before it sets a variable, and works on a set that is not active (it says so). A name that is not a set stops it before anything is signed in or changed. A plain `op-env load` is authoritative: it unsets variables that are no longer defined or whose set is not active, so a set you loaded by name but did not activate (`op-env use`) is unset again by the next plain load, including the one `preflight` runs. `op-env clear work` unsets just that set's variables and leaves the rest loaded. `op-load-env` and `op-clear-env` remain as the older names for the plain forms.
+
+**Which secrets load (`lib/envsets.sh`):** `lib/onepassword.sh` is generic and names no secret. The list lives in env sets: `op-env` keeps named groups of `VAR → op://` references in `~/.config/preflight/envsets/<set>.tsv` (outside the clone, one `VAR<TAB>op://vault/item/field` per line, safe to hand-edit). `op-env load` and `op-env clear` use the active sets (`op-env use`; with no `envsets/.active`, every set is active). Once `.active` exists, a `.tsv` you create by hand is **not** loaded until you add it with `op-env use` (`op-env list` shows it as `○ inactive`); `op-env add` to a new set activates it for you. If two sets define the same variable, the first one wins: sets are read in the order listed in `envsets/.active` (what `op-env use` writes), or alphabetically when that file does not exist. With no secrets configured, `op-env load` does nothing and does not sign in. A variable removed from a set, or a set that is deactivated, is unset on the next plain `op-env load`. When a secret fails to load, `op-env load` prints the first line of `op`'s error under it, with the account it used, so a wrong `OP_ACCOUNT` or a missing vault is visible instead of a bare "failed to load".
 
 **Secrets in more than one account:** a line may carry an optional third TAB-separated column naming the account that holds that reference, so a set can span accounts:
 
@@ -186,7 +188,7 @@ ATLASSIAN_TOKEN<TAB>op://Employee/Some Item/credential<TAB>my-team.1password.com
 NPM_TOKEN<TAB>op://Private/Item/credential
 ```
 
-Leave the column out to use `$OP_ACCOUNT` (the default from `op.account`), which is why two-column lines — every line written before this existed — keep working untouched. `op-env add` takes the account as an optional 4th argument and never prompts for it; re-adding a key without one keeps whatever the line already said, so changing a reference can't quietly move the secret to another account. `op` resolves a reference against exactly one account per call, so `op-load-env` groups the entries by account and runs one `op inject` per account (a set that stays single-account still resolves in one call, as before). Every account is signed in up front, so a sign-in failure aborts before any variable is set rather than leaving a half-loaded environment; a batch that fails falls back to per-secret reads so the broken reference is named. With more than one account in play, `op-load-env` labels each secret with the account it came from.
+Leave the column out to use `$OP_ACCOUNT` (the default from `op.account`), which is why two-column lines — every line written before this existed — keep working untouched. `op-env add` takes the account as an optional 4th argument and never prompts for it; re-adding a key without one keeps whatever the line already said, so changing a reference can't quietly move the secret to another account. `op` resolves a reference against exactly one account per call, so `op-env load` groups the entries by account and runs one `op inject` per account (a set that stays single-account still resolves in one call, as before). Every account is signed in up front, so a sign-in failure aborts before any variable is set rather than leaving a half-loaded environment; a batch that fails falls back to per-secret reads so the broken reference is named. With more than one account in play, `op-env load` labels each secret with the account it came from.
 
 To run extra code after a load (for example `lib/nanoleaf.sh` copying `NANOLEAF_TOKEN` for cron jobs), add a function name to `_OP_AFTER_LOAD_HOOKS`.
 
@@ -274,8 +276,8 @@ Visual reminders driven through Home Assistant + Nanoleaf Light Panels.
 calls (the helper reads its bearer token from `~/.claude.json`'s MCP
 server config — populated when you run `claude mcp add ha …`). The
 `nanoleaf-*` scripts read `NANOLEAF_TOKEN` from the environment first
-(set by `op-load-env`), falling back to `~/.config/nanoleaf-direct/env`
-(populated by `op-load-env` for cron) and finally
+(set by `op-env load`), falling back to `~/.config/nanoleaf-direct/env`
+(populated by `op-env load` for cron) and finally
 `~/.config/nanoleaf-direct/token.json` (offline backup).
 
 | Command | Description |
