@@ -96,11 +96,8 @@ preflight-cache-clear() {
   # in an interactive shell (the shell does survive), but *exits* a
   # non-interactive one outright — a hostile failure mode for a sourced
   # library. An explicit check also stops a stray `PREFLIGHT_CACHE_DIR=/`
-  # from turning this into `rm -rf /`.
-  if [[ -z "$dir" || "$dir" == "/" || "$dir" == "$HOME" ]]; then
-    echo "preflight: refusing to clear suspicious cache dir '${dir:-<unset>}'" >&2
-    return 1
-  fi
+  # from turning this into `rm -rf /` (_pf_safe_rm_dir, lib/paths.sh).
+  _pf_safe_rm_dir "$dir" || return 1
 
   if [[ ! -d "$dir" ]]; then
     echo "🧹 preflight cache already empty: $dir"

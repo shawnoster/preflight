@@ -7,7 +7,8 @@
 #                          versions, suggesting an upgrade command matched to how
 #                          each tool was installed
 #   preflight update     - pull latest changes from the upstream repo
-#   preflight uninstall  - remove preflight and undo shell profile changes
+#   preflight uninstall [--purge]  - remove preflight and undo shell profile changes
+#                        (--purge also deletes your config, state and cache)
 #   preflight configure        - interactively apply recommended settings (git globals, etc.)
 #   preflight configure --yes  - apply all without prompting
 #   preflight help       - show this usage (also -h / --help)
@@ -16,7 +17,7 @@ preflight() {
   # Dispatch subcommands before doing anything else
   case "${1:-}" in
     update)         _preflight_update;        return ;;
-    uninstall)      _preflight_uninstall;     return ;;
+    uninstall)      _preflight_uninstall "${@:2}"; return ;;
     configure)      _preflight_configure "${@:2}";     return ;;
     help|-h|--help) _preflight_help;          return ;;
   esac
@@ -862,7 +863,8 @@ Usage:
   preflight [-v] [-u] [--no-login]   Run the health check
   preflight configure [--yes]        Apply recommended git/SSH settings
   preflight update                   Pull latest changes from upstream
-  preflight uninstall                Remove preflight and shell profile changes
+  preflight uninstall [--purge]      Remove preflight and shell profile changes
+                                     (--purge also deletes your config, state and cache)
   preflight help                     Show this help (also -h, --help)
 
 Options:
@@ -1003,6 +1005,24 @@ _preflight_update() {
 
 _preflight_uninstall() {
   local dir="${PREFLIGHT_DIR:-$HOME/.preflight}"
+  local purge=false
+  case "${1:-}" in
+    "") ;;
+    --purge) purge=true ;;
+    *) echo "Usage: preflight uninstall [--purge]" >&2; return 1 ;;
+  esac
+
+  # Your own data lives outside the clone (lib/paths.sh). Without --purge it stays.
+  [[ -n "${PREFLIGHT_CONFIG_DIR:-}" ]] || _pf_resolve_dirs || return 1
+  local cache_dir="${PREFLIGHT_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/preflight}"
+  local user_dirs=("$PREFLIGHT_CONFIG_DIR" "$PREFLIGHT_STATE_DIR" "$cache_dir")
+  local ud
+  if [[ "$purge" == true ]]; then
+    # Check every directory up front: refuse before deleting anything.
+    for ud in "${user_dirs[@]}"; do
+      _pf_safe_rm_dir "$ud" || return 1
+    done
+  fi
 
   printf '  \033[38;2;%sm%s\033[0m\n' "${OWL_SUB:-120;130;150}" "$(printf '%0.s-' {1..33})"
   printf '  \033[1mPreflight Uninstall\033[0m\n'
@@ -1011,6 +1031,12 @@ _preflight_uninstall() {
   echo "This will:"
   echo "  • Remove $dir"
   echo "  • Remove the preflight source line from your shell profile"
+  if [[ "$purge" == true ]]; then
+    for ud in "${user_dirs[@]}"; do echo "  • Delete $ud"; done
+  else
+    echo "  • Keep your config, state and cache (--purge deletes them):"
+    for ud in "${user_dirs[@]}"; do echo "      $ud"; done
+  fi
   echo ""
   _pf_ask reply "Are you sure? [y/N] "
   echo ""
@@ -1042,10 +1068,20 @@ _preflight_uninstall() {
 
   # Remove the directory
   if [[ -d "$dir" ]]; then
-    rm -rf "$dir"
+    _pf_safe_rm_dir "$dir" || return 1
+    rm -rf -- "$dir"
     echo "✅ Removed $dir"
   else
     echo "ℹ️  $dir not found — nothing to remove."
+  fi
+
+  if [[ "$purge" == true ]]; then
+    for ud in "${user_dirs[@]}"; do
+      if [[ -d "$ud" ]]; then
+        rm -rf -- "$ud"
+        echo "✅ Removed $ud"
+      fi
+    done
   fi
 
   echo ""
@@ -1268,7 +1304,7 @@ GITIGNORE
       echo "ℹ️  No AWS profiles configured in ~/.aws/config — skipping"
       echo ""
     elif [[ -n "$current_default" ]]; then
-      echo "✅ AWS_PROFILE_DEFAULT = $current_default (set in config/accounts.sh)"
+      echo "✅ AWS_PROFILE_DEFAULT = $current_default (set in $PREFLIGHT_CONFIG_DIR/accounts.sh)"
       ((kept++))
       echo ""
     else
@@ -1282,7 +1318,7 @@ GITIGNORE
         local first_profile
         first_profile=$(echo "$profiles" | head -1)
         echo "   → Setting AWS_PROFILE_DEFAULT = $first_profile"
-        echo "   Add to ~/.preflight/config/accounts.sh:"
+        echo "   Add to $PREFLIGHT_CONFIG_DIR/accounts.sh:"
         echo "     export AWS_PROFILE_DEFAULT=\"$first_profile\""
         ((applied++))
       else
@@ -1290,7 +1326,7 @@ GITIGNORE
         echo ""
         if [[ -n "$chosen_profile" ]]; then
           if echo "$profiles" | grep -qxF "$chosen_profile"; then
-            local accounts_file="${PREFLIGHT_DIR:-$HOME/.preflight}/config/accounts.sh"
+            local accounts_file="$PREFLIGHT_CONFIG_DIR/accounts.sh"
             if grep -q '^export AWS_PROFILE_DEFAULT=' "$accounts_file" 2>/dev/null; then
               sed -i "s|^export AWS_PROFILE_DEFAULT=.*|export AWS_PROFILE_DEFAULT=\"$chosen_profile\"|" "$accounts_file"
             else

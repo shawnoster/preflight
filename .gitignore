@@ -1,7 +1,3 @@
-# Local configuration files (use .template versions as starting point)
-config/accounts.sh
-config/owl.sh
-config/envsets/
 # Pre-rename per-install copy of lib/onepassword.sh; left in place so an old OP_SECRETS
 # list in it keeps working until `op-env migrate` (then delete it).
 # TEMPORARY: drop this entry, the legacy OP_SECRETS support in lib/envsets.sh
@@ -13,9 +9,6 @@ pwsh/config/accounts.ps1
 # Your own shell functions; sourced with the other lib/*.sh (install.sh and
 # `preflight update` point users here)
 lib/local.sh
-
-# Runtime state
-state/
 
 # Environment-specific overrides
 .env

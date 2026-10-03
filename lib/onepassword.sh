@@ -3,7 +3,7 @@
 #
 # Generic helpers only: this file knows how to talk to 1Password, not which
 # secrets you use. The VAR -> op:// reference lists live in env sets
-# (lib/envsets.sh, config/envsets/<set>.tsv); op-load-env asks _op_env_entries
+# (lib/envsets.sh, envsets/<set>.tsv); op-load-env asks _op_env_entries
 # for them. Nothing here needs editing per install.
 #
 # Load order: init.sh sources lib/*.sh by glob, and this file relies on sorting after
@@ -25,7 +25,7 @@
 #   • op installed, account added:  op account add --shorthand <your-account>
 #
 # ── Account reference ────────────────────────────────────────────────────────
-# Set OP_ACCOUNT in config/accounts.sh:
+# Set OP_ACCOUNT in $PREFLIGHT_CONFIG_DIR/accounts.sh:
 #   • WSL + desktop op.exe → the sign-in ADDRESS (e.g. my.1password.com). The
 #     desktop-fed op.exe does not carry a manual `op account add` shorthand.
 #   • Native op → the shorthand you created with `op account add --shorthand`.
@@ -120,7 +120,7 @@ op-clear-env
 Configuration:
 --------------
 Default account: $OP_ACCOUNT
-Set OP_ACCOUNT in config/accounts.sh to override.
+Set OP_ACCOUNT in $PREFLIGHT_CONFIG_DIR/accounts.sh to override.
 EOF
 }
 

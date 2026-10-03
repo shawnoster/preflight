@@ -5,9 +5,9 @@
 # just resolves whatever _op_env_entries hands it.
 #
 # A "set" is a named group of VAR -> op:// references (guild, personal, ...).
-# Sets live in config/envsets/<set>.tsv (gitignored, per-install), one
+# Sets live in $PREFLIGHT_CONFIG_DIR/envsets/<set>.tsv (outside the clone, per-install), one
 # `VAR<TAB>op://vault/item/field` line each. Active sets are listed in
-# config/envsets/.active (absent = every set is active). Hand-editing a .tsv
+# envsets/.active (absent = every set is active). Hand-editing a .tsv
 # is fine.
 #
 # A line may carry a third column naming the 1Password account that holds the
@@ -24,7 +24,14 @@
 #   op-env migrate [set] [--force]      move a legacy OP_SECRETS array into a set
 #   op-env help
 
-_op_envsets_dir() { printf '%s' "${PREFLIGHT_DIR:-$HOME/.preflight}/config/envsets"; }
+_op_envsets_dir() {
+  # lib/paths.sh resolves the config dir; init.sh normally has already. Never build
+  # a path from an empty value, which would point at /envsets.
+  if [[ -z "${PREFLIGHT_CONFIG_DIR:-}" ]]; then
+    source "${PREFLIGHT_DIR:-$HOME/.preflight}/lib/paths.sh" && _pf_resolve_dirs || return 1
+  fi
+  printf '%s' "$PREFLIGHT_CONFIG_DIR/envsets"
+}
 
 _op_envsets_ensure() {
   local d; d=$(_op_envsets_dir)
@@ -269,7 +276,7 @@ _op_env_list() {
   local legacy; legacy=$(_op_legacy_secrets)
   if [[ -z "$only" && -n "$legacy" ]]; then
     found=1
-    echo "◆ OP_SECRETS array (legacy, from config/accounts.sh or lib/1password.sh) — move it with: op-env migrate"
+    echo "◆ OP_SECRETS array (legacy, from $PREFLIGHT_CONFIG_DIR/accounts.sh or lib/1password.sh) — move it with: op-env migrate"
     while IFS= read -r line; do
       printf '    %-28s %s\n' "${line%%$'\t'*}" "${line#*$'\t'}"
     done <<< "$legacy"
@@ -323,7 +330,7 @@ _op_env_use() {
   echo "✅ Active sets: $(printf '%s\n' "$chosen" | paste -sd' ' -)"
 }
 
-# Move a legacy OP_SECRETS array (config/accounts.sh, or a leftover per-install
+# Move a legacy OP_SECRETS array ($PREFLIGHT_CONFIG_DIR/accounts.sh, or a leftover per-install
 # lib/1password.sh) into a set. The legacy array wins over sets today, so the move
 # must not change which reference a variable resolves to once the array is deleted.
 # Everything is checked before anything is written; on a problem nothing changes.
@@ -444,7 +451,7 @@ _op_env_migrate() {
   fi
   echo ""
   echo "Moved $moved key(s) ($same already there). Now remove the old list so the set is the only source:"
-  echo "  - an OP_SECRETS=( ... ) block in config/accounts.sh: delete the block"
+  echo "  - an OP_SECRETS=( ... ) block in $PREFLIGHT_CONFIG_DIR/accounts.sh: delete the block"
   if [[ -f "${PREFLIGHT_DIR:-$HOME/.preflight}/lib/1password.sh" ]]; then
     echo "  - lib/1password.sh is a leftover from before the rename to lib/onepassword.sh:"
     echo "    delete it (${PREFLIGHT_DIR:-$HOME/.preflight}/lib/1password.sh) if it holds nothing else you need"
@@ -462,7 +469,7 @@ op-env manages named env sets backed by 1Password references.
   op-env migrate [set] [--force]      Move a legacy OP_SECRETS array into a set (stops on conflicts)
   op-env help                         This message
 
-Sets (e.g. guild, personal) are stored in config/envsets/<set>.tsv, one
+Sets (e.g. guild, personal) are stored in envsets/<set>.tsv, one
 `VAR<TAB>op://vault/item/field` per line, and are the only list of secrets
 op-load-env and op-clear-env use.
 
@@ -502,9 +509,9 @@ _op_legacy_secrets() {
 # Everything op-load-env / op-clear-env need to know: one `VAR<TAB>op://ref` line
 # per secret, from the active sets, carrying an optional third `TABaccount` column
 # when the set names one (otherwise $OP_ACCOUNT). An OP_SECRETS array still defined
-# by an older config/accounts.sh is honored too (and wins on a name clash) until it
+# by an older $PREFLIGHT_CONFIG_DIR/accounts.sh is honored too (and wins on a name clash) until it
 # is moved with `op-env migrate`. The first definition of a name wins (sets are read
-# in the order of config/envsets/.active, or alphabetically when that file is absent);
+# in the order of envsets/.active, or alphabetically when that file is absent);
 # anything that isn't a valid variable name, an op:// reference, or a well-formed
 # account is dropped. CRs are stripped so a set edited on Windows (CRLF) still
 # resolves.

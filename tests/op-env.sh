@@ -22,8 +22,8 @@ fi
 R="$PF_REPO"
 T=$(mktemp -d) || exit 1
 trap 'rm -rf "$T"' EXIT
-export HOME="$T/home" PREFLIGHT_DIR="$T/pf" OP_ACCOUNT=test OP_BIN="$T/op"
-mkdir -p "$HOME" "$PREFLIGHT_DIR/config" "$PREFLIGHT_DIR/lib"
+export HOME="$T/home" PREFLIGHT_DIR="$T/pf" PREFLIGHT_CONFIG_DIR="$T/cfg" PREFLIGHT_STATE_DIR="$T/state" OP_ACCOUNT=test OP_BIN="$T/op"
+mkdir -p "$HOME" "$PREFLIGHT_CONFIG_DIR" "$PREFLIGHT_DIR/lib"
 
 # Stub op: `inject` resolves {{ op://v/item/field }} to val-of-field and fails the
 # whole batch if any reference mentions "broken"; `read` does the same per ref.
@@ -102,7 +102,7 @@ chmod +x "$OP_BIN"
 
 fails=0 passes=0
 chk() { if eval "$2"; then passes=$((passes + 1)); else fails=$((fails + 1)); echo "FAIL: $1"; fi; }
-sets="$PREFLIGHT_DIR/config/envsets"
+sets="$PREFLIGHT_CONFIG_DIR/envsets"
 # find, not a glob: an unmatched glob is an error in zsh.
 clean_sets() { find "$sets" -maxdepth 1 -type f \( -name '*.tsv' -o -name .active \) -delete 2>/dev/null; }
 any_sets() { [ -n "$(find "$sets" -maxdepth 1 -type f -name '*.tsv' 2>/dev/null)" ]; }

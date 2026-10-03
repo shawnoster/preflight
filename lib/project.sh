@@ -37,7 +37,7 @@ Configuration:
 --------------
 PROJ_DIRS - Colon-separated list of directories to search for projects
   Default: $HOME/projects:$HOME/work:$HOME/src
-  Set in config/accounts.sh
+  Set in $PREFLIGHT_CONFIG_DIR/accounts.sh
 
 Requirements:
 -------------

@@ -7,6 +7,12 @@
 
 PREFLIGHT_DIR="${PREFLIGHT_DIR:-$HOME/.preflight}"
 
+# The install dir is a disposable clone; the user's own data lives outside it.
+# Resolve the config and state directories once, before anything builds a path
+# from them (lib/paths.sh). Refuses to continue if they would share the clone.
+source "$PREFLIGHT_DIR/lib/paths.sh" && _pf_resolve_dirs || return 1
+mkdir -p "$PREFLIGHT_CONFIG_DIR"
+
 # Add bin/ to PATH so distributed scripts (light-remind, nanoleaf-*) are
 # findable. Idempotent — safe to source multiple times.
 case ":$PATH:" in
@@ -24,7 +30,7 @@ fi
 
 # ── First-time setup: pick a profile if config doesn't exist ────────────────
 
-if [[ ! -f "$PREFLIGHT_DIR/config/accounts.sh" ]]; then
+if [[ ! -f "$PREFLIGHT_CONFIG_DIR/accounts.sh" ]]; then
   # NOTE: this file is *sourced*, so we are not inside a function — `local` is
   # an error here ("local: can only be used in a function"). It used to appear
   # seven times below, which meant a fresh install greeted the user with seven
@@ -32,7 +38,7 @@ if [[ ! -f "$PREFLIGHT_DIR/config/accounts.sh" ]]; then
   #
   # Collect available profiles (files matching accounts.*.sh, excluding .template and itself)
   _pf_profiles=()
-  for _pf_file in "$PREFLIGHT_DIR/config/accounts."*.sh; do
+  for _pf_file in "$PREFLIGHT_DIR/defaults/accounts."*.sh; do
     [[ -f "$_pf_file" ]] || continue
     _pf_base=$(basename "$_pf_file")
     [[ "$_pf_base" == "accounts.sh" || "$_pf_base" == "accounts.sh.template" ]] && continue
@@ -58,65 +64,42 @@ if [[ ! -f "$PREFLIGHT_DIR/config/accounts.sh" ]]; then
       _pf_choice=-1
     fi
     if [[ $_pf_choice -ge 0 && $_pf_choice -lt ${#_pf_profiles[@]} ]]; then
-      cp "${_pf_profiles[$_pf_choice]}" "$PREFLIGHT_DIR/config/accounts.sh"
+      cp "${_pf_profiles[$_pf_choice]}" "$PREFLIGHT_CONFIG_DIR/accounts.sh"
       _pf_label=$(basename "${_pf_profiles[$_pf_choice]}" | sed 's/accounts\.\(.*\)\.sh/\1/')
-      echo "📋 Created config/accounts.sh from $_pf_label profile."
+      echo "📋 Created $PREFLIGHT_CONFIG_DIR/accounts.sh from $_pf_label profile."
       echo "   Edit it to customize your settings."
     else
-      cp "$PREFLIGHT_DIR/config/accounts.sh.template" "$PREFLIGHT_DIR/config/accounts.sh"
-      echo "📋 Created config/accounts.sh from template (invalid choice)."
+      cp "$PREFLIGHT_DIR/defaults/accounts.sh.template" "$PREFLIGHT_CONFIG_DIR/accounts.sh"
+      echo "📋 Created $PREFLIGHT_CONFIG_DIR/accounts.sh from template (invalid choice)."
     fi
-  elif [[ -f "$PREFLIGHT_DIR/config/accounts.sh.template" ]]; then
-    cp "$PREFLIGHT_DIR/config/accounts.sh.template" "$PREFLIGHT_DIR/config/accounts.sh"
-    echo "📋 Creating config/accounts.sh from template..."
-    echo "✅ Created. Edit config/accounts.sh to customize your settings."
+  elif [[ -f "$PREFLIGHT_DIR/defaults/accounts.sh.template" ]]; then
+    cp "$PREFLIGHT_DIR/defaults/accounts.sh.template" "$PREFLIGHT_CONFIG_DIR/accounts.sh"
+    echo "📋 Creating $PREFLIGHT_CONFIG_DIR/accounts.sh from template..."
+    echo "✅ Created. Edit $PREFLIGHT_CONFIG_DIR/accounts.sh to customize your settings."
   fi
   # These are globals (see the `local` note above) — don't leak them into the
   # user's interactive shell.
   unset _pf_profiles _pf_file _pf_base _pf_idx _pf_label _pf_choice
 fi
 
-if [[ ! -f "$PREFLIGHT_DIR/config/owl.sh" ]] && [[ -f "$PREFLIGHT_DIR/config/owl.sh.template" ]]; then
-  echo "📋 Creating config/owl.sh from template..."
-  cp "$PREFLIGHT_DIR/config/owl.sh.template" "$PREFLIGHT_DIR/config/owl.sh"
-  echo "✅ Created. Edit config/owl.sh to set your Oh My Posh config path."
+if [[ ! -f "$PREFLIGHT_CONFIG_DIR/owl.sh" ]] && [[ -f "$PREFLIGHT_DIR/defaults/owl.sh.template" ]]; then
+  echo "📋 Creating $PREFLIGHT_CONFIG_DIR/owl.sh from template..."
+  cp "$PREFLIGHT_DIR/defaults/owl.sh.template" "$PREFLIGHT_CONFIG_DIR/owl.sh"
+  echo "✅ Created. Edit $PREFLIGHT_CONFIG_DIR/owl.sh to set your Oh My Posh config path."
   echo "   If you previously had owl setup in ~/.bashrc, you can remove those lines —"
   echo "   init.sh now handles _owl_theme_load, _owl_splash, and oh-my-posh init."
 fi
 
-# Migrate an untouched config/owl.sh left over from an earlier template. Those shipped
-# OWL_OMP_CONFIG="" (Oh My Posh off), and the block above only copies the template when
-# owl.sh is missing, so such installs would never get the new default. A byte-for-byte
-# match with a previously shipped template proves nothing was customized, so replacing
-# it is safe. Any edited owl.sh, including a deliberate OWL_OMP_CONFIG="", is left alone.
-# Add the sha256 of the old template here whenever the template changes.
-if [[ -f "$PREFLIGHT_DIR/config/owl.sh" ]] && [[ -f "$PREFLIGHT_DIR/config/owl.sh.template" ]]; then
-  if command -v sha256sum &>/dev/null; then
-    _pf_owl_sum=$(sha256sum "$PREFLIGHT_DIR/config/owl.sh" | cut -d' ' -f1)
-  else
-    _pf_owl_sum=$(shasum -a 256 "$PREFLIGHT_DIR/config/owl.sh" 2>/dev/null | cut -d' ' -f1)
-  fi
-  case " 7f380ed0545479cda924211f52b21bc8539779492028504503f6cd5c02c9dee8 " in
-    *" $_pf_owl_sum "*)
-      cp "$PREFLIGHT_DIR/config/owl.sh.template" "$PREFLIGHT_DIR/config/owl.sh"
-      echo "📋 Updated config/owl.sh: it was an untouched copy of an earlier template, so it now"
-      echo "   defaults OWL_OMP_CONFIG to the bundled owl theme. To turn Oh My Posh integration"
-      echo "   off, set OWL_OMP_CONFIG=\"\" in config/owl.sh."
-      ;;
-  esac
-  unset _pf_owl_sum
-fi
-
 # Owl base theme: ensure the user-owned OMP copy that owl-theme patches exists
 # (covers installs that predate the bundled theme, and `preflight update`).
-# state/ is gitignored, so owl-theme is free to rewrite the palette. Never
+# The state dir is the user's, so owl-theme is free to rewrite the palette. Never
 # overwrites an existing copy — that one may hold the user's palette changes.
-if [[ ! -f "$PREFLIGHT_DIR/state/owl/theme-catppuccin.omp.json" ]] \
-    && [[ -f "$PREFLIGHT_DIR/config/theme-catppuccin.omp.json" ]]; then
-  mkdir -p "$PREFLIGHT_DIR/state/owl"
-  cp "$PREFLIGHT_DIR/config/theme-catppuccin.omp.json" \
-     "$PREFLIGHT_DIR/state/owl/theme-catppuccin.omp.json"
-  echo "📋 Created state/owl/theme-catppuccin.omp.json (owl-theme base theme)"
+if [[ ! -f "$PREFLIGHT_STATE_DIR/owl/theme-catppuccin.omp.json" ]] \
+    && [[ -f "$PREFLIGHT_DIR/defaults/theme-catppuccin.omp.json" ]]; then
+  mkdir -p "$PREFLIGHT_STATE_DIR/owl"
+  cp "$PREFLIGHT_DIR/defaults/theme-catppuccin.omp.json" \
+     "$PREFLIGHT_STATE_DIR/owl/theme-catppuccin.omp.json"
+  echo "📋 Created $PREFLIGHT_STATE_DIR/owl/theme-catppuccin.omp.json (owl-theme base theme)"
 fi
 
 # ── Source all library scripts ────────────────────────────────────────────────
@@ -137,8 +120,8 @@ unset _pf_lib_err lib
 
 # ── Source config (non-secret environment setup) ──────────────────────────────
 
-[[ -f "$PREFLIGHT_DIR/config/accounts.sh" ]] && source "$PREFLIGHT_DIR/config/accounts.sh"
-[[ -f "$PREFLIGHT_DIR/config/owl.sh" ]]      && source "$PREFLIGHT_DIR/config/owl.sh"
+[[ -f "$PREFLIGHT_CONFIG_DIR/accounts.sh" ]] && source "$PREFLIGHT_CONFIG_DIR/accounts.sh"
+[[ -f "$PREFLIGHT_CONFIG_DIR/owl.sh" ]]      && source "$PREFLIGHT_CONFIG_DIR/owl.sh"
 
 # ── Owl theme + splash ────────────────────────────────────────────────────────
 
