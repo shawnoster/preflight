@@ -520,12 +520,14 @@ _op_legacy_secrets() {
 
 # Check the set names given to `op-env load` / `clear`: each must be a valid name with a
 # file. Prints the problem and returns 1 before anything has been changed or signed in.
-# With "note" as the first argument, also says (once per set) when a set is not active:
-# naming it is an explicit request, so it loads anyway.
-# Usage: _op_env_check_sets [note] set...
+# With "--note" as the first argument, also says (once per set) when a set is not active:
+# naming it is an explicit request, so it loads anyway. The flag is "--note" because every
+# valid set name starts with a letter or digit, so it can never be mistaken for a set (a bare
+# "note" is a legal set name and would have skipped validating it).
+# Usage: _op_env_check_sets [--note] set...
 _op_env_check_sets() {
   local note=0 set active
-  if [[ "${1:-}" == note ]]; then note=1; shift; fi
+  if [[ "${1:-}" == "--note" ]]; then note=1; shift; fi
   [[ $# -gt 0 ]] || return 0
   active=$(_op_envsets_active)
   for set in "$@"; do
@@ -545,6 +547,34 @@ _op_env_check_sets() {
     done
   fi
   return 0
+}
+
+# Which set supplies each variable: one `VAR<TAB>set` line per variable, for the named sets in the
+# order given (or the active sets, in their order, when none are named). The first set with a
+# valid definition wins, exactly as _op_env_entries decides it, because this is built from that
+# function. A name that only the legacy OP_SECRETS array defines gets "-". This is what lets
+# `op-env clear b` leave alone a variable that `a` supplied when both define it.
+# Usage: _op_env_sources [set...]
+_op_env_sources() {
+  local sets set n seen="" all
+  if [[ $# -gt 0 ]]; then sets=$(printf '%s\n' "$@"); else sets=$(_op_envsets_active); fi
+  while IFS= read -r set; do
+    [[ -n "$set" ]] || continue
+    _op_envsets_valid_name "$set" || continue
+    [[ -f "$(_op_envsets_dir)/$set.tsv" ]] || continue
+    while IFS= read -r n; do
+      [[ -n "$n" ]] || continue
+      grep -qxF -- "$n" <<< "$seen" && continue
+      printf '%s\t%s\n' "$n" "$set"
+      seen="${seen:+$seen$'\n'}$n"
+    done <<< "$(_op_env_entries "$set" | cut -f1)"
+  done <<< "$sets"
+  if [[ $# -eq 0 ]]; then
+    while IFS= read -r n; do
+      [[ -n "$n" ]] || continue
+      grep -qxF -- "$n" <<< "$seen" || printf '%s\t-\n' "$n"
+    done <<< "$(_op_env_entries | cut -f1)"
+  fi
 }
 
 # Everything op-env load / clear need to know: one `VAR<TAB>op://ref` line

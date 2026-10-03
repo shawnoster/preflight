@@ -186,6 +186,11 @@ op-signin() {
 # `op-env clear` clear them even if the definition is already gone.
 _OP_LOADED_VARS="${_OP_LOADED_VARS:-}"
 
+# Which set supplied each loaded variable, as `VAR<TAB>set` lines (from _op_env_sources in
+# lib/envsets.sh). `op-env clear <set>` unsets only what that set supplied, so a variable two
+# sets define is not lost when the set that did not win is cleared.
+_OP_LOADED_SRC="${_OP_LOADED_SRC:-}"
+
 # Functions to call after `op-env load` finishes, whether or not every secret
 # loaded. Register with:  _OP_AFTER_LOAD_HOOKS+=(my_function)
 declare -p _OP_AFTER_LOAD_HOOKS &>/dev/null || _OP_AFTER_LOAD_HOOKS=()
@@ -229,7 +234,7 @@ _op_env_load() {
 
   local _op_entries _op_names _op_line _op_stale _op_subset=$#
   if [[ $_op_subset -gt 0 ]]; then
-    declare -f _op_env_check_sets >/dev/null && { _op_env_check_sets note "$@" || return 1; }
+    declare -f _op_env_check_sets >/dev/null && { _op_env_check_sets --note "$@" || return 1; }
   fi
   _op_entries=$(_op_env_entries "$@")
   _op_names=$(printf '%s\n' "$_op_entries" | cut -f1 | awk 'NF')
@@ -251,6 +256,7 @@ _op_env_load() {
   if [[ -z "$_op_names" ]]; then
     if [[ $_op_subset -eq 0 ]]; then
       _OP_LOADED_VARS=""
+      _OP_LOADED_SRC=""
       echo "ℹ️  No secrets configured — add one with: op-env add"
     else
       echo "ℹ️  No secrets in: $*"
@@ -283,10 +289,18 @@ _op_env_load() {
   # Only now record what this load manages. If sign-in failed above, the
   # previous list stays, so op-env clear still knows what is in the environment. A full
   # load replaces the list; a named-set load adds to it.
+  local _op_src
+  _op_src=$(declare -f _op_env_sources >/dev/null && _op_env_sources "$@")
   if [[ $_op_subset -eq 0 ]]; then
     _OP_LOADED_VARS="$_op_names"
+    _OP_LOADED_SRC="$_op_src"
   else
     _OP_LOADED_VARS=$(printf '%s\n%s\n' "$_OP_LOADED_VARS" "$_op_names" | awk 'NF && !seen[$0]++')
+    # What this call loaded now comes from the named sets, whatever supplied it before.
+    _OP_LOADED_SRC=$( { printf '%s\n' "$_OP_LOADED_SRC" | PF_NEW="$_op_src" awk -F'\t' '
+          BEGIN { n = split(ENVIRON["PF_NEW"], L, "\n"); for (i = 1; i <= n; i++) { split(L[i], f, "\t"); drop[f[1]] = 1 } }
+          NF && !($1 in drop)'
+        printf '%s\n' "$_op_src"; } | awk 'NF')
   fi
 
   # No header here — when run under `preflight` the orchestrator prints the
@@ -934,10 +948,16 @@ PYEOF
 _op_env_clear() {
   local _op_names _op_var _op_keep
   if [[ $# -gt 0 ]]; then
-    # Only the named sets' variables. Whatever else was loaded stays loaded, and stays
-    # in the loaded-vars memory so a later full clear or load still knows about it.
+    # Only what the named sets supplied. Whatever else was loaded stays loaded, and stays in
+    # the loaded-vars memory so a later full clear or load still knows about it. A variable
+    # another set supplied (two sets defining one name: the first wins) is not theirs to clear,
+    # and one that was never loaded here (say, exported by hand) is left alone.
     declare -f _op_env_check_sets >/dev/null && { _op_env_check_sets "$@" || return 1; }
-    _op_names=$(_op_env_entries "$@" | cut -f1 | awk 'NF && !seen[$0]++')
+    local _op_set
+    _op_names=""
+    for _op_set in "$@"; do
+      _op_names="${_op_names:+$_op_names$'\n'}$(printf '%s\n' "$_OP_LOADED_SRC" | awk -F'\t' -v s="$_op_set" '$2 == s { print $1 }')"
+    done
     while IFS= read -r _op_var; do
       [[ -n "$_op_var" ]] && unset "$_op_var"
     done <<< "$_op_names"
@@ -947,6 +967,9 @@ _op_env_clear() {
       grep -qxF -- "$_op_var" <<< "$_op_names" || _op_keep="${_op_keep:+$_op_keep$'\n'}$_op_var"
     done <<< "$_OP_LOADED_VARS"
     _OP_LOADED_VARS="$_op_keep"
+    _OP_LOADED_SRC=$(printf '%s\n' "$_OP_LOADED_SRC" | PF_GONE="$_op_names" awk -F'\t' '
+          BEGIN { n = split(ENVIRON["PF_GONE"], L, "\n"); for (i = 1; i <= n; i++) gone[L[i]] = 1 }
+          NF && !($1 in gone)')
     echo "🧹 Cleared the variables of: $*"
     return 0
   fi
@@ -958,6 +981,7 @@ _op_env_clear() {
     [[ -n "$_op_var" ]] && unset "$_op_var"
   done <<< "$_op_names"
   _OP_LOADED_VARS=""
+  _OP_LOADED_SRC=""
   echo "🧹 Secure environment variables cleared."
 }
 
