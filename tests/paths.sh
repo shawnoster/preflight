@@ -122,6 +122,33 @@ fresh; export PREFLIGHT_CONFIG_DIR="$PREFLIGHT_DIR"
 out=$(source "$PREFLIGHT_DIR/init.sh" 2>&1 </dev/null); rc=$?
 chk "init.sh stops on a shared config dir" '[[ $rc -ne 0 && "$out" == *"is the install directory"* && ! -e "$PREFLIGHT_DIR/config.json" ]]'
 
+# ~/.local/bin is put on PATH before init.sh probes for oh-my-posh: a login shell sources
+# .bashrc from ~/.profile before Ubuntu's stock .profile adds it. Each case runs in a
+# subshell so the PATH edits do not leak into the rest of the run.
+pathcount() { printf '%s' "$1" | tr ':' '\n' | grep -cxF "$2"; }
+src_init() { source "$PREFLIGHT_DIR/init.sh" >/dev/null 2>&1 </dev/null; }
+
+fresh; mkdir -p "$HOME/.local/bin"
+out=$( src_init; printf %s "$PATH" )
+chk "existing ~/.local/bin missing from PATH is added"        '[[ "$(pathcount "$out" "$HOME/.local/bin")" == 1 ]]'
+out=$( src_init; src_init; printf %s "$PATH" )
+chk "re-sourcing init.sh does not duplicate ~/.local/bin"     '[[ "$(pathcount "$out" "$HOME/.local/bin")" == 1 ]]'
+chk "re-sourcing init.sh does not duplicate preflight's bin"  '[[ "$(pathcount "$out" "$PREFLIGHT_DIR/bin")" == 1 ]]'
+
+# Already on PATH (anywhere): left where it is, not added a second time.
+out=$( PATH="$PATH:$HOME/.local/bin"; src_init; src_init; printf %s "$PATH" )
+chk "~/.local/bin already on PATH is not added again"         '[[ "$(pathcount "$out" "$HOME/.local/bin")" == 1 ]]'
+
+# A missing directory is not added.
+fresh
+out=$( src_init; printf %s "$PATH" )
+chk "no ~/.local/bin on disk: PATH is left alone"             '[[ "$(pathcount "$out" "$HOME/.local/bin")" == 0 ]]'
+
+# The case this protects: a tool in ~/.local/bin is found by init.sh's own `command -v`.
+fresh; mkdir -p "$HOME/.local/bin"; printf '#!/bin/sh\n' > "$HOME/.local/bin/pf-probe-tool"; chmod +x "$HOME/.local/bin/pf-probe-tool"
+out=$( src_init; command -v pf-probe-tool )
+chk "a binary in ~/.local/bin resolves after init.sh"         '[[ "$out" == "$HOME/.local/bin/pf-probe-tool" ]]'
+
 # ── uninstall ─────────────────────────────────────────────────────────────────
 # Run in a subshell: uninstall unsets preflight's own functions.
 run_uninstall() {  # $1 = answer, rest = args
