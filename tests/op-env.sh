@@ -44,6 +44,14 @@ cat > "$OP_BIN" <<'STUB'
 #!/usr/bin/env bash
 acct_of() { local prev="" a="" x; for x in "$@"; do [[ "$prev" == "--account" ]] && a="$x"; prev="$x"; done; printf '%s' "$a"; }
 log_call() { [[ -n "$FAKE_OP_LOG" ]] && printf '%s --account %s\n' "$1" "$2" >> "$FAKE_OP_LOG"; return 0; }
+# FAKE_OP_NOVAULT_ACCT=<account>: inject and read against it fail the way real op does
+# for a reference whose vault that account does not have (what a wrong OP_ACCOUNT gives).
+novault() {
+  [[ -n "$FAKE_OP_NOVAULT_ACCT" && "$(acct_of "$@")" == "$FAKE_OP_NOVAULT_ACCT" ]] || return 1
+  # op's real wording: the reference and item come first, the reason last.
+  printf '%s\n' "[ERROR] 2026/10/02 14:54:38 could not read secret 'op://Employee/Atlassian - API Token - Local Development/credential': could not get item Employee/Atlassian - API Token - Local Development: \"Employee\" isn't a vault in this account. Specify the vault with its ID or name." >&2
+  return 0
+}
 case "$1" in
   whoami) a=$(acct_of "$@")
           [[ -e "$(dirname "$0")/signed-in-$a" ]] && exit 0
@@ -59,6 +67,7 @@ case "$1" in
           [[ -n "$FAKE_OP_SIGNED_OUT_ACCT" && "$a" == "$FAKE_OP_SIGNED_OUT_ACCT" ]] && exit 1
           exit 0 ;;
   inject) log_call inject "$(acct_of "$@")"
+          novault "$@" && exit 1
           in=$(cat); grep -q broken <<<"$in" && exit 1
           # FAKE_OP_SILENT_EMPTY_ACCT=<account>: this account's batch exits 0 but
           # substitutes nothing — which real op.exe does for a reference in a second
@@ -77,7 +86,16 @@ case "$1" in
           # empty and silently push every load onto the per-secret fallback path)
           if [[ -n "$FAKE_OP_INJECT_EXTRA" ]]; then printf '%s\n' "$FAKE_OP_INJECT_EXTRA"; fi ;;
   read)   log_call read "$(acct_of "$@")"
-          ref="${@: -1}"; [[ "$ref" == *broken* ]] && exit 1; echo "val-of-${ref##*/}" ;;
+          novault "$@" && exit 1
+          ref="${@: -1}"
+          # A ref containing "emptyval": op exits 0 and prints nothing.
+          [[ "$ref" == *emptyval* ]] && exit 0
+          # FAKE_OP_READ_ERR: what a failing read writes to stderr (default: nothing).
+          if [[ "$ref" == *broken* ]]; then
+            if [[ -n "$FAKE_OP_READ_ERR" ]]; then printf '%s\n' "$FAKE_OP_READ_ERR" >&2; fi
+            exit 1
+          fi
+          echo "val-of-${ref##*/}" ;;
 esac
 STUB
 chmod +x "$OP_BIN"
@@ -276,6 +294,67 @@ chk "upgrade: old OP_SECRETS still loads" '[[ "$OLD_LIST_VAR" == val-of-old ]]'
 out=$(op-env migrate 2>&1)
 chk "upgrade: migrate tells the user to delete the leftover file" '[[ "$out" == *"lib/1password.sh is a leftover"* ]]'
 rm -f "$PREFLIGHT_DIR/lib/1password.sh"
+
+# ── a failed secret says why (op's own error), not just "failed to load" ───────
+# The loader used to discard op's stderr, so a wrong OP_ACCOUNT looked like a broken
+# reference: "failed to load" with nothing to go on.
+printf 'VAULTY\top://Employee/Item/credential\n' > "$sets/v.tsv"
+out=$(FAKE_OP_NOVAULT_ACCT=test op-load-env 2>&1); rc=$?
+chk "error detail: op's message is shown" '[[ "$out" == *"isn'"'"'t a vault in this account"* ]]'
+chk "error detail: names the account that was used" '[[ "$out" == *"account test"* ]]'
+chk "error detail: the repeated reference and item lead-in is dropped" '[[ "$out" != *"could not read secret"* && "$out" != *"could not get item"* ]]'
+chk "error detail: the reason survives the length cut" '[[ "$out" == *"Specify the vault with its ID or name"* ]]'
+chk "error detail: op's log prefix and timestamp are dropped" '[[ "$out" != *"[ERROR]"* && "$out" != *"2026/10/02"* ]]'
+chk "error detail: still a failure, variable unset" '[[ $rc -eq 1 && -z "${VAULTY:-}" ]]'
+chk "error detail: the message sits under the warning" '[[ "$out" == *"VAULTY (failed to load)"*"account test: "* ]]'
+clean_sets
+
+# A reference that genuinely is wrong gets op's text; a good one next to it gets no detail.
+printf 'GOODONE\top://v/i/good\nBADONE\top://v/broken/x\n' > "$sets/v.tsv"
+out=$(FAKE_OP_READ_ERR='could not read secret: item not found' op-load-env 2>&1)
+chk "error detail: a bad reference shows op's error" '[[ "$out" == *"BADONE (failed to load)"* && "$out" == *"item not found"* ]]'
+chk "error detail: a secret that loaded has no detail line" '[[ "$out" == *"GOODONE"* && "$out" != *"GOODONE (failed"* ]]'
+chk "error detail: no secret value is ever printed" '[[ "$out" != *val-of-* ]]'
+clean_sets
+
+# Only the first line, with control characters stripped, and bounded in length.
+printf 'BADONE\top://v/broken/x\n' > "$sets/v.tsv"
+out=$(FAKE_OP_READ_ERR=$'first line \033[31mred\r\nSECOND LINE SHOULD NOT APPEAR' op-load-env 2>&1)
+chk "error detail: only the first line" '[[ "$out" == *"first line"* && "$out" != *"SECOND LINE"* ]]'
+chk "error detail: control characters removed" '[[ "$out" != *$'"'"'\033'"'"'* && "$out" != *$'"'"'\r'"'"'* ]]'
+long=$(printf 'x%.0s' $(seq 1 500))
+out=$(FAKE_OP_READ_ERR="$long" op-load-env 2>&1)
+longest=$(printf '%s\n' "$out" | awk '{ if (length($0) > m) m = length($0) } END { print m }')
+chk "error detail: a very long message is cut" '[[ "$longest" -lt 260 ]]'
+clean_sets
+
+# op exits 0 but prints nothing: say so instead of staying silent.
+printf 'EMPTYV\top://v/broken-emptyval/f\n' > "$sets/v.tsv"
+out=$(op-load-env 2>&1)
+chk "error detail: an empty value with exit 0 is called out" '[[ "$out" == *"EMPTYV (failed to load)"* && "$out" == *"empty value (exit 0)"* ]]'
+clean_sets
+
+# op fails and says nothing: still a line, with the exit status.
+printf 'MUTE\top://v/broken/x\n' > "$sets/v.tsv"
+out=$(op-load-env 2>&1)
+chk "error detail: a silent failure reports the exit status" '[[ "$out" == *"MUTE (failed to load)"* && "$out" == *"exited 1"* ]]'
+clean_sets
+
+# With several accounts, the detail names the account that failed, and the others load.
+printf 'HOMEV\top://v/i/home\nWORKV\top://Employee/Item/credential\twork\n' > "$sets/v.tsv"
+FAKE_OP_NOVAULT_ACCT=work op-load-env > "$T/out" 2>&1   # not $(...): that loads into a subshell
+out=$(cat "$T/out")
+chk "error detail: multi-account names the failing account" '[[ "$out" == *"WORKV (failed to load, via work)"* && "$out" == *"account work: "* ]]'
+chk "error detail: the healthy account still loaded" '[[ "$out" == *"HOMEV (via test)"* && "${HOMEV:-}" == val-of-home ]]'
+op-clear-env >/dev/null; clean_sets
+
+# Capturing stderr must not leave files behind, and must not depend on a writable tmp.
+printf 'BADONE\top://v/broken/x\n' > "$sets/v.tsv"
+mkdir -p "$T/tmpd"; TMPDIR="$T/tmpd" FAKE_OP_READ_ERR='some error' op-load-env >/dev/null 2>&1
+chk "error detail: no temp files left behind" '[[ -z "$(find "$T/tmpd" -type f 2>/dev/null)" ]]'
+out=$(TMPDIR="$T/does-not-exist" FAKE_OP_READ_ERR='some error' op-load-env 2>&1); rc=$?
+chk "error detail: still reports a failure when there is no usable tmp dir" '[[ $rc -eq 1 && "$out" == *"BADONE (failed to load)"* ]]'
+clean_sets
 
 # ── interactive prompts (need a real tty: they read /dev/tty) ─────────────────
 # Drive `op-env` through a pty, feeding answers as typed input. Skipped without python3.

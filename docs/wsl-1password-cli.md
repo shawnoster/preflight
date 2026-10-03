@@ -58,7 +58,7 @@ op-signin && "$OP_BIN" read --account "$OP_ACCOUNT" "op://<Vault>/<Item>/<field>
 
 ## Notes and gotchas
 
-- **Account reference:** use the sign-in address (`my-team.1password.com`) under desktop integration, not a shorthand. A stale `op account add` shorthand silently fails every read (errors are swallowed, vars come back empty).
+- **Account reference:** use the sign-in address (`my-team.1password.com`) under desktop integration, not a shorthand. A stale `op account add` shorthand, or a leftover `OP_ACCOUNT` from a shell opened before you edited `accounts.sh`, fails every read. `op-load-env` prints `op`'s own error under each failed secret (for example `"Employee" isn't a vault in this account`) along with the account it used, so compare that account with `echo $OP_ACCOUNT`.
 - **`op inject`, not `op run`:** the `op run --env-file -- bash -c …` trick does **not** work with `op.exe` — being a Windows binary, its `-- bash -c` child is a Windows process, not WSL bash. `op-load-env` batches each account's secrets into one `op inject` call instead (no child process). If one reference is bad that account's batch fails, so it falls back to per-secret `op read` calls to report which one; with the app unlocked those are authorized without re-prompting.
 - **Editing sets from Windows:** CRLF line endings in `config/envsets/*.tsv` are tolerated.
 - **First-read prompt:** the desktop app prompts on the first authorized call per session; subsequent reads are silent per the app's "remember" policy.

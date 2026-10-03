@@ -187,6 +187,21 @@ _OP_LOADED_VARS="${_OP_LOADED_VARS:-}"
 # loaded. Register with:  _OP_AFTER_LOAD_HOOKS+=(my_function)
 declare -p _OP_AFTER_LOAD_HOOKS &>/dev/null || _OP_AFTER_LOAD_HOOKS=()
 
+# One printable line out of what `op` wrote to stderr (file $1): the first non-empty
+# line, without op's "[ERROR] 2026/10/02 14:54:38 " prefix and without the lead-in that
+# repeats the reference and item ("could not read secret '...': could not get item
+# ...: "), since the secret's name is already printed above and the reason comes last;
+# control characters removed (op.exe adds CRs); cut to 200 characters. If op words it
+# differently, nothing is stripped and the line is just truncated. op's errors name references, items and
+# vaults, not secret values, but it is bounded and single-line regardless.
+_op_err_line() {
+  awk 'NF { print; exit }' "$1" 2>/dev/null \
+    | tr -d '\000-\037\177' \
+    | sed -E 's/^\[(ERROR|WARNING)\] [0-9]{4}\/[0-9]{2}\/[0-9]{2} [0-9:]{8} //' \
+    | sed -E "s/^could not read secret '[^']*': //; s/^could not get item [^:]*: //" \
+    | cut -c1-200
+}
+
 # Load secrets into environment variables.
 #
 # This function is data-agnostic: _op_env_entries (lib/envsets.sh) supplies the
@@ -335,14 +350,21 @@ op-load-env() {
 
     if [[ $_op_batch_failed -eq 1 ]]; then
       echo "⚠️  Batch resolve failed${_op_label:+ for $_op_label} — falling back to per-secret reads"
-      local _op_name2 _op_val2
+      local _op_name2 _op_val2 _op_rc _op_errf _op_detail
+      # Keep op's stderr instead of discarding it: a wrong OP_ACCOUNT, a missing
+      # vault or a bad item name all come back as "failed to load" otherwise, with
+      # nothing to say which. No temp file (none to write, or no usable tmp dir)
+      # just means less detail, never a failed load.
+      _op_errf=$(mktemp "${TMPDIR:-/tmp}/op-load-env.XXXXXX" 2>/dev/null) || _op_errf=/dev/null
       while IFS= read -r _op_line; do
         [[ -n "$_op_line" ]] || continue
         _op_name2="${_op_line%%$'\t'*}"
         _op_rest="${_op_line#*$'\t'}"
         _op_ref="${_op_rest%%$'\t'*}"
         # </dev/null: op must not swallow the entries this loop is reading.
-        _op_val2="$("$OP_BIN" read --account "$_op_acct" "$_op_ref" 2>/dev/null </dev/null)"
+        : > "$_op_errf" 2>/dev/null
+        _op_val2="$("$OP_BIN" read --account "$_op_acct" "$_op_ref" 2>"$_op_errf" </dev/null)"
+        _op_rc=$?
         if [[ -n "$_op_val2" ]]; then
           export "$_op_name2"="$_op_val2"
           echo "✅ $_op_name2${_op_label:+ (via $_op_label)}"
@@ -351,9 +373,19 @@ op-load-env() {
           # silently reused (or re-persisted by an after-load hook).
           unset "$_op_name2"
           echo "⚠️  $_op_name2 (failed to load${_op_label:+, via $_op_label})"
+          # Say why. The account is always named here, even for a single-account
+          # load, because the account in use is the usual culprit.
+          if [[ $_op_rc -ne 0 ]]; then
+            _op_detail=$(_op_err_line "$_op_errf")
+            : "${_op_detail:=op exited $_op_rc with no message}"
+          else
+            _op_detail="op returned an empty value (exit 0)"
+          fi
+          echo "   ↳ account $_op_acct: $_op_detail"
           _op_failed=$((_op_failed + 1))
         fi
       done <<< "$_op_lines"
+      if [[ "$_op_errf" != /dev/null ]]; then rm -f "$_op_errf"; fi
     else
       while IFS= read -r _op_rec; do
         if [[ "$_op_rec" == "$_op_tag"* ]]; then
