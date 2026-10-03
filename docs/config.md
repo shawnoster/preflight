@@ -82,6 +82,13 @@ assignments it prints.
 Startup cost is one `jq` process: measured at about 6 ms per shell on WSL2 with jq 1.8.1, against well under a
 millisecond for sourcing a file.
 
+## PowerShell
+
+`pwsh/` reads the same `config.json` and env sets, with the same rules (see [pwsh/README.md](../pwsh/README.md)):
+`tests/config.sh` compares the two loaders case by case, and the env-set fixture is checked by both. The
+differences: no `preflight config` command yet (edit the file; `Test-PreflightConfig` validates it), the `checks.*`
+flags are ignored, `projects.dirs` is joined with `;` on Windows, and an empty value leaves the variable unset.
+
 ## Converting an old `accounts.sh` / `owl.sh`
 
 There is no automatic conversion. Pick the profile that is closest, then set what you had:

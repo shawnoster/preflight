@@ -20,7 +20,7 @@
 # Note: bash also defines `gc` (git commit) and `gp` (git push), but those
 # names collide with built-in PowerShell aliases (`gc` -> Get-Content,
 # `gp` -> Get-ItemProperty). Users who want them can override with
-# `Set-Alias gc git -Force` etc. in their accounts.ps1.
+# `Set-Alias gc git -Force` etc. in their $PROFILE.
 
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute(
     'PSAvoidUsingWriteHost', '',
@@ -505,7 +505,7 @@ Set-Alias -Name 'gsync'  -Value Sync-GitFork             -Force -Scope Script
 #
 # Skipped: `gc` (Get-Content) and `gp` (Get-ItemProperty) — those names
 # are built-in PS aliases. Users who want them can override with
-# `Set-Alias gc git -Force` from accounts.ps1.
+# `Set-Alias gc git -Force` from your $PROFILE.
 
 function gs  { & git status   @args }
 function ga  { & git add      @args }

@@ -79,6 +79,7 @@ Read this repo when working on:
 | Account/env config | `lib/config.sh` (table + loader + `preflight config`), `docs/config.md`, `defaults/config.*.json` (profile auto-copied to `$PREFLIGHT_CONFIG_DIR/config.json` on first load) |
 | Owl theme + OMP config | `owl.omp_config` in `config.json`; base theme in `defaults/theme-catppuccin.omp.json` |
 | Config/state directories, safe-rm guard | `lib/paths.sh` |
+| PowerShell settings + env sets (`pwsh/lib/00-paths.ps1`, `01-config.ps1`, `02-envsets.ps1`; same formats as bash) | `pwsh/README.md`, tested by `tests/config.ps1` (run from `tests/config.sh` when `pwsh` is installed) |
 | WSL SSH setup guide | `docs/wsl-ssh-setup.md` |
 | Tests (env sets, `op-load-env`; bash + zsh, fake `op`) | `tests/op-env.sh` |
 | Tests (directory layout, first run, `uninstall --purge`; bash + zsh) | `tests/paths.sh` |

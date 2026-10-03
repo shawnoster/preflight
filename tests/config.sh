@@ -364,5 +364,58 @@ for prof in "$R"/defaults/config.*.json; do
   chk "profile $(basename "$prof") passes check" '_pf_config_check >/dev/null'
 done
 
+# ── PowerShell side (skipped without pwsh; run once, from the bash pass) ─────
+# The PowerShell loader and the bash loader must produce the same settings from the same
+# config.json, and the PowerShell suite (env sets, Import-OpEnv, the installer) must pass.
+if [[ "$PF_SHELL" == bash ]] && command -v pwsh >/dev/null 2>&1; then
+  # Only exported rows exist on the PowerShell side (the _CHECK_* flags are bash-only shell variables).
+  bash_dump() {
+    local k var type exp def
+    reset; _pf_config_load >/dev/null 2>&1
+    while IFS='|' read -r k var type exp def; do
+      [[ "$exp" == x ]] || continue
+      eval "printf '%s=%s\\n' $var \"\${$var-}\""
+    done <<< "$_PF_CONFIG_TABLE"
+  }
+  ps_dump() {
+    env -u OP_ACCOUNT -u PROJ_DIRS -u AWS_PROFILE_DEFAULT -u GIT_MAIN_BRANCH -u GITEA_USERNAME -u GITEA_HOST -u OWL_OMP_CONFIG \
+      pwsh -NoProfile -File "$R/tests/config-dump.ps1" -Repo "$R" 2>&1
+  }
+  i=0
+  while IFS= read -r case_json; do
+    i=$((i + 1))
+    if [[ "$case_json" == @* ]]; then cp "$R/${case_json#@}" "$CFG"; else printf '%s' "$case_json" > "$CFG"; fi
+    want=$(bash_dump); got=$(ps_dump)
+    chk "bash and PowerShell loaders agree on case $i: ${case_json:0:60}" '[[ "$want" == "$got" ]]'
+    [[ "$want" == "$got" ]] || { echo "--- bash"; echo "$want"; echo "--- pwsh"; echo "$got"; }
+  done <<'CASES'
+{}
+@defaults/config.company.json
+@defaults/config.general.json
+{"op":{"account":"it's \"x\" $(echo no) `y`"},"git":{"main_branch":"trunk"}}
+{"projects":{"dirs":["~/a","$HOME/b","/c","$OTHER/d"]}}
+{"projects":{"dirs":[]}}
+{"projects":{"dirs":["~/one"]}}
+{"projects":{"dirs":["~/custom",7]}}
+{"projects":{"dirs":"nope"},"op":{"account":"kept"},"git":"flat","checks":{"aws":"yes"}}
+{"owl":{"omp_config":"$HOME/x/theme.json"},"gitea":{"username":"u","host":"h"}}
+{"owl":{"omp_config":"$PREFLIGHT_CONFIG_DIR/theme.json"},"aws":{"default_profile":"p"}}
+{"owl":{"omp_config":""}}
+{"op":"flat"}
+CASES
+  rm -f "$CFG"
+
+  psout=$(mkdir -p "$T/pwhome" && env -u OP_ACCOUNT -u PROJ_DIRS -u AWS_PROFILE_DEFAULT -u GIT_MAIN_BRANCH -u GITEA_USERNAME -u GITEA_HOST -u OWL_OMP_CONFIG \
+            -u XDG_CONFIG_HOME -u XDG_STATE_HOME -u PREFLIGHT_CONFIG_DIR -u PREFLIGHT_STATE_DIR HOME="$T/pwhome" \
+            pwsh -NoProfile -File "$R/tests/config.ps1" -Repo "$R" 2>&1)
+  echo "$psout" | grep -a '^FAIL\|^  error' 
+  ps_line=$(echo "$psout" | grep -a ' passed, ' | tail -1)
+  ps_pass=${ps_line%% passed*}; ps_fail=${ps_line#*, }; ps_fail=${ps_fail%% failed*}
+  chk "PowerShell suite ran ($ps_line)" '[[ "$ps_pass" =~ ^[0-9]+$ && "$ps_pass" -gt 0 ]]'
+  chk "PowerShell suite: no failures"   '[[ "$ps_fail" == 0 ]]'
+else
+  echo "skipped: PowerShell checks (pwsh not installed, or not the bash pass)"
+fi
+
 echo "$passes passed, $fails failed"
 [[ $fails -eq 0 ]]
