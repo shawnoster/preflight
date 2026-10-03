@@ -643,6 +643,126 @@ unset FAKE_OP_LOG; clean_sets; op-clear-env >/dev/null
 source "$R/lib/nanoleaf.sh"; source "$R/lib/onepassword.sh"
 chk "after-load hook registered exactly once across re-sourcing" '[[ ${#_OP_AFTER_LOAD_HOOKS[@]} -eq 1 ]]'
 
+# ── op-env load / clear (named sets) ──────────────────────────────────────────
+# `op-env load` is op-load-env; with set names it loads just those sets, adds to what is loaded,
+# unsets nothing, and works on an inactive set. A plain load stays authoritative.
+export FAKE_OP_LOG="$T/oplog"
+op-clear-env >/dev/null 2>&1; clean_sets; mkdir -p "$sets"
+oplog_reset() { : > "$FAKE_OP_LOG"; }
+oplog_count() { grep -c . "$FAKE_OP_LOG" 2>/dev/null || true; }
+mkset() { local name=$1; shift; printf '%s\n' "$@" > "$sets/$name.tsv"; }
+mkset a $'A1\top://v/i/a1'
+mkset b $'B1\top://v/i/b1' $'B2\top://v/i/b2'
+
+# Plain forms unchanged: op-env load prints exactly what op-load-env prints.
+oplog_reset
+out_old=$(op-load-env 2>&1); op-clear-env >/dev/null
+out_new=$(op-env load 2>&1); op-clear-env >/dev/null
+chk "op-env load output is identical to op-load-env" '[[ -n "$out_old" && "$out_new" == "$out_old" ]]'
+out_old=$(op-clear-env 2>&1); out_new=$(op-env clear 2>&1)
+chk "op-env clear output is identical to op-clear-env" '[[ "$out_new" == "$out_old" ]]'
+
+# A subset is additive: the other set's variables stay, and so does the memory of them.
+op-env load >/dev/null 2>&1
+chk "full load: all three set" '[[ "$A1" == val-of-a1 && "$B1" == val-of-b1 && "$B2" == val-of-b2 ]]'
+unset B1 B2
+op-env load b >/dev/null 2>&1
+chk "subset load: the named set's variables come back" '[[ "$B1" == val-of-b1 && "$B2" == val-of-b2 ]]'
+chk "subset load: the other set's variable is untouched"  '[[ "$A1" == val-of-a1 ]]'
+chk "subset load: the loaded-vars memory still lists every set" '[[ "$_OP_LOADED_VARS" == *A1* && "$_OP_LOADED_VARS" == *B1* && "$_OP_LOADED_VARS" == *B2* ]]'
+chk "subset load: names are not duplicated in the memory"       '[[ $(printf "%s\n" "$_OP_LOADED_VARS" | grep -cx B1) -eq 1 ]]'
+
+# Subset clear: only the named set's variables, and the memory keeps the rest.
+op-env clear b >/dev/null 2>&1
+chk "subset clear: the named set's variables are unset"  '[[ -z "${B1:-}${B2:-}" ]]'
+chk "subset clear: the other set stays loaded"           '[[ "$A1" == val-of-a1 ]]'
+chk "subset clear: the memory keeps only what is still loaded" '[[ "$_OP_LOADED_VARS" == A1 ]]'
+out=$(op-env clear b 2>&1)
+chk "subset clear: names the sets in its message"        '[[ "$out" == *"b"* && "$out" != *"Secure environment variables cleared"* ]]'
+op-env clear >/dev/null 2>&1
+chk "a later full clear still clears what is left"       '[[ -z "${A1:-}" && -z "$_OP_LOADED_VARS" ]]'
+
+# A subset load unsets nothing, even when other loaded variables are no longer defined.
+op-env load >/dev/null 2>&1
+rm "$sets/a.tsv"
+op-env load b >/dev/null 2>&1
+chk "subset load: a variable whose set is gone is not unset (only a full load does that)" '[[ "$A1" == val-of-a1 ]]'
+op-env load >/dev/null 2>&1
+chk "a plain load is authoritative: the same variable is unset now" '[[ -z "${A1:-}" && "$B1" == val-of-b1 ]]'
+op-env clear >/dev/null 2>&1; mkset a $'A1\top://v/i/a1'
+
+# An inactive set: naming it loads it, with a note; the next plain load unsets it again.
+printf 'a\n' > "$sets/.active"
+oplog_reset
+out=$(op-env load b 2>&1)
+op-env load b >/dev/null 2>&1
+chk "inactive set: loads when named"                  '[[ "$B1" == val-of-b1 && "$B2" == val-of-b2 ]]'
+chk "inactive set: says it is not active, and how to keep it" '[[ "$out" == *"not active"* && "$out" == *"op-env use b"* ]]'
+chk "inactive set: an active set gives no such note"  '[[ "$(op-env load a 2>&1)" != *"not active"* ]]'
+op-env load >/dev/null 2>&1
+chk "inactive set: the next plain load unsets it (documented)" '[[ -z "${B1:-}${B2:-}" && "$A1" == val-of-a1 ]]'
+op-env clear >/dev/null 2>&1; rm -f "$sets/.active"
+
+# Bad names stop before anything changes or signs in.
+op-env load >/dev/null 2>&1; before="$_OP_LOADED_VARS"; oplog_reset
+for bad in nope Bad "../x" "a b"; do
+  out=$(op-env load "$bad" 2>&1); rc=$?
+  chk "load '$bad' fails with the name in the message" '[[ $rc -ne 0 && "$out" == *"Nothing was changed"* ]]'
+done
+out=$(op-env load a nope 2>&1); rc=$?
+chk "load: one bad name among good ones loads none of them" '[[ $rc -ne 0 && "$(oplog_count)" == 0 && "$_OP_LOADED_VARS" == "$before" ]]'
+out=$(op-env clear nope 2>&1); rc=$?
+chk "clear: an unknown set fails and unsets nothing"       '[[ $rc -ne 0 && "$A1" == val-of-a1 && "$_OP_LOADED_VARS" == "$before" ]]'
+chk "bad names: no op call was made (no sign-in either)"   '[[ "$(oplog_count)" == 0 ]]'
+op-env clear >/dev/null 2>&1
+
+# A failed sign-in during a subset load leaves the memory and the environment as they were.
+op-env load a >/dev/null 2>&1; before="$_OP_LOADED_VARS"
+FAKE_OP_SIGNED_OUT=1 op-env load b >/dev/null 2>&1; rc=$?
+chk "subset load: a failed sign-in fails"               '[[ $rc -ne 0 ]]'
+chk "subset load: ...sets nothing from the set"         '[[ -z "${B1:-}${B2:-}" ]]'
+chk "subset load: ...and leaves the memory unchanged"   '[[ "$_OP_LOADED_VARS" == "$before" && "$A1" == val-of-a1 ]]'
+op-env clear >/dev/null 2>&1
+
+# Several sets, in the order given; the first definition wins.
+mkset c $'B1\top://v/i/from-c' $'C1\top://v/i/c1'
+op-env load c b >/dev/null 2>&1
+chk "several sets: the first one named wins a clash"  '[[ "$B1" == val-of-from-c && "$B2" == val-of-b2 && "$C1" == val-of-c1 ]]'
+op-env clear c b >/dev/null 2>&1
+chk "several sets: clear takes them all"              '[[ -z "${B1:-}${B2:-}${C1:-}" ]]'
+rm "$sets/c.tsv"
+
+# The legacy OP_SECRETS array belongs to no set: only a plain load includes it.
+OP_SECRETS=( $'LEG\top://v/i/leg' )
+op-env load a >/dev/null 2>&1
+chk "legacy OP_SECRETS is not part of a named-set load" '[[ -z "${LEG:-}" && "$A1" == val-of-a1 ]]'
+op-env load >/dev/null 2>&1
+chk "legacy OP_SECRETS is still part of a plain load"   '[[ "$LEG" == val-of-leg ]]'
+op-env clear >/dev/null 2>&1; unset OP_SECRETS
+
+# An empty set: nothing to load, nothing signed in.
+: > "$sets/empty.tsv"; oplog_reset
+out=$(op-env load empty 2>&1); rc=$?
+chk "an empty set loads nothing, says so, and makes no op call" '[[ $rc -eq 0 && "$out" == *"No secrets in: empty"* && "$(oplog_count)" == 0 ]]'
+rm "$sets/empty.tsv"
+
+# After-load hooks run after a named-set load too.
+_hooks_saved=("${_OP_AFTER_LOAD_HOOKS[@]}")
+HOOK_RAN=0
+_test_hook() { HOOK_RAN=$((HOOK_RAN + 1)); }
+_OP_AFTER_LOAD_HOOKS+=(_test_hook)
+op-env load a >/dev/null 2>&1
+chk "hooks: a named-set load runs the after-load hooks" '[[ $HOOK_RAN -eq 1 ]]'
+op-env load >/dev/null 2>&1
+chk "hooks: and so does a plain load"                   '[[ $HOOK_RAN -eq 2 ]]'
+_OP_AFTER_LOAD_HOOKS=("${_hooks_saved[@]}")
+op-env clear >/dev/null 2>&1
+
+# Help and the older names.
+chk "op-env help documents load and clear" '[[ "$(op-env help)" == *"op-env load [set...]"* && "$(op-env help)" == *"op-env clear [set...]"* ]]'
+chk "op-load-env and op-clear-env still exist"  'declare -f op-load-env >/dev/null && declare -f op-clear-env >/dev/null'
+clean_sets; unset FAKE_OP_LOG
+
 # ── shared fixture ────────────────────────────────────────────────────────────
 # tests/fixtures/envsets/ plus envsets.expected is the contract for the .tsv format
 # (first definition wins, CRs stripped, malformed lines skipped, .active order, an
