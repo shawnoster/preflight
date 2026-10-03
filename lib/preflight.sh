@@ -1043,7 +1043,9 @@ _preflight_uninstall() {
   [[ "${1:-}" == "--purge" ]] && purge=true
 
   # Your own data lives outside the clone (lib/paths.sh). Without --purge it stays.
-  [[ -n "${PREFLIGHT_CONFIG_DIR:-}" ]] || _pf_resolve_dirs || return 1
+  # Both must be set: with only one in the environment the other would be empty (and --purge
+  # would refuse "<unset>"), and resolving is also what checks they stay out of the clone.
+  [[ -n "${PREFLIGHT_CONFIG_DIR:-}" && -n "${PREFLIGHT_STATE_DIR:-}" ]] || _pf_resolve_dirs || return 1
   local cache_dir="${PREFLIGHT_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/preflight}"
   local user_dirs=("$PREFLIGHT_CONFIG_DIR" "$PREFLIGHT_STATE_DIR" "$cache_dir")
   local ud

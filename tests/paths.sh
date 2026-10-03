@@ -161,6 +161,17 @@ for args in "--purge typo" "typo" "--purge --purge" "--purge=1"; do
   chk "uninstall '$args' is rejected and deletes nothing" '[[ "$out" == *"Usage: preflight uninstall"* && -d "$PREFLIGHT_DIR" && -f "$HOME/.config/preflight/config.json" ]]'
 done
 
+# Only PREFLIGHT_CONFIG_DIR in the environment: --purge still resolves the state dir.
+fresh
+( source "$PREFLIGHT_DIR/init.sh" >/dev/null 2>&1 </dev/null )
+out=$( ( source "$PREFLIGHT_DIR/init.sh" >/dev/null 2>&1 </dev/null; unset PREFLIGHT_STATE_DIR; printf 'y\n' | preflight uninstall --purge ) 2>&1 )
+chk "--purge with only the config dir set resolves the state dir" '[[ "$out" != *"refusing"* && ! -e "$HOME/.local/state/preflight" && ! -e "$HOME/.config/preflight" ]]'
+
+# preflight-cache-clear works when cache.sh is sourced without init.sh.
+fresh; mkdir -p "$HOME/.cache/preflight"; echo x > "$HOME/.cache/preflight/c"
+out=$( ( unset -f _pf_safe_rm_dir; source "$PREFLIGHT_DIR/lib/cache.sh"; PREFLIGHT_CACHE_DIR="$HOME/.cache/preflight"; preflight-cache-clear ) 2>&1 ); rc=$?
+chk "cache.sh alone can still clear the cache" '[[ $rc -eq 0 && ! -e "$HOME/.cache/preflight" ]]'
+
 # A protected PREFLIGHT_DIR is refused before any shell profile is edited.
 fresh
 ( source "$PREFLIGHT_DIR/init.sh" >/dev/null 2>&1 </dev/null )
@@ -176,6 +187,25 @@ fresh
 ( source "$PREFLIGHT_DIR/init.sh" >/dev/null 2>&1 </dev/null )
 out=$(run_uninstall n --purge)
 chk "declining uninstall deletes nothing" '[[ -d "$PREFLIGHT_DIR" && -f "$HOME/.config/preflight/config.json" ]]'
+
+# An install updated in place: settings still inside the clone are reported, not ignored.
+fresh; mkdir -p "$PREFLIGHT_DIR/config/envsets" "$PREFLIGHT_DIR/state/owl"
+echo 'export OP_ACCOUNT=legacy' > "$PREFLIGHT_DIR/config/accounts.sh"
+out=$(source "$PREFLIGHT_DIR/init.sh" 2>&1 </dev/null)
+chk "legacy in-clone settings: warns and says how to move them" '[[ "$out" == *"still inside $PREFLIGHT_DIR"* && "$out" == *"mv "* ]]'
+chk "legacy: points accounts.sh at preflight config set"       '[[ "$out" == *"preflight config set"* ]]'
+chk "legacy: seeds nothing into the new owl state dir"         '[[ ! -e "$HOME/.local/state/preflight/owl" ]]'
+chk "legacy: still creates config.json (nothing to collide with)" '[[ -f "$HOME/.config/preflight/config.json" ]]'
+mkdir -p "$HOME/.local/state/preflight"
+rm -rf "$PREFLIGHT_DIR/config" "$PREFLIGHT_DIR/state"
+out=$(source "$PREFLIGHT_DIR/init.sh" 2>&1 </dev/null)
+chk "after the old files are gone the warning is gone" '[[ "$out" != *"still inside"* ]]'
+
+# A config dir that cannot be created stops init with a message.
+fresh; touch "$T/afile"; export PREFLIGHT_CONFIG_DIR="$T/afile/cfg"
+out=$(source "$PREFLIGHT_DIR/init.sh" 2>&1 </dev/null); rc=$?
+chk "unwritable config dir: init stops with a message" '[[ $rc -ne 0 && "$out" == *"cannot create"* ]]'
+unset PREFLIGHT_CONFIG_DIR
 
 # lib/owl.sh sourced on its own stops on a refused layout and leaves OWL_THEME_DIR unset.
 fresh; export PREFLIGHT_CONFIG_DIR="$PREFLIGHT_DIR"
