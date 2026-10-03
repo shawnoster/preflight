@@ -1034,17 +1034,22 @@ _preflight_update() {
 _preflight_uninstall() {
   local dir="${PREFLIGHT_DIR:-$HOME/.preflight}"
   local purge=false
-  case "${1:-}" in
-    "") ;;
-    --purge) purge=true ;;
-    *) echo "Usage: preflight uninstall [--purge]" >&2; return 1 ;;
-  esac
+  # Fail closed: any argument other than a single --purge is a mistake, and the
+  # destructive path must not run on a half-understood command line.
+  if [[ $# -gt 1 ]] || { [[ $# -eq 1 ]] && [[ "$1" != "--purge" ]]; }; then
+    echo "Usage: preflight uninstall [--purge]" >&2
+    return 1
+  fi
+  [[ "${1:-}" == "--purge" ]] && purge=true
 
   # Your own data lives outside the clone (lib/paths.sh). Without --purge it stays.
   [[ -n "${PREFLIGHT_CONFIG_DIR:-}" ]] || _pf_resolve_dirs || return 1
   local cache_dir="${PREFLIGHT_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/preflight}"
   local user_dirs=("$PREFLIGHT_CONFIG_DIR" "$PREFLIGHT_STATE_DIR" "$cache_dir")
   local ud
+  # Validate the clone itself too, up front: this must not happen after the shell
+  # profiles have been edited, or a refusal would leave a half-done uninstall.
+  _pf_safe_rm_dir "$dir" || return 1
   if [[ "$purge" == true ]]; then
     # Check every directory up front: refuse before deleting anything.
     for ud in "${user_dirs[@]}"; do

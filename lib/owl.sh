@@ -20,7 +20,9 @@
 
 PREFLIGHT_DIR="${PREFLIGHT_DIR:-$HOME/.preflight}"
 # init.sh resolves the state dir first; a library sourced on its own does it here.
-[[ -n "${PREFLIGHT_STATE_DIR:-}" ]] || { source "$PREFLIGHT_DIR/lib/paths.sh" && _pf_resolve_dirs; }
+# A refused layout must stop here: carrying on would leave OWL_THEME_DIR empty and aim
+# owl-theme at /current.
+[[ -n "${PREFLIGHT_STATE_DIR:-}" ]] || { source "$PREFLIGHT_DIR/lib/paths.sh" && _pf_resolve_dirs || return 1; }
 OWL_THEME_DIR="${OWL_THEME_DIR:-${PREFLIGHT_STATE_DIR:+$PREFLIGHT_STATE_DIR/owl}}"
 
 # ── Theme definitions ─────────────────────────────────────────────────────────

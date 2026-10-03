@@ -54,10 +54,28 @@ chk "state override beats XDG" '[[ "$PREFLIGHT_STATE_DIR" == "$T/os" ]]'
 # ── code and data never share a directory ─────────────────────────────────────
 fresh; export PREFLIGHT_CONFIG_DIR="$T/pf/"
 out=$(_pf_resolve_dirs 2>&1); rc=$?
-chk "config dir == PREFLIGHT_DIR is refused" '[[ $rc -ne 0 && "$out" == *"also the config or state directory"* ]]'
+chk "config dir == PREFLIGHT_DIR is refused" '[[ $rc -ne 0 && "$out" == *"is the install directory"* ]]'
 fresh; export PREFLIGHT_STATE_DIR="$T/pf"
 out=$(_pf_resolve_dirs 2>&1); rc=$?
 chk "state dir == PREFLIGHT_DIR is refused" '[[ $rc -ne 0 ]]'
+
+# Aliases and nested paths are the same problem.
+fresh; mkdir -p "$PREFLIGHT_DIR/sub"; ln -s "$PREFLIGHT_DIR" "$T/alias"
+for spelling in "$T/pf/." "$T/pf/sub/.." "$T/alias" "$T/pf/config" "$T/alias/sub" "$T/pf/not/yet/created"; do
+  fresh; mkdir -p "$PREFLIGHT_DIR/sub"; ln -s "$PREFLIGHT_DIR" "$T/alias"
+  export PREFLIGHT_CONFIG_DIR="$spelling"
+  out=$(_pf_resolve_dirs 2>&1); rc=$?
+  chk "config dir '${spelling#$T/}' is refused" '[[ $rc -ne 0 ]]'
+  unset PREFLIGHT_CONFIG_DIR
+  export PREFLIGHT_STATE_DIR="$spelling"
+  out=$(_pf_resolve_dirs 2>&1); rc=$?
+  chk "state dir '${spelling#$T/}' is refused" '[[ $rc -ne 0 ]]'
+done
+fresh; mkdir -p "$T/pf-sibling"; ln -s "$T/pf" "$T/alias2"
+export PREFLIGHT_CONFIG_DIR="$T/pf-sibling"
+chk "a sibling that merely shares a prefix is allowed" '_pf_resolve_dirs'
+fresh; export PREFLIGHT_DIR="$T/alias2"; export PREFLIGHT_CONFIG_DIR="$T/pf/config"
+chk "PREFLIGHT_DIR given as a symlink is compared by real path" '! _pf_resolve_dirs 2>/dev/null'
 
 # ── rm guard ──────────────────────────────────────────────────────────────────
 fresh
@@ -66,6 +84,11 @@ for bad in "" "/" "$HOME" "$HOME/" "$HOME/.config" "$HOME/.local/state" "$HOME/.
 done
 export XDG_CONFIG_HOME="$T/xc"
 chk "guard refuses a custom XDG_CONFIG_HOME itself" '! _pf_safe_rm_dir "$T/xc" 2>/dev/null'
+unset XDG_CONFIG_HOME; mkdir -p "$HOME/x"; ln -s "$HOME" "$T/homelink"
+for bad in "$HOME/." "$HOME/x/.." "$T/homelink" "$HOME/.config/." "$HOME/./.cache"; do
+  chk "guard refuses the alias '${bad#$T/}'" '! _pf_safe_rm_dir "$bad" 2>/dev/null'
+done
+export XDG_CONFIG_HOME="$T/xc"
 chk "guard allows a preflight subdirectory" '_pf_safe_rm_dir "$T/xc/preflight"'
 
 # ── first run (init.sh sourced non-interactively) ─────────────────────────────
@@ -97,7 +120,7 @@ chk "same-shell reload: edited value follows the file" '[[ "$GIT_MAIN_BRANCH" ==
 # init.sh refuses a config dir that is the clone, and creates nothing there.
 fresh; export PREFLIGHT_CONFIG_DIR="$PREFLIGHT_DIR"
 out=$(source "$PREFLIGHT_DIR/init.sh" 2>&1 </dev/null); rc=$?
-chk "init.sh stops on a shared config dir" '[[ $rc -ne 0 && "$out" == *"also the config or state directory"* && ! -e "$PREFLIGHT_DIR/config.json" ]]'
+chk "init.sh stops on a shared config dir" '[[ $rc -ne 0 && "$out" == *"is the install directory"* && ! -e "$PREFLIGHT_DIR/config.json" ]]'
 
 # ── uninstall ─────────────────────────────────────────────────────────────────
 # Run in a subshell: uninstall unsets preflight's own functions.
@@ -133,8 +156,49 @@ chk "--purge refuses the bare XDG config dir" '[[ "$out" == *"refusing to remove
 
 fresh
 ( source "$PREFLIGHT_DIR/init.sh" >/dev/null 2>&1 </dev/null )
+for args in "--purge typo" "typo" "--purge --purge" "--purge=1"; do
+  out=$(run_uninstall y $args)
+  chk "uninstall '$args' is rejected and deletes nothing" '[[ "$out" == *"Usage: preflight uninstall"* && -d "$PREFLIGHT_DIR" && -f "$HOME/.config/preflight/config.json" ]]'
+done
+
+# A protected PREFLIGHT_DIR is refused before any shell profile is edited.
+fresh
+( source "$PREFLIGHT_DIR/init.sh" >/dev/null 2>&1 </dev/null )
+mkdir -p "$HOME/.config"
+printf 'export KEEP=1\n# Preflight — developer environment\n[[ -f "$HOME/.preflight/init.sh" ]] && source "$HOME/.preflight/init.sh"\n' > "$HOME/.bashrc"
+before=$(cat "$HOME/.bashrc")
+out=$( ( source "$PREFLIGHT_DIR/init.sh" >/dev/null 2>&1 </dev/null; PREFLIGHT_DIR="$HOME/.config"; printf 'y\n' | preflight uninstall ) 2>&1 )
+chk "uninstall with a protected PREFLIGHT_DIR refuses" '[[ "$out" == *"refusing to remove"* ]]'
+chk "...and leaves the shell profile untouched"     '[[ "$(cat "$HOME/.bashrc")" == "$before" ]]'
+chk "...and deletes nothing"                         '[[ -d "$HOME/.config" && -f "$HOME/.config/preflight/config.json" ]]'
+
+fresh
+( source "$PREFLIGHT_DIR/init.sh" >/dev/null 2>&1 </dev/null )
 out=$(run_uninstall n --purge)
 chk "declining uninstall deletes nothing" '[[ -d "$PREFLIGHT_DIR" && -f "$HOME/.config/preflight/config.json" ]]'
+
+# lib/owl.sh sourced on its own stops on a refused layout and leaves OWL_THEME_DIR unset.
+fresh; export PREFLIGHT_CONFIG_DIR="$PREFLIGHT_DIR"
+out=$( (source "$R/lib/owl.sh" 2>&1; echo "rc=$? dir=[${OWL_THEME_DIR:-}]") 2>&1 )
+chk "owl.sh stops on a refused layout and sets no theme dir" '[[ "$out" == *"is the install directory"* && "$out" == *"rc=1 dir=[]"* ]]'
+unset PREFLIGHT_CONFIG_DIR
+
+# ── install.sh refuses a shared layout before touching anything ──────────────
+# Clones this repo's current branch from disk, so only runs inside a git checkout on a
+# branch (the clone has the committed install.sh and lib/paths.sh, not uncommitted edits).
+branch=$(git -C "$R" branch --show-current 2>/dev/null)
+if [[ -n "$branch" ]] && command -v git >/dev/null 2>&1; then
+  fresh; unset PREFLIGHT_DIR
+  inst() { env -i PATH="$PATH" HOME="$HOME" SHELL=/bin/bash PREFLIGHT_REPO="$R" PREFLIGHT_BRANCH="$branch" "$@" bash "$R/install.sh" 2>&1; }
+  out=$(inst PREFLIGHT_DIR="$HOME/.config/preflight"); rc=$?
+  chk "install into the config dir fails" '[[ $rc -ne 0 && "$out" == *"Nothing was installed"* ]]'
+  chk "install rolls the clone back"      '[[ ! -e "$HOME/.config/preflight" ]]'
+  chk "install left the shell profile alone" '[[ ! -e "$HOME/.bashrc" && ! -e "$HOME/.profile" ]]'
+  out=$(inst); rc=$?
+  chk "re-running with the default location installs" '[[ $rc -eq 0 && -f "$HOME/.preflight/init.sh" && -d "$HOME/.config/preflight" ]]'
+else
+  echo "skipped: install.sh checks (not on a git branch)"
+fi
 
 echo "$passes passed, $fails failed"
 [[ $fails -eq 0 ]]
