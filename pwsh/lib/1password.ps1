@@ -191,9 +191,14 @@ function Import-OpEnvGroup {
         $lines = $Entries | ForEach-Object { "$($_.Name)=$($_.Ref)" }
         Set-Content -LiteralPath $envFile -Value $lines -Encoding UTF8
 
-        # `op run` injects resolved values into the child process env. The cleanest way to fish
-        # them back out is a child PowerShell that prints its own env as `VAR=VALUE` lines.
-        $printer = "foreach (`$v in '$($names -join ',')'.Split(',')) { Write-Output (`"{0}={1}`" -f `$v, [Environment]::GetEnvironmentVariable(`$v)) }"
+        # `op run` injects resolved values into the child process env. The cleanest way to fish them
+        # back out is a child PowerShell that prints its own env. A secret may span lines, and native
+        # output is split at newlines, so each value is base64-framed (one line per variable, nothing in
+        # it that can end the line) and every line carries a one-off tag, so neither a value nor stray
+        # `op` output can pass for another variable. The same protection the bash loader has.
+        $tag = [guid]::NewGuid().ToString('N')
+        $printer = "foreach (`$v in '$($names -join ',')'.Split(',')) { `$x = [Environment]::GetEnvironmentVariable(`$v); " +
+                   "if (`$null -ne `$x) { Write-Output ('$tag' + ':' + `$v + '=' + [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes(`$x))) } }"
 
         $resolved = & op run --account $Account --env-file=$envFile --no-masking -- pwsh -NoProfile -Command $printer 2>&1
         $opRc     = $LASTEXITCODE
@@ -204,7 +209,8 @@ function Import-OpEnvGroup {
     if ($opRc -ne 0) {
         Write-Warning "op run failed for account $Account (exit $opRc), falling back to individual reads (slow)..."
         foreach ($entry in $Entries) {
-            $value = & op read --account $Account $entry.Ref 2>$null
+            # `op read` output arrives as one string per line: put a multiline value back together.
+            $value = (@(& op read --account $Account $entry.Ref 2>$null) -join "`n")
             if ($LASTEXITCODE -eq 0 -and $value) {
                 Set-Item -Path "env:$($entry.Name)" -Value $value
                 Write-Host "✅ $($entry.Name)$via"
@@ -216,9 +222,11 @@ function Import-OpEnvGroup {
     }
 
     foreach ($key in $names) {
-        $line = $resolved | Where-Object { $_ -match "^$([regex]::Escape($key))=" } | Select-Object -First 1
+        $prefix = "${tag}:${key}="
+        $line = $resolved | Where-Object { "$_".StartsWith($prefix, [System.StringComparison]::Ordinal) } | Select-Object -First 1
         if ($line) {
-            $value = $line.Substring($key.Length + 1)
+            $encoded = "$line".Substring($prefix.Length)
+            $value = try { [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($encoded)) } catch { '' }
             if ($value) {
                 Set-Item -Path "env:$key" -Value $value
                 Write-Host "✅ $key$via"

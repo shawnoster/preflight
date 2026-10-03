@@ -215,10 +215,17 @@ case "$cmd" in
       [ -n "$k" ] || continue
       case "$v" in *broken*) exit 1 ;; esac
       field=${v##*/}
-      export "$k=val-of-$field@$acct"
+      case "$field" in
+        multi) export "$k=$(printf 'first line\nTWO=forged\nlast line')" ;;
+        *) export "$k=val-of-$field@$acct" ;;
+      esac
     done < "$envfile"
     exec "$@" ;;
-  read) case "$1" in *broken*) exit 1 ;; esac; echo "val-of-${1##*/}@$acct" ;;
+  read) case "$1" in
+          *broken*) exit 1 ;;
+          */multi) printf 'first line\nTWO=forged\nlast line\n' ;;
+          *) echo "val-of-${1##*/}@$acct" ;;
+        esac ;;
   vault) [ "$acct" = down ] && exit 1; exit 0 ;;
   signin) exit 1 ;;
 esac
@@ -260,6 +267,17 @@ esac
         $out = Import-OpEnv -WarningAction SilentlyContinue *>&1 | Out-String
         chk 'Import-OpEnv: a failed batch falls back to per-secret reads' { $env:ONE -eq 'val-of-one@main.1password.com' }
         chk 'Import-OpEnv: ...and names the secret that failed' { $out -match 'TWO \(failed to load' }
+
+        # A multiline value must come back whole, and must not be able to forge another variable.
+        Set-Sets "ONE`top://v/i/multi`nTWO`top://v/i/two`n"
+        $out = Import-OpEnv *>&1 | Out-String
+        chk 'Import-OpEnv: a multiline secret is loaded whole' { $env:ONE -ceq "first line`nTWO=forged`nlast line" }
+        chk 'Import-OpEnv: ...and cannot overwrite another requested variable' { $env:TWO -eq 'val-of-two@main.1password.com' }
+        chk 'Import-OpEnv: ...both reported as loaded' { $out -match 'ONE' -and $out -match 'TWO' -and $out -notmatch 'failed to load' }
+
+        Set-Sets "ONE`top://v/i/multi`nTWO`top://v/i/broken`n"
+        $out = Import-OpEnv -WarningAction SilentlyContinue *>&1 | Out-String
+        chk 'Import-OpEnv: the per-secret fallback also keeps a multiline secret whole' { $env:ONE -ceq "first line`nTWO=forged`nlast line" }
 
         Set-Sets ''
         chk 'Import-OpEnv: no secrets configured: no op calls' { $null -eq (Import-OpEnv) -and (@(Get-OpCalls)).Count -eq 0 }
