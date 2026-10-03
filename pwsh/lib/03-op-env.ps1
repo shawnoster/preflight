@@ -50,6 +50,7 @@ function Write-OpEnvText {
 }
 
 function New-OpEnvTempPath {
+    # Dot-prefixed, so it is "hidden" on POSIX: remove these with -Force or Remove-Item silently leaves them.
     param([string]$Dir)
     return (Join-Path $Dir ('.tmp.' + [guid]::NewGuid().ToString('N').Substring(0, 8)))
 }
@@ -140,7 +141,7 @@ function Write-OpEnvSet {
             try { [System.IO.File]::Move($tmpa, $act, $true); $tmpa = $null }
             catch {
                 # Roll the set file back so we leave exactly what was there before.
-                if ($bak) { [System.IO.File]::Move($bak, $file, $true); $bak = $null } else { Remove-Item -LiteralPath $file -ErrorAction SilentlyContinue }
+                if ($bak) { [System.IO.File]::Move($bak, $file, $true); $bak = $null } else { Remove-Item -LiteralPath $file -Force -ErrorAction SilentlyContinue }
                 Write-Error "Can't activate set '$Set' (replacing $act failed). Nothing was changed."
                 return $false
             }
@@ -150,7 +151,7 @@ function Write-OpEnvSet {
         Write-Error "Could not write set '$Set': $($_.Exception.Message)"
         return $false
     } finally {
-        foreach ($t in @($tmp, $tmpa, $bak)) { if ($t) { Remove-Item -LiteralPath $t -ErrorAction SilentlyContinue } }
+        foreach ($t in @($tmp, $tmpa, $bak)) { if ($t) { Remove-Item -LiteralPath $t -Force -ErrorAction SilentlyContinue } }
     }
 }
 
@@ -283,7 +284,7 @@ function Remove-OpEnvEntry {
     } catch {
         Write-Error "Could not update $Set`: $($_.Exception.Message)"
         return
-    } finally { if ($tmp) { Remove-Item -LiteralPath $tmp -ErrorAction SilentlyContinue } }
+    } finally { if ($tmp) { Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue } }
     Write-Host "🗑️  Removed $Name from $Set"
     Write-Host "   It is unset on the next op-env load or op-env clear, or now with: Remove-Item Env:$Name"
 }
@@ -317,7 +318,7 @@ function Set-OpEnvActive {
     } catch {
         Write-Error "Could not save the active sets to $act`: $($_.Exception.Message)"
         return
-    } finally { if ($tmp) { Remove-Item -LiteralPath $tmp -ErrorAction SilentlyContinue } }
+    } finally { if ($tmp) { Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue } }
     Write-Host "✅ Active sets: $($chosen -join ' ')"
 }
 
