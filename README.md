@@ -62,6 +62,15 @@ Pulls the latest changes from the upstream repo, shows incoming commits, and war
 >
 > If your `owl.sh` sets `OWL_OMP_CONFIG` to `$PREFLIGHT_DIR/state/owl/...`, change it to `$PREFLIGHT_STATE_DIR/owl/...`. Anything of yours that reads `~/.preflight/config` needs the new path.
 
+> **If you installed to `~/.config/preflight`** (the custom-location example this README used to show), the clone and your config share that directory, which the new layout refuses. Move the clone out first, then follow the steps above (your files are then under `~/.preflight`, so use that path in them):
+>
+> ```bash
+> mv ~/.config/preflight ~/.preflight
+> sed -i 's|\.config/preflight/init\.sh|.preflight/init.sh|' ~/.bashrc ~/.zshrc 2>/dev/null   # whichever rc file has the source line
+> ```
+>
+> Or keep the clone where it is and point the config elsewhere, setting `PREFLIGHT_CONFIG_DIR=~/.config/preflight-data` and `PREFLIGHT_STATE_DIR=~/.local/state/preflight-data` before the `source` line, and moving the files there instead.
+
 After updating, reload your shell:
 
 ```bash
