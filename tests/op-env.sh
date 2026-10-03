@@ -720,5 +720,66 @@ got=$(_op_env_entries)
 chk "shared fixture: merged entries match the expected file" '[[ "$got" == "$(cat "$R/tests/fixtures/envsets.expected")" ]]'
 rm -rf "$sets"; mkdir -p "$sets"
 
+# ── bash and PowerShell op-env write the same bytes (skipped without pwsh; bash pass only) ─────────
+# One sequence of add / rm / use (valid and invalid) runs through bash `op-env` and PowerShell `op-env`, each in
+# its own directory. Every file, its mode, and the output of `list` must then be identical: the write-side
+# version of the loader comparison in tests/config.sh.
+if [[ -n "${BASH_VERSION:-}" ]] && command -v pwsh >/dev/null 2>&1 && stat -c '%a' / >/dev/null 2>&1; then
+  par="$T/parity"; rm -rf "$par"; mkdir -p "$par/bash" "$par/ps"
+  cat > "$par/seq.txt" <<'SEQ'
+add|guild|NPM_TOKEN|op://Private/npm/credential
+add|personal|GITEA_TOKEN|op://v/i/pat|acct.example.com
+add|personal|NANOLEAF|op://v/i/n
+add|guild|NPM_TOKEN|op://Private/npm/rotated
+add|personal|GITEA_TOKEN|op://v/i/pat2
+use|guild
+add|brandnew|X1|op://v/i/x
+add|personal|LATER|op://v/i/later
+rm|personal|NANOLEAF
+add|guild|BAD|op://broken
+add|Guild|UP|op://v/i/f
+add|guild|OKNAME|op://v/i/f|bad acct!
+add|guild|bad name|op://v/i/f
+use|nosuch
+use|guild|nosuch
+rm|personal|NOSUCH
+rm|nosuch|X
+add|guild|OTHER|op://v/i/o|main.1password.com
+use|guild|brandnew
+SEQ
+  # bash side
+  ( export PREFLIGHT_CONFIG_DIR="$par/bash" OP_ACCOUNT=main.1password.com
+    while IFS= read -r line; do
+      IFS='|' read -r -a args <<< "$line"
+      op-env "${args[@]}" </dev/null >/dev/null 2>&1 || true
+    done < "$par/seq.txt"
+    op-env list > "$par/bash.list" 2>&1 )
+  # PowerShell side
+  cat > "$par/run.ps1" <<'PS1'
+param([string]$Repo, [string]$Seq, [string]$Out)
+$ErrorActionPreference = 'Continue'
+Import-Module (Join-Path $Repo 'pwsh/Preflight.psd1') -Force 3>$null
+foreach ($line in Get-Content -LiteralPath $Seq) {
+    $a = $line.Split('|')
+    Invoke-OpEnv @a *>$null
+}
+Invoke-OpEnv list 6>&1 | Out-String -Stream | Where-Object { $_ -ne '' } | Set-Content -LiteralPath $Out
+PS1
+  env -u XDG_CONFIG_HOME -u XDG_STATE_HOME PREFLIGHT_CONFIG_DIR="$par/ps" PREFLIGHT_STATE_DIR="$par/ps-state" OP_ACCOUNT=main.1password.com \
+    pwsh -NoProfile -File "$par/run.ps1" -Repo "$R" -Seq "$par/seq.txt" -Out "$par/ps.list" >/dev/null 2>&1
+  files_of() { ( cd "$1/envsets" 2>/dev/null && find . -mindepth 0 | sort | while IFS= read -r f; do printf '%s %s\n' "$f" "$(stat -c '%a' "$f")"; done ); }
+  chk "parity: the same files and modes" '[[ -n "$(files_of "$par/bash")" && "$(files_of "$par/bash")" == "$(files_of "$par/ps")" ]]'
+  same=1; for f in "$par"/bash/envsets/*.tsv "$par"/bash/envsets/.active; do
+    [[ -e "$f" ]] || continue
+    cmp -s "$f" "$par/ps/envsets/$(basename "$f")" || { same=0; echo "DIFFERS: $(basename "$f")"; diff "$f" "$par/ps/envsets/$(basename "$f")" | head -5; }
+  done
+  chk "parity: every set file and .active is byte-identical" '[[ $same -eq 1 ]]'
+  grep -v '^$' "$par/bash.list" > "$par/bash.list2"
+  chk "parity: op-env list prints the same text" 'cmp -s "$par/bash.list2" "$par/ps.list" || { diff "$par/bash.list2" "$par/ps.list" | head -6; false; }'
+  chk "parity: no temp files left on either side" '[[ -z "$(find "$par/bash/envsets" "$par/ps/envsets" -name ".tmp.*" 2>/dev/null)" ]]'
+else
+  echo "skipped: bash/PowerShell op-env parity (needs pwsh and GNU stat, bash pass only)"
+fi
+
 echo "$passes passed, $fails failed"
 [[ $fails -eq 0 ]]

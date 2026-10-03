@@ -512,7 +512,7 @@ esac
     Invoke-OpQuiet { op-env add personal ANOTHER 'op://v/i/an' }
     chk 'editing a set the user deactivated does not reactivate it' { [System.IO.File]::ReadAllText((Join-Path $wDir '.active')) -ceq "guild`nbrandnew`n" }
     if (-not $IsWindows) {
-        chk 'the .active file is mode 600' { (Get-Mode (Join-Path $wDir '.active')) -eq '600' }
+        # .active gets the default mode, like bash's (it lists set names, not secrets); tests/op-env.sh checks the match.
         if ((& id -u) -ne '0') {
             [System.IO.File]::WriteAllText((Join-Path $wDir '.active'), "guild`n"); & chmod 444 (Join-Path $wDir '.active')
             Invoke-OpQuiet { op-env add another Y1 'op://v/i/y' }

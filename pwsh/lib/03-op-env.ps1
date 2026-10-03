@@ -312,8 +312,9 @@ function Set-OpEnvActive {
     $act = Join-Path $dir '.active'
     $tmp = New-OpEnvTempPath -Dir $dir
     try {
+        # No chmod: bash writes .active with the default mode (it lists set names, not secrets), and the
+        # two sides must produce the same files (tests/op-env.sh compares modes too).
         Write-OpEnvText -Path $tmp -Text (($chosen -join "`n") + "`n")
-        Set-OpEnvFileMode -Path $tmp -Mode 600
         [System.IO.File]::Move($tmp, $act, $true); $tmp = $null
     } catch {
         Write-Error "Could not save the active sets to $act`: $($_.Exception.Message)"
