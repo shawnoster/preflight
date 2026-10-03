@@ -245,6 +245,12 @@ chk "edit runs the editor (VISUAL empty -> EDITOR) on the file" '[[ "$(cat "$T/e
 VISUAL="$T/ed --wait" EDITOR="" _pf_config_cmd edit >/dev/null 2>&1
 chk "edit splits a multi-word editor (VISUAL wins)" '[[ "$(cat "$T/edited" 2>/dev/null)" == "--wait $CFG" ]]'
 
+# The help text is an unquoted heredoc (it expands the config path), so a backtick in it would run a command.
+help_out=$(_pf_config_help 2>&1)
+chk "config help prints the get line intact"        '[[ "$help_out" == *"get KEY          Print a setting in the form"* && "$help_out" == *"accepts (the built-in default if unset)"* ]]'
+chk "config help runs no command (no environment dump)" '[[ "$help_out" != *"BASH="* && "$help_out" != *"BASH_VERSION"* && $(printf "%s\n" "$help_out" | wc -l) -lt 40 ]]'
+chk "config help has no backtick left to run"       '[[ "$(sed -n "/^_pf_config_help()/,/^EOF/p" "$R/lib/config.sh")" != *"\`"* ]]'
+
 # ── preflight config init ─────────────────────────────────────────────────────
 # Answers are fed with --stdin, one per line in table order: op.account, projects.dirs,
 # aws.default_profile, git.main_branch, gitea.username, gitea.host, checks.aws, checks.gh,
