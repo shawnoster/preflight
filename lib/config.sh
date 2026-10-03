@@ -297,7 +297,7 @@ _pf_config_write_many() {
       return 1
     fi
     base="$err"
-    keys="$keys $_pf_row_var"
+    keys="$keys$_pf_row_var"$'\n'   # newline-delimited: zsh does not word-split an unquoted $keys
   done
 
   tmp=$(mktemp "$dir/.config.XXXXXX") || return 1
@@ -306,12 +306,13 @@ _pf_config_write_many() {
   mv -f "$tmp" "$file" || { rm -f "$tmp"; return 1; }
   _pf_cfg_written="$file"
   _pf_config_load
-  for var in $keys; do
+  while IFS= read -r var; do
+    [[ -n "$var" ]] || continue
     case "$_PF_CONFIG_MANAGED" in
       *" $var "*) ;;
       *) echo "   Note: this shell keeps the \$$var you set outside the file; a new terminal picks up the file's value." >&2 ;;
     esac
-  done
+  done <<< "$keys"
 }
 
 _pf_config_set_cmd() {

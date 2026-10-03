@@ -300,6 +300,21 @@ reset; rm -f "$CFG"
 init_with "fresh.1password.com" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP"; rc=$?
 chk "init: with no file, creates it with just version and the answered key" '[[ $rc -eq 0 && "$(jq -c . "$CFG")" == "{\"version\":1,\"op\":{\"account\":\"fresh.1password.com\"}}" ]]'
 
+# The "your own variable keeps winning" note is built from a newline-delimited list, so it works where an
+# unquoted expansion is not word-split (zsh). IFS set to a newline alone reproduces that in bash: with the
+# old space-separated list a loader-set variable was reported as shadowed, and several came out as one.
+reset; cp "$R/defaults/config.company.json" "$CFG"; _pf_config_load
+OLDIFS=$IFS; IFS=$'\n'
+out=$(_pf_config_cmd set git.main_branch zsh1 2>&1)
+IFS=$OLDIFS
+chk "set: no false 'keeps' note for a loader-set variable when the shell does not word-split" '[[ "$out" != *"Note:"* ]]'
+reset; cp "$R/defaults/config.company.json" "$CFG"; GIT_MAIN_BRANCH=mine; export GIT_MAIN_BRANCH; OP_ACCOUNT=mine2; export OP_ACCOUNT; _pf_config_load
+OLDIFS=$IFS; IFS=$'\n'
+out=$(_pf_config_write_many git.main_branch zsh2 op.account other 2>&1 )
+IFS=$OLDIFS
+chk "write_many: one note per shadowed variable, each correctly named, without word-splitting" '[[ "$out" == *"keeps the \$GIT_MAIN_BRANCH you set"* && "$out" == *"keeps the \$OP_ACCOUNT you set"* && "$out" != *"\$ GIT"* ]]'
+unset GIT_MAIN_BRANCH OP_ACCOUNT
+
 # A symlinked config.json is edited at its target.
 reset; mkdir -p "$T/dots"; cp "$R/defaults/config.company.json" "$T/dots/config.json"; rm -f "$CFG"; ln -s "$T/dots/config.json" "$CFG"
 init_with "linked.1password.com" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP"

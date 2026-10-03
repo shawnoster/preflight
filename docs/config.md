@@ -24,8 +24,8 @@ write never leaves a half-written file. If `config.json` is a symlink (a dotfile
 (fix it with `config edit` first). It applies the change to the current shell as well, unless you set that variable yourself, in which case it says so.
 
 `config init` asks about every key in turn, in table order, showing the current value (or the built-in default) in
-brackets. Enter keeps it, `-` clears a string, path or list, and a yes/no question is asked again until it gets a
-yes or no. Answers are collected and written once at the end through the same atomic write as `set`, so stopping
+brackets. Enter keeps it, `-` clears a string, path or list, and a yes/no question is asked again (up to three
+tries, then it stops and writes nothing; with `--stdin` the first invalid answer stops it). Answers are collected and written once at the end through the same atomic write as `set`, so stopping
 part-way (Ctrl-C, or the input ending) changes nothing; it refuses to run on an invalid file. It needs a terminal;
 `config init --stdin` reads one answer per line in key order instead, for scripting.
 
