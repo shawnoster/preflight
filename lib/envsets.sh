@@ -552,12 +552,24 @@ _op_env_check_sets() {
 # Which set supplies each variable: one `VAR<TAB>set` line per variable, for the named sets in the
 # order given (or the active sets, in their order, when none are named). The first set with a
 # valid definition wins, exactly as _op_env_entries decides it, because this is built from that
-# function. A name that only the legacy OP_SECRETS array defines gets "-". This is what lets
-# `op-env clear b` leave alone a variable that `a` supplied when both define it.
+# function. The legacy OP_SECRETS array comes first, as it does in _op_env_entries (it wins a
+# clash), and its names get "-": a variable the array supplies is not any set's to clear. This is
+# what lets `op-env clear b` leave alone a variable that `a` (or the array) supplied when both
+# define it.
 # Usage: _op_env_sources [set...]
 _op_env_sources() {
-  local sets set n seen="" all
-  if [[ $# -gt 0 ]]; then sets=$(printf '%s\n' "$@"); else sets=$(_op_envsets_active); fi
+  local sets set n seen=""
+  if [[ $# -gt 0 ]]; then
+    sets=$(printf '%s\n' "$@")
+  else
+    sets=$(_op_envsets_active)
+    while IFS= read -r n; do
+      [[ -n "$n" ]] || continue
+      grep -qxF -- "$n" <<< "$seen" && continue
+      printf '%s\t-\n' "$n"
+      seen="${seen:+$seen$'\n'}$n"
+    done <<< "$(_op_env_legacy_names)"
+  fi
   while IFS= read -r set; do
     [[ -n "$set" ]] || continue
     _op_envsets_valid_name "$set" || continue
@@ -569,12 +581,6 @@ _op_env_sources() {
       seen="${seen:+$seen$'\n'}$n"
     done <<< "$(_op_env_entries "$set" | cut -f1)"
   done <<< "$sets"
-  if [[ $# -eq 0 ]]; then
-    while IFS= read -r n; do
-      [[ -n "$n" ]] || continue
-      grep -qxF -- "$n" <<< "$seen" || printf '%s\t-\n' "$n"
-    done <<< "$(_op_env_entries | cut -f1)"
-  fi
 }
 
 # Everything op-env load / clear need to know: one `VAR<TAB>op://ref` line
@@ -601,6 +607,18 @@ _op_env_entries() {
       file="$(_op_envsets_dir)/$set.tsv"
       [[ -f "$file" ]] && awk 1 "$file"
     done < <(if [[ $# -gt 0 ]]; then printf '%s\n' "$@"; else _op_envsets_active; fi)
-  } | tr -d '\r' | awk -F'\t' -v re="$_OP_REF_RE" -v acre="$_OP_ACCT_RE" \
+  } | tr -d '\r' | _op_env_valid_lines
+}
+
+# The line filter shared by _op_env_entries and the legacy-name lookup below, so both decide
+# what a valid entry is in one place: at most three TAB fields, a valid variable name, an
+# op:// reference and, if present, a valid account; the first definition of a name wins.
+_op_env_valid_lines() {
+  awk -F'\t' -v re="$_OP_REF_RE" -v acre="$_OP_ACCT_RE" \
       'NF <= 3 && $1 ~ /^[A-Za-z_][A-Za-z0-9_]*$/ && $2 ~ re && ($3 == "" || $3 ~ acre) && !seen[$1]++'
+}
+
+# Names the legacy OP_SECRETS array validly defines (nothing once the array is gone).
+_op_env_legacy_names() {
+  _op_legacy_secrets | tr -d '\r' | _op_env_valid_lines | cut -f1
 }

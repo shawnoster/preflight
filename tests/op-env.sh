@@ -766,6 +766,19 @@ op-env clear s2 >/dev/null 2>&1
 chk "after a plain load, clearing the losing active set keeps the shared variable" '[[ "$SHARED" == val-of-from-s1 && -z "${ONLY2:-}" ]]'
 op-env clear >/dev/null 2>&1
 
+# The legacy OP_SECRETS array wins a clash with a set (as in _op_env_entries), so it is the supplier: clearing the
+# set must not unset what the array supplied. (Built in the same legacy-first order as the loader.)
+mkset ls1 $'DUP\top://v/i/from-set' $'X1\top://v/i/x1'
+OP_SECRETS=( $'DUP\top://v/i/from-legacy' )
+op-env load >/dev/null 2>&1
+chk "legacy overlap: the array's value is the one loaded" '[[ "$DUP" == val-of-from-legacy && "$X1" == val-of-x1 ]]'
+chk "legacy overlap: the array is recorded as the supplier, not the set" '[[ "$_OP_LOADED_SRC" == *$'"'"'DUP\t-'"'"'* && "$_OP_LOADED_SRC" != *$'"'"'DUP\tls1'"'"'* ]]'
+op-env clear ls1 >/dev/null 2>&1
+chk "legacy overlap: clearing the set unsets only its own variable" '[[ -z "${X1:-}" && "$DUP" == val-of-from-legacy ]]'
+op-env clear >/dev/null 2>&1
+chk "legacy overlap: a plain clear still removes the array's variable" '[[ -z "${DUP:-}" ]]'
+unset OP_SECRETS; rm "$sets/ls1.tsv"
+
 # A variable that was never loaded (exported by hand) is not cleared by naming a set that defines it.
 ONLY1=mine; export ONLY1
 op-env clear s1 >/dev/null 2>&1
