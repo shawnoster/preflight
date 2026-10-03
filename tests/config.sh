@@ -194,6 +194,26 @@ chk "set warns when your own variable keeps winning" '[[ "$out" == *"keeps the \
 chk "set does not warn for a loader-set variable"    'reset; out=$(_pf_config_cmd set git.main_branch z 2>&1); [[ "$out" != *"Note:"* ]]'
 unset OP_ACCOUNT
 
+# set takes exactly KEY VALUE; an unquoted multi-word value is refused, not truncated.
+cp "$R/defaults/config.company.json" "$CFG"; before=$(cat "$CFG")
+out=$(_pf_config_cmd set projects.dirs ~/a ~/b 2>&1); rc=$?
+chk "set with extra arguments fails and writes nothing" '[[ $rc -ne 0 && "$out" == *"Usage"* && "$(cat "$CFG")" == "$before" ]]'
+out=$(_pf_config_cmd set git.main_branch 2>&1); rc=$?
+chk "set with no value fails"                          '[[ $rc -ne 0 && "$(cat "$CFG")" == "$before" ]]'
+
+# get does not report the default for a file it cannot read.
+printf '{ broken' > "$CFG"
+out=$(_pf_config_cmd get git.main_branch 2>&1); rc=$?
+chk "get on invalid JSON is an error, not the default" '[[ $rc -ne 0 && "$out" != main && "$out" == *"cannot read"* ]]'
+cp "$R/defaults/config.company.json" "$CFG"
+PATH_SAVE=$PATH; PATH="$T/empty"
+out=$(_pf_config_cmd get git.main_branch 2>&1); rc=$?
+PATH=$PATH_SAVE
+chk "get without jq is an error, not the default"      '[[ $rc -ne 0 && "$out" == *"jq is required"* ]]'
+rm -f "$CFG"
+chk "get with no file still falls back to the default" '[[ "$(_pf_config_cmd get git.main_branch)" == main ]]'
+cp "$R/defaults/config.company.json" "$CFG"
+
 # A symlinked config.json is edited at its target; the link stays a link.
 reset; mkdir -p "$T/dotfiles"; cp "$R/defaults/config.company.json" "$T/dotfiles/config.json"
 rm -f "$CFG"; ln -s "$T/dotfiles/config.json" "$CFG"

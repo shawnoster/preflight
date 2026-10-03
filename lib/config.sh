@@ -246,7 +246,11 @@ _pf_config_check() {
 
 _pf_config_set_cmd() {
   local key="${1:-}" val="${2-}" file dir tmp base err var
-  if [[ $# -lt 2 ]]; then echo "Usage: preflight config set KEY VALUE" >&2; return 1; fi
+  # Exactly KEY VALUE: an unquoted multi-word value would otherwise be stored truncated.
+  if [[ $# -ne 2 ]]; then
+    echo "Usage: preflight config set KEY VALUE  (quote a value that has spaces)" >&2
+    return 1
+  fi
   if ! _pf_config_row "$key"; then
     echo "preflight config: unknown key '$key'. Keys:" >&2; _pf_config_keys >&2; return 1
   fi
@@ -313,11 +317,15 @@ _pf_config_cmd() {
       # Print the value in the form `set` accepts: strings as written, booleans as
       # true/false, the list ':'-joined with its entries unexpanded. "=" marks a key that is
       # present (a false or empty value is a value); anything else falls back to the default.
+      # Only a successful query may report "absent" (and so the default). A file that exists
+      # but cannot be read (no jq, invalid JSON) is an error, not an unset key.
       local got=""
-      if [[ -f "$_pf_cfg_file" ]] && command -v jq >/dev/null 2>&1; then
+      if [[ -f "$_pf_cfg_file" ]]; then
+        command -v jq >/dev/null 2>&1 || { echo "preflight config: jq is required to read $_pf_cfg_file" >&2; return 1; }
         got=$(jq -r --arg key "$2" 'getpath($key | split(".")) as $v
                 | if $v == null then "-" else "=" + ($v | if type == "array" then join(":") else tostring end) end' \
-                "$_pf_cfg_file" 2>/dev/null)
+                "$_pf_cfg_file" 2>&1) \
+          || { echo "preflight config: cannot read $_pf_cfg_file: ${got%%$'\n'*}" >&2; return 1; }
       fi
       if [[ "$got" == "="* ]]; then
         printf '%s\n' "${got#=}"
