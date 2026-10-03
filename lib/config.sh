@@ -396,6 +396,7 @@ _pf_config_init() {
         echo "Input ended: no changes were written." >&2
         return 1
       fi
+      [[ $from_stdin -eq 1 ]] && echo "" >&2   # a pipe does not echo the answer, so end the prompt line
       reply="${reply#"${reply%%[![:space:]]*}"}"; reply="${reply%"${reply##*[![:space:]]}"}"
       new="$reply"
       if [[ -z "$reply" ]]; then new="$cur"; break; fi

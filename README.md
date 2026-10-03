@@ -406,6 +406,7 @@ Settings live in `~/.config/preflight/config.json` and are changed with `preflig
 preflight config set op.account my-team.1password.com
 preflight config set projects.dirs "~/dev:~/src"
 preflight config get aws.default_profile
+preflight config init      # walk through every setting
 preflight config edit      # then validates the file
 preflight config check     # invalid JSON, unknown keys, wrong types
 ```

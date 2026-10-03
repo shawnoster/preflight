@@ -276,6 +276,7 @@ before=$(cat "$CFG")
 init_with "changed.1password.com" "~/z"; rc=$?
 chk "init: input ending part-way fails"       '[[ $rc -ne 0 && "$(cat "$T/init.out")" == *"no changes were written"* ]]'
 chk "init: ...and leaves the file untouched"  '[[ "$(cat "$CFG")" == "$before" && "$OP_ACCOUNT" == new.1password.com ]]'
+chk "init: ...and stops at the first missing answer (does not keep prompting)" '[[ "$(grep -c "Input ended" "$T/init.out")" == 1 && "$(grep -c "^[a-z_.]*: " "$T/init.out")" == 3 ]]'
 
 # A bad yes/no stops it, and writes nothing.
 init_with "x" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "maybe"; rc=$?
