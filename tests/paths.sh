@@ -163,6 +163,24 @@ fresh
 out=$(run_uninstall n --purge)
 chk "declining uninstall deletes nothing" '[[ -d "$PREFLIGHT_DIR" && -f "$HOME/.config/preflight/accounts.sh" ]]'
 
+# An install updated in place: settings still inside the clone are reported, not ignored.
+fresh; mkdir -p "$PREFLIGHT_DIR/config/envsets" "$PREFLIGHT_DIR/state/owl"
+echo 'export OP_ACCOUNT=legacy' > "$PREFLIGHT_DIR/config/accounts.sh"
+out=$(source "$PREFLIGHT_DIR/init.sh" 2>&1 </dev/null)
+chk "legacy in-clone settings: warns and says how to move them" '[[ "$out" == *"still inside $PREFLIGHT_DIR"* && "$out" == *"mv "* ]]'
+chk "legacy: creates nothing in the new locations" '[[ ! -e "$HOME/.config/preflight/accounts.sh" && ! -e "$HOME/.local/state/preflight/owl" ]]'
+chk "legacy: no first-run prompt text"            '[[ "$out" != *"First-time setup"* ]]'
+mkdir -p "$HOME/.config/preflight" "$HOME/.local/state/preflight"
+mv "$PREFLIGHT_DIR/config/accounts.sh" "$HOME/.config/preflight/"
+out=$(source "$PREFLIGHT_DIR/init.sh" 2>&1 </dev/null)
+chk "after moving accounts.sh the warning is gone" '[[ "$out" != *"still inside"* ]]'
+
+# A config dir that cannot be created stops init with a message.
+fresh; touch "$T/afile"; export PREFLIGHT_CONFIG_DIR="$T/afile/cfg"
+out=$(source "$PREFLIGHT_DIR/init.sh" 2>&1 </dev/null); rc=$?
+chk "unwritable config dir: init stops with a message" '[[ $rc -ne 0 && "$out" == *"cannot create"* ]]'
+unset PREFLIGHT_CONFIG_DIR
+
 # lib/owl.sh sourced on its own stops on a refused layout and leaves OWL_THEME_DIR unset.
 fresh; export PREFLIGHT_CONFIG_DIR="$PREFLIGHT_DIR"
 out=$( (source "$R/lib/owl.sh" 2>&1; echo "rc=$? dir=[${OWL_THEME_DIR:-}]") 2>&1 )

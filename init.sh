@@ -11,7 +11,28 @@ PREFLIGHT_DIR="${PREFLIGHT_DIR:-$HOME/.preflight}"
 # Resolve the config and state directories once, before anything builds a path
 # from them (lib/paths.sh). Refuses to continue if they would share the clone.
 source "$PREFLIGHT_DIR/lib/paths.sh" && _pf_resolve_dirs || return 1
-mkdir -p "$PREFLIGHT_CONFIG_DIR"
+if ! mkdir -p "$PREFLIGHT_CONFIG_DIR"; then
+  echo "⚠️  preflight: cannot create $PREFLIGHT_CONFIG_DIR (read-only, or something else is at that path)." >&2
+  echo "   Set PREFLIGHT_CONFIG_DIR to a writable directory." >&2
+  return 1
+fi
+
+# An install updated in place still has its settings, env sets and owl state inside the
+# clone, where nothing reads them any more. Say so instead of silently starting from
+# fresh defaults (which would drop OP_ACCOUNT and every env set). While they are there,
+# create nothing in the new locations, so moving them over does not collide.
+_pf_legacy=""
+if [[ ! -f "$PREFLIGHT_CONFIG_DIR/accounts.sh" ]] \
+    && { [[ -f "$PREFLIGHT_DIR/config/accounts.sh" ]] || [[ -d "$PREFLIGHT_DIR/config/envsets" ]] \
+         || [[ -d "$PREFLIGHT_DIR/state/owl" ]]; }; then
+  _pf_legacy=1
+  echo "⚠️  preflight: your settings are still inside $PREFLIGHT_DIR (config/, state/)." >&2
+  echo "   They now live outside the clone and nothing is loading them. Move them once:" >&2
+  echo "     mkdir -p \"$PREFLIGHT_CONFIG_DIR\" \"$PREFLIGHT_STATE_DIR\"" >&2
+  echo "     mv \"$PREFLIGHT_DIR\"/config/{accounts.sh,owl.sh,envsets} \"$PREFLIGHT_CONFIG_DIR\"/" >&2
+  echo "     mv \"$PREFLIGHT_DIR\"/state/owl \"$PREFLIGHT_STATE_DIR\"/" >&2
+  echo "   (see the README upgrade note; \$OWL_OMP_CONFIG in owl.sh may need \$PREFLIGHT_STATE_DIR)" >&2
+fi
 
 # Add bin/ to PATH so distributed scripts (light-remind, nanoleaf-*) are
 # findable. Idempotent — safe to source multiple times.
@@ -30,7 +51,7 @@ fi
 
 # ── First-time setup: pick a profile if config doesn't exist ────────────────
 
-if [[ ! -f "$PREFLIGHT_CONFIG_DIR/accounts.sh" ]]; then
+if [[ -z "$_pf_legacy" && ! -f "$PREFLIGHT_CONFIG_DIR/accounts.sh" ]]; then
   # NOTE: this file is *sourced*, so we are not inside a function — `local` is
   # an error here ("local: can only be used in a function"). It used to appear
   # seven times below, which meant a fresh install greeted the user with seven
@@ -82,7 +103,7 @@ if [[ ! -f "$PREFLIGHT_CONFIG_DIR/accounts.sh" ]]; then
   unset _pf_profiles _pf_file _pf_base _pf_idx _pf_label _pf_choice
 fi
 
-if [[ ! -f "$PREFLIGHT_CONFIG_DIR/owl.sh" ]] && [[ -f "$PREFLIGHT_DIR/defaults/owl.sh.template" ]]; then
+if [[ -z "$_pf_legacy" && ! -f "$PREFLIGHT_CONFIG_DIR/owl.sh" ]] && [[ -f "$PREFLIGHT_DIR/defaults/owl.sh.template" ]]; then
   echo "📋 Creating $PREFLIGHT_CONFIG_DIR/owl.sh from template..."
   cp "$PREFLIGHT_DIR/defaults/owl.sh.template" "$PREFLIGHT_CONFIG_DIR/owl.sh"
   echo "✅ Created. Edit $PREFLIGHT_CONFIG_DIR/owl.sh to set your Oh My Posh config path."
@@ -94,13 +115,15 @@ fi
 # (covers installs that predate the bundled theme, and `preflight update`).
 # The state dir is the user's, so owl-theme is free to rewrite the palette. Never
 # overwrites an existing copy — that one may hold the user's palette changes.
-if [[ ! -f "$PREFLIGHT_STATE_DIR/owl/theme-catppuccin.omp.json" ]] \
+if [[ -z "$_pf_legacy" && ! -f "$PREFLIGHT_STATE_DIR/owl/theme-catppuccin.omp.json" ]] \
     && [[ -f "$PREFLIGHT_DIR/defaults/theme-catppuccin.omp.json" ]]; then
   mkdir -p "$PREFLIGHT_STATE_DIR/owl"
   cp "$PREFLIGHT_DIR/defaults/theme-catppuccin.omp.json" \
      "$PREFLIGHT_STATE_DIR/owl/theme-catppuccin.omp.json"
   echo "📋 Created $PREFLIGHT_STATE_DIR/owl/theme-catppuccin.omp.json (owl-theme base theme)"
 fi
+
+unset _pf_legacy
 
 # ── Source all library scripts ────────────────────────────────────────────────
 
