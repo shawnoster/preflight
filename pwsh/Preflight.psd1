@@ -137,8 +137,8 @@
 0.2.0 — AWS layer ported from bash lib/aws.sh:
   Set-AwsProfile (awsp), Get-AwsIdentity (aws-whoami), Connect-Aws (aws-login).
 
-0.1.0 — Phase 1: 1Password helpers (Get-OpStatus, Connect-Op, Import-OpEnv,
-  Clear-OpEnv, New-OpItem, Import-OpCsv) and the Invoke-Preflight orchestrator.
+0.1.0 — Phase 1: 1Password helpers (Get-OpStatus, Connect-Op, Invoke-OpEnv (op-env),
+  Import-OpEnv, Clear-OpEnv, New-OpItem, Import-OpCsv) and the Invoke-Preflight orchestrator.
 '@
         }
     }

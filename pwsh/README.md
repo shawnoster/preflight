@@ -47,8 +47,8 @@ muscle memory.
 | `Invoke-Preflight` | `preflight` | `preflight` |
 | `Get-OpStatus` | `op-status` | `op-status` |
 | `Connect-Op` | `op-signin` | `op-signin` |
-| `Import-OpEnv` | `op-load-env` | `op-load-env` |
-| `Clear-OpEnv` | `op-clear-env` | `op-clear-env` |
+| `Invoke-OpEnv` | `op-env` | `op-env` (`load`, `clear`, `add`, `list`, `rm`, `use`) |
+| `Import-OpEnv` / `Clear-OpEnv` | (none; run by `op-env load` / `op-env clear`) | `op-env load` / `op-env clear` |
 | `New-OpItem` | `op-new` | `op-new` |
 | `Import-OpCsv` | `op-import-csv` | `op-import-csv` |
 | `Set-AwsProfile` | `awsp`, `switch-aws-profile` | `awsp` |
@@ -120,11 +120,19 @@ picks up edits. Two differences from bash: `projects.dirs` is joined with `;` on
 splits on), and a setting whose value is empty is simply left unset, because an environment variable cannot hold
 an empty string. The bash-only `checks.*` flags are accepted and ignored.
 
-**Secrets.** The secret map is the env sets, the same files `op-env` writes on bash: one
-`VAR<TAB>op://vault/item/field[<TAB>account]` line each, in `envsets\<set>.tsv`. Without an `.active` file every
+**Secrets.** The secret map is the env sets, the same files bash's `op-env` writes, and PowerShell has the same
+command: `op-env load [set...]`, `op-env clear [set...]`, `op-env add [set] [VAR] [op://ref] [account]`,
+`op-env list [set]`, `op-env rm [set] [VAR]`, `op-env use [set...]` and `op-env help` (an alias of `Invoke-OpEnv`; a
+function literally named `op-env` would make `Import-Module` warn about an unapproved verb on every shell). The
+rules are bash's: a plain `op-env load` is authoritative (it unsets what is no longer defined or no longer active),
+`op-env load work` is additive and works on an inactive set, `op-env clear work` unsets only what that set supplied,
+and writes are atomic and validated. Both implementations write byte-identical files (tests compare them). The old
+`op-load-env` and `op-clear-env` aliases are gone; `Import-OpEnv` and `Clear-OpEnv` remain as the commands behind
+`load` and `clear`. Sets are one `VAR<TAB>op://vault/item/field[<TAB>account]` line each, in `envsets\<set>.tsv`,
+and hand-editing stays fine. Without an `.active` file every
 set is active; with one, only the sets it lists, in that order. The first definition of a variable wins, and
 malformed lines are skipped (the exact rules are `tests/fixtures/envsets` plus `envsets.expected`, checked by
-both implementations). An entry that names an account is resolved against that account: `Import-OpEnv` groups
+both implementations). An entry that names an account is resolved against that account: `op-env load` groups
 entries by account, signs in to every account first, and runs one `op run` per account. `Invoke-Preflight` checks
 that every variable in an active set ended up set.
 

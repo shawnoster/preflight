@@ -2,7 +2,7 @@
 
 A modular collection of shell utilities for development workflows. Drop it in `~/.preflight`, source it from `.bashrc`, and get fuzzy-powered shortcuts for AWS, Docker, Git, 1Password, and project navigation — plus an owl-themed MOTD and Oh My Posh color switcher.
 
-> **PowerShell users**: a Windows-native sibling lives in [`pwsh/`](pwsh/README.md) and is installed separately via `pwsh/install.ps1`. Phase 1 ships the 1Password layer (`Get-OpStatus`, `Connect-Op`, `Import-OpEnv`, `Clear-OpEnv`, `New-OpItem`, `Import-OpCsv`); more layers follow.
+> **PowerShell users**: a Windows-native sibling lives in [`pwsh/`](pwsh/README.md) and is installed separately via `pwsh/install.ps1`. Phase 1 ships the 1Password layer (`Get-OpStatus`, `Connect-Op`, `op-env` with `load`, `clear`, `add`, `list`, `rm` and `use`, `New-OpItem`, `Import-OpCsv`); more layers follow.
 
 ## Installation
 
