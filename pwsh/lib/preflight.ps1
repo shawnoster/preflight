@@ -636,9 +636,8 @@ function Update-Preflight {
         root ($script:PreflightRoot — wherever the module was imported from), plus
         the bundled defaults\ (config profiles, schema, owl base theme) into
         <install root>\defaults, then reloads the module. Shipping install.ps1 and
-        defaults\ is what lets an install from before config.json upgrade: re-running
-        the installer from the install directory then seeds config.json and replaces
-        the old profile guard.
+        defaults\ means the installer can be re-run from the install directory,
+        with no checkout, to seed config.json and refresh the profile guard.
 
         Your settings and env sets live outside the install directory
         ($env:PREFLIGHT_CONFIG_DIR), so an update never touches them.
