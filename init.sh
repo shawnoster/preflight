@@ -17,26 +17,6 @@ if ! mkdir -p "$PREFLIGHT_CONFIG_DIR"; then
   return 1
 fi
 
-# An install updated in place still has its env sets and owl state inside the clone, and
-# an old accounts.sh / owl.sh, where nothing reads them any more. Say so instead of
-# silently starting from built-in defaults (which would drop every env set and the
-# account). While the owl state is there, seed nothing into the new state dir, so moving
-# it over does not collide.
-_pf_legacy=""
-if [[ -f "$PREFLIGHT_DIR/config/accounts.sh" || -f "$PREFLIGHT_DIR/config/owl.sh" \
-      || -d "$PREFLIGHT_DIR/config/envsets" || -d "$PREFLIGHT_DIR/state/owl" ]]; then
-  [[ -d "$PREFLIGHT_DIR/state/owl" ]] && _pf_legacy=1
-  echo "⚠️  preflight: settings from an older install are still inside $PREFLIGHT_DIR (config/, state/)." >&2
-  echo "   Env sets and owl state now live outside the clone; settings live in config.json:" >&2
-  echo "     mkdir -p \"$PREFLIGHT_CONFIG_DIR\" \"$PREFLIGHT_STATE_DIR\"" >&2
-  [[ -d "$PREFLIGHT_DIR/config/envsets" ]] && echo "     mv \"$PREFLIGHT_DIR\"/config/envsets \"$PREFLIGHT_CONFIG_DIR\"/" >&2
-  [[ -d "$PREFLIGHT_DIR/state/owl" ]] && echo "     mv \"$PREFLIGHT_DIR\"/state/owl \"$PREFLIGHT_STATE_DIR\"/" >&2
-  if [[ -f "$PREFLIGHT_DIR/config/accounts.sh" || -f "$PREFLIGHT_DIR/config/owl.sh" ]]; then
-    echo "   accounts.sh and owl.sh are no longer read: set their values with 'preflight config set'" >&2
-    echo "   (docs/config.md maps each old variable to its key), then delete them." >&2
-  fi
-fi
-
 # Add bin/ to PATH so distributed scripts (light-remind, nanoleaf-*) are
 # findable. Idempotent — safe to source multiple times.
 case ":$PATH:" in
@@ -108,15 +88,13 @@ fi
 # (covers installs that predate the bundled theme, and `preflight update`).
 # The state dir is the user's, so owl-theme is free to rewrite the palette. Never
 # overwrites an existing copy — that one may hold the user's palette changes.
-if [[ -z "$_pf_legacy" && ! -f "$PREFLIGHT_STATE_DIR/owl/theme-catppuccin.omp.json" ]] \
+if [[ ! -f "$PREFLIGHT_STATE_DIR/owl/theme-catppuccin.omp.json" ]] \
     && [[ -f "$PREFLIGHT_DIR/defaults/theme-catppuccin.omp.json" ]]; then
   mkdir -p "$PREFLIGHT_STATE_DIR/owl"
   cp "$PREFLIGHT_DIR/defaults/theme-catppuccin.omp.json" \
      "$PREFLIGHT_STATE_DIR/owl/theme-catppuccin.omp.json"
   echo "📋 Created $PREFLIGHT_STATE_DIR/owl/theme-catppuccin.omp.json (owl-theme base theme)"
 fi
-
-unset _pf_legacy
 
 # ── Source all library scripts ────────────────────────────────────────────────
 

@@ -134,7 +134,7 @@ gstash [ref]         Pop a stash (use --apply to keep in stash list)
 gsync [main]         Sync fork with upstream
 gunwip               Undo last WIP commit
 gwip [msg]           Quick work-in-progress commit
-op-env [cmd]         Manage env sets of 1Password refs (add/list/rm/use/migrate)
+op-env [cmd]         Manage env sets of 1Password refs (add/list/rm/use)
 op-clear-env         Clear all sensitive environment variables
 op-help              Show 1Password command help
 op-load-env          Load secrets from 1Password into env vars
