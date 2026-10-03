@@ -7,34 +7,20 @@
 #   ~/.preflight/pwsh/Preflight.psm1   <- this file
 #   ~/.preflight/pwsh/Preflight.psd1   <- manifest (canonical export list)
 #   ~/.preflight/pwsh/lib/*.ps1        <- one file per concern (1password, aws, ...)
-#   ~/.preflight/pwsh/config/*.ps1     <- gitignored user config (accounts.ps1)
+#   $PREFLIGHT_CONFIG_DIR/config.json  <- your settings (outside the clone; see docs/config.md)
+#   $PREFLIGHT_CONFIG_DIR/envsets/     <- your env sets: VAR -> op:// references
 
 Set-StrictMode -Version 3.0
 
 # Module root — used by lib files to find sibling resources.
 $script:PreflightRoot = $PSScriptRoot
 
-# ---- Default configuration --------------------------------------------------
-# Anything user-tunable lives in config/accounts.ps1 (gitignored, copied
-# from accounts.ps1.template by install.ps1). Defaults here are safe to ship.
-
-if (-not $env:OP_ACCOUNT) {
-    # Default 1Password account reference. Override in config/accounts.ps1.
-    # For Windows desktop-app integration use your sign-in address
-    # (e.g. my-team.1password.com). For manual `op account add` setups,
-    # shorthand values still work.
-    $env:OP_ACCOUNT = 'change-me'
-}
-
-# ---- Load user config (if present) ------------------------------------------
-# accounts.ps1 defines $script:OpEnvMap (the op:// secret map). Initialize
-# it to an empty map first so lib files can reference it safely even when
-# accounts.ps1 is absent.
-$script:OpEnvMap = [ordered]@{}
-$configFile = Join-Path $PSScriptRoot 'config/accounts.ps1'
-if (Test-Path -LiteralPath $configFile) {
-    . $configFile
-}
+# ---- Settings and env sets --------------------------------------------------
+# Settings come from $env:PREFLIGHT_CONFIG_DIR\config.json and the secret map from
+# $env:PREFLIGHT_CONFIG_DIR\envsets\*.tsv (lib/00-paths.ps1, 01-config.ps1, 02-envsets.ps1),
+# loaded after the libs below. Nothing here may set a setting's environment variable at
+# import time: a value set before the loader runs looks like one you set yourself, and
+# config.json could never change it.
 
 # ---- Dot-source every lib file ---------------------------------------------
 $libDir = Join-Path $PSScriptRoot 'lib'
@@ -48,6 +34,17 @@ if (Test-Path -LiteralPath $libDir) {
                 Write-Warning "Preflight: failed to load $($_.Name): $_"
             }
         }
+}
+
+# ---- Load settings ----------------------------------------------------------
+# Never fails the import: a bad layout, a missing file or invalid JSON warns and the
+# built-in defaults apply (Invoke-Preflight reports it as a failed check).
+if (Resolve-PreflightDirs) {
+    Import-PreflightConfig
+    Write-PreflightLegacyWarning
+} else {
+    $script:PreflightConfigStatus = 'invalid'
+    $script:PreflightConfigError  = 'the config or state directory overlaps the install directory'
 }
 
 # Functions and aliases are exported via the manifest's FunctionsToExport /

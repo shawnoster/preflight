@@ -33,7 +33,7 @@ function Get-OpAccount {
     <#
     .SYNOPSIS
         Resolve the 1Password account reference to use for op invocations.
-        Defaults to $env:OP_ACCOUNT (set by Preflight.psm1 / config/accounts.ps1).
+        Defaults to $env:OP_ACCOUNT (config.json key op.account).
     #>
     if ($env:OP_ACCOUNT) { return $env:OP_ACCOUNT }
     return 'change-me'
@@ -159,16 +159,74 @@ function Connect-Op {
 }
 
 # ---- Import-OpEnv ----------------------------------------------------------
-# $script:OpEnvMap (env var → op:// path) is defined entirely in
-# config/accounts.ps1, which is loaded by Preflight.psm1 before this file.
-# Edit that file to add, remove, or change secret mappings.
+# The secret map (env var -> op:// reference, with an optional account per entry) comes from the
+# env sets in $env:PREFLIGHT_CONFIG_DIR\envsets (lib/02-envsets.ps1), the same files the bash
+# `op-env` reads. Add, remove or change secrets by editing a set.
 
 function Get-OpEnvMap {
     <#
     .SYNOPSIS
-        Return the op:// secret map defined in config/accounts.ps1.
+        Return the secret map (variable -> op:// reference) from the active env sets.
     #>
-    return $script:OpEnvMap
+    $map = [ordered]@{}
+    foreach ($e in (Get-PreflightEnvEntry)) { $map[$e.Name] = $e.Ref }
+    return $map
+}
+
+function Import-OpEnvGroup {
+    # Resolve one account's entries and export them. Strategy A hands every reference to one
+    # `op run`; if that fails, fall back to per-secret `op read` so the broken one is named.
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$Account,
+        [Parameter(Mandatory = $true)]$Entries,
+        [string]$Label = ''
+    )
+
+    $names = @($Entries | ForEach-Object { $_.Name })
+    $via   = if ($Label) { " (via $Label)" } else { '' }
+
+    $envFile = New-TemporaryFile
+    try {
+        $lines = $Entries | ForEach-Object { "$($_.Name)=$($_.Ref)" }
+        Set-Content -LiteralPath $envFile -Value $lines -Encoding UTF8
+
+        # `op run` injects resolved values into the child process env. The cleanest way to fish
+        # them back out is a child PowerShell that prints its own env as `VAR=VALUE` lines.
+        $printer = "foreach (`$v in '$($names -join ',')'.Split(',')) { Write-Output (`"{0}={1}`" -f `$v, [Environment]::GetEnvironmentVariable(`$v)) }"
+
+        $resolved = & op run --account $Account --env-file=$envFile --no-masking -- pwsh -NoProfile -Command $printer 2>&1
+        $opRc     = $LASTEXITCODE
+    } finally {
+        Remove-Item -LiteralPath $envFile -ErrorAction SilentlyContinue
+    }
+
+    if ($opRc -ne 0) {
+        Write-Warning "op run failed for account $Account (exit $opRc), falling back to individual reads (slow)..."
+        foreach ($entry in $Entries) {
+            $value = & op read --account $Account $entry.Ref 2>$null
+            if ($LASTEXITCODE -eq 0 -and $value) {
+                Set-Item -Path "env:$($entry.Name)" -Value $value
+                Write-Host "✅ $($entry.Name)$via"
+            } else {
+                Write-Host "⚠️  $($entry.Name) (failed to load$(if ($Label) { ", via $Label" }))"
+            }
+        }
+        return
+    }
+
+    foreach ($key in $names) {
+        $line = $resolved | Where-Object { $_ -match "^$([regex]::Escape($key))=" } | Select-Object -First 1
+        if ($line) {
+            $value = $line.Substring($key.Length + 1)
+            if ($value) {
+                Set-Item -Path "env:$key" -Value $value
+                Write-Host "✅ $key$via"
+                continue
+            }
+        }
+        Write-Host "⚠️  $key (failed to load$(if ($Label) { ", via $Label" }))"
+    }
 }
 
 function Import-OpEnv {
@@ -176,18 +234,22 @@ function Import-OpEnv {
     .SYNOPSIS
         Load secrets from 1Password into environment variables.
     .DESCRIPTION
-        Resolves every op:// reference in the Preflight env map by handing
-        a temporary env-file to `op run`, then exports each value as
-        $env:VAR in the current shell.
+        Resolves every op:// reference in the active env sets by handing a temporary env-file to
+        `op run`, then exports each value as $env:VAR in the current shell.
 
-        Falls back to per-secret `op read` if `op run` fails — slower but
-        survives partial-resolution scenarios. Mirrors the bash op-load-env.
+        An entry may name its own 1Password account (an optional third column in the set file;
+        otherwise the default account is used). `op` resolves a reference against exactly one
+        account per call, so entries are grouped by account and each group is one `op run`. Every
+        account is signed in up front: a sign-in failure stops before any variable is set, rather
+        than leaving a half-loaded environment.
+
+        Falls back to per-secret `op read` if `op run` fails. Mirrors the bash op-load-env.
 
         GitHub auth is intentionally NOT loaded here. `gh` manages its own
         token at ~/.config/gh/hosts.yml; loading GITHUB_TOKEN here would
         shadow it with a narrower-scoped PAT. This matches the bash side.
     .PARAMETER Account
-        1Password account reference. Defaults to $env:OP_ACCOUNT.
+        The default 1Password account, for entries that name none. Defaults to $env:OP_ACCOUNT.
     .EXAMPLE
         Import-OpEnv
     .EXAMPLE
@@ -198,16 +260,27 @@ function Import-OpEnv {
         [string]$Account = (Get-OpAccount)
     )
 
-    $envMap = Get-OpEnvMap
-    if ($envMap.Count -eq 0) {
-        Write-Verbose "Import-OpEnv: secret map is empty — nothing to load (check config/accounts.ps1)."
+    $entries = @(Get-PreflightEnvEntry)
+    if ($entries.Count -eq 0) {
+        Write-Verbose "Import-OpEnv: no secrets configured — nothing to load (add VAR<TAB>op://ref lines to a set in $(Join-Path $env:PREFLIGHT_CONFIG_DIR 'envsets'))."
         return
     }
 
     if (-not (Test-OpCli)) { return }
 
-    if (-not (Get-OpStatus -Account $Account -Quiet)) {
-        if (-not (Connect-Op -Account $Account)) { return }
+    # Group by effective account, in first-appearance order.
+    $groups = [ordered]@{}
+    foreach ($e in $entries) {
+        $acct = if ($e.Account) { $e.Account } else { $Account }
+        if (-not $groups.Contains($acct)) { $groups[$acct] = [System.Collections.Generic.List[object]]::new() }
+        $groups[$acct].Add($e)
+    }
+
+    # Sign in to every account before any variable is set.
+    foreach ($acct in @($groups.Keys)) {
+        if (-not (Get-OpStatus -Account $acct -Quiet)) {
+            if (-not (Connect-Op -Account $acct)) { return }
+        }
     }
 
     # Header — skipped when called from Invoke-Preflight, which prints its own.
@@ -215,50 +288,9 @@ function Import-OpEnv {
         Write-Host "--- Secrets ---"
     }
 
-    # Strategy A: `op run --env-file` resolves every op:// reference in one
-    # authenticated round-trip (matches the bash implementation).
-    $envFile = New-TemporaryFile
-    try {
-        $lines = $envMap.GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" }
-        Set-Content -LiteralPath $envFile -Value $lines -Encoding UTF8
-
-        # `op run` injects resolved values into the child process env. The
-        # cleanest way to fish them back out is to launch a child PowerShell
-        # that reads its own env and prints `VAR=VALUE` lines, which we
-        # parse back into $env: in our process.
-        $printer = "foreach (`$v in '$($envMap.Keys -join ',')'.Split(',')) { Write-Output (`"{0}={1}`" -f `$v, [Environment]::GetEnvironmentVariable(`$v)) }"
-
-        $resolved = & op run --account $Account --env-file=$envFile --no-masking -- pwsh -NoProfile -Command $printer 2>&1
-        $opRc     = $LASTEXITCODE
-    } finally {
-        Remove-Item -LiteralPath $envFile -ErrorAction SilentlyContinue
-    }
-
-    if ($opRc -ne 0) {
-        Write-Warning "op run failed (exit $opRc), falling back to individual reads (slow)..."
-        foreach ($entry in $envMap.GetEnumerator()) {
-            $value = & op read --account $Account $entry.Value 2>$null
-            if ($LASTEXITCODE -eq 0 -and $value) {
-                Set-Item -Path "env:$($entry.Key)" -Value $value
-                Write-Host "✅ $($entry.Key)"
-            } else {
-                Write-Host "⚠️  $($entry.Key) (failed to load)"
-            }
-        }
-        return
-    }
-
-    foreach ($key in $envMap.Keys) {
-        $line = $resolved | Where-Object { $_ -match "^$([regex]::Escape($key))=" } | Select-Object -First 1
-        if ($line) {
-            $value = $line.Substring($key.Length + 1)
-            if ($value) {
-                Set-Item -Path "env:$key" -Value $value
-                Write-Host "✅ $key"
-                continue
-            }
-        }
-        Write-Host "⚠️  $key (failed to load)"
+    $multi = $groups.Count -gt 1
+    foreach ($acct in @($groups.Keys)) {
+        Import-OpEnvGroup -Account $acct -Entries $groups[$acct] -Label $(if ($multi) { $acct } else { '' })
     }
 }
 

@@ -18,16 +18,17 @@
 #    back to whatever path OWL_OMP_CONFIG points at. On Windows, $PROFILE
 #    typically references `$env:POSH_THEMES_PATH/<theme>.omp.json` which is
 #    Microsoft's shared theme directory. We refuse to mutate that. Default
-#    path is $HOME\.preflight\state\owl\amro.omp.json; user copies their
+#    path is <state dir>\owl\amro.omp.json (~\.local\state\preflight\owl); user copies their
 #    chosen base theme there once via:
 #       Copy-Item "$env:POSH_THEMES_PATH\amro.omp.json" `
-#                 "$HOME\.preflight\state\owl\amro.omp.json"
+#                 "$env:PREFLIGHT_STATE_DIR\owl\amro.omp.json"
 #    Set-OwlTheme refuses to mutate any path under $env:POSH_THEMES_PATH.
 #
-# Theme state persists at $HOME\.preflight\state\owl\current (path
+# Theme state persists at <state dir>\owl\current (path
 # separators shown Windows-style; resolved cross-platform via Join-Path).
 # Configuration overrides:
-#   $env:OWL_THEME_DIR   — state directory (default: $HOME\.preflight\state\owl)
+#   $env:OWL_THEME_DIR   — state directory (default: $env:PREFLIGHT_STATE_DIR\owl, i.e.
+#                          ~\.local\state\preflight\owl; environment only, no config.json key)
 #   $env:OWL_OMP_CONFIG  — path to user-owned OMP JSON (optional)
 
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute(
@@ -236,11 +237,10 @@ $script:OwlQuotes = [ordered]@{
 
 function Get-OwlStateDir {
     if ($env:OWL_THEME_DIR) { return $env:OWL_THEME_DIR }
-    # Build the default path with chained Join-Path calls so PowerShell
-    # uses the platform-correct separator. Embedding `\` in a literal
-    # would create a single directory named ".preflight\state\owl" on
-    # POSIX rather than a nested tree.
-    return (Join-Path (Join-Path (Join-Path $HOME '.preflight') 'state') 'owl')
+    # The state directory is resolved once by Resolve-PreflightDirs (lib/00-paths.ps1). Chained
+    # Join-Path calls keep the platform-correct separator.
+    if ($env:PREFLIGHT_STATE_DIR) { return (Join-Path $env:PREFLIGHT_STATE_DIR 'owl') }
+    return (Join-Path (Join-Path (Join-Path (Join-Path $HOME '.local') 'state') 'preflight') 'owl')
 }
 
 function Get-OwlOmpConfigPath {

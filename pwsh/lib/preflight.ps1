@@ -124,6 +124,27 @@ function Invoke-Preflight {
     Write-Host ''
 
     # ====================================================================
+    # 0. Settings (config.json)
+    # ====================================================================
+    # A bad or unreadable file is a failed check, not a note: the built-in defaults include a
+    # placeholder OP_ACCOUNT, so running on them silently would mislead.
+    & $writeSection 'Settings'
+    if ($script:PreflightConfigStatus -ne 'ok') {
+        $issues.Add("Settings: $($script:PreflightConfigError)") | Out-Null
+        & $writeLine "❌ Settings: $($script:PreflightConfigError)"
+    } else {
+        $cfgProblems = @(Test-PreflightConfig)
+        if ($cfgProblems.Count -eq 0) {
+            & $writeLine "✅ Settings: $(Get-PreflightConfigPath)"
+        } else {
+            foreach ($p in $cfgProblems) {
+                $issues.Add("Settings: $p") | Out-Null
+                & $writeLine "⚠️  Settings: $p"
+            }
+        }
+    }
+
+    # ====================================================================
     # 1. Secrets
     # ====================================================================
     & $writeSection 'Secrets'
@@ -163,9 +184,13 @@ function Invoke-Preflight {
         & $writeStatus 'AWS: setting profile...'
 
         if (-not $env:AWS_PROFILE) {
-            $default = if ($env:AWS_PROFILE_DEFAULT) { $env:AWS_PROFILE_DEFAULT } else { 'my-dev-profile' }
-            $env:AWS_PROFILE = $default
-            & $writeLine "✅ AWS_PROFILE set to $default (default)"
+            if ($env:AWS_PROFILE_DEFAULT) {
+                $env:AWS_PROFILE = $env:AWS_PROFILE_DEFAULT
+                & $writeLine "✅ AWS_PROFILE set to $env:AWS_PROFILE_DEFAULT (default)"
+            } else {
+                # No invented fallback: a profile that does not exist would break every aws call.
+                & $writeLine 'ℹ️  AWS_PROFILE_DEFAULT not set (config.json: aws.default_profile) — AWS_PROFILE left alone'
+            }
         } else {
             & $writeLine "✅ AWS_PROFILE already set: $env:AWS_PROFILE"
         }
@@ -212,11 +237,15 @@ function Invoke-Preflight {
     & $writeSection 'Environment Variables'
     & $writeStatus 'Env: checking tokens...'
 
-    if ($env:NPM_TOKEN) {
-        & $writeLine '✅ NPM_TOKEN is set'
-    } else {
-        $issues.Add('NPM_TOKEN is not set (run Import-OpEnv or check accounts.ps1)') | Out-Null
-        & $writeLine '⚠️  NPM_TOKEN is not set'
+    # Every variable in an active env set should be set once secrets have loaded. There is no
+    # separate list to keep in step with the sets.
+    foreach ($entry in @(Get-PreflightEnvEntry)) {
+        if ((Test-Path -LiteralPath "Env:$($entry.Name)") -and (Get-Item -LiteralPath "Env:$($entry.Name)").Value) {
+            & $writeLine "✅ $($entry.Name) is set"
+        } else {
+            $issues.Add("$($entry.Name) is not set (run Import-OpEnv or check your env sets)") | Out-Null
+            & $writeLine "⚠️  $($entry.Name) is not set"
+        }
     }
 
     if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
@@ -607,8 +636,8 @@ function Update-Preflight {
         ($script:PreflightRoot — wherever the module was imported from), then
         reloads the module.
 
-        Files that must survive updates untouched:
-          - config/accounts.ps1  (gitignored user config — NEVER overwritten)
+        Your settings and env sets live outside the install directory
+        ($env:PREFLIGHT_CONFIG_DIR), so an update never touches them.
 
         Requires git in PATH.
     .PARAMETER DryRun
@@ -654,8 +683,7 @@ function Update-Preflight {
             return
         }
         # Collect files to copy: lib/*.ps1, Preflight.psd1, Preflight.psm1.
-        # config/accounts.ps1 is intentionally excluded — it is the gitignored
-        # user config file and must never be overwritten by an update.
+        # Only code is copied: user config lives outside the install directory.
         $srcFiles = @(
             Get-ChildItem -LiteralPath (Join-Path $srcPwsh 'lib') -Filter '*.ps1' -File |
                 ForEach-Object { @{ Src = $_.FullName; Rel = "lib\$($_.Name)" } }

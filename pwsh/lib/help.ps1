@@ -274,7 +274,7 @@ function Get-PreflightHelp {
     $module = Get-Module Preflight
     Write-Host "Default 1Password account: $(Get-OpAccount)" -ForegroundColor DarkGray
     Write-Host ("Module version: {0}" -f $module.Version) -ForegroundColor DarkGray
-    Write-Host 'Override defaults via $env:OP_ACCOUNT or pwsh\config\accounts.ps1.' -ForegroundColor DarkGray
+    Write-Host 'Settings: config.json in $env:PREFLIGHT_CONFIG_DIR (a variable you set yourself wins). Secrets: envsets\*.tsv beside it.' -ForegroundColor DarkGray
     Write-Host ''
 }
 
