@@ -76,6 +76,8 @@ Pulls the latest changes from the upstream repo, shows incoming commits, and war
 >
 > Or keep the clone where it is and point the config elsewhere, setting `PREFLIGHT_CONFIG_DIR=~/.config/preflight-data` and `PREFLIGHT_STATE_DIR=~/.local/state/preflight-data` before the `source` line, and moving the files there instead.
 
+> **`op-load-env` and `op-clear-env` were removed:** loading and clearing now live under `op-env`. Use `op-env load [set...]` and `op-env clear [set...]` (same behaviour for the plain forms; with set names they load or clear just those sets). `preflight` already calls `op-env load`. Update any script, cron job or shell alias of yours that calls the old names; they now fail with "command not found". The PowerShell commands (`Import-OpEnv` and its `op-load-env` alias) are unchanged for now.
+
 After updating, reload your shell:
 
 ```bash
