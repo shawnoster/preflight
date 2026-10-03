@@ -31,7 +31,7 @@ CFG="$PREFLIGHT_CONFIG_DIR/config.json"
 source "$R/lib/paths.sh"
 source "$R/lib/config.sh"
 
-MANAGED="OP_ACCOUNT PROJ_DIRS AWS_PROFILE_DEFAULT GIT_MAIN_BRANCH GITEA_USERNAME GITEA_HOST _CHECK_AWS _CHECK_GH _CHECK_SSH _CHECK_GIT_CONFIG _OPTIONAL_ENV_VARS OWL_OMP_CONFIG"
+MANAGED="OP_ACCOUNT PROJ_DIRS AWS_PROFILE_DEFAULT GIT_MAIN_BRANCH GITEA_USERNAME GITEA_HOST _CHECK_AWS _CHECK_GH _CHECK_SSH _CHECK_GIT_CONFIG OWL_OMP_CONFIG"
 # Forget every setting, as a brand-new shell would see it.
 reset() {
   local v
@@ -71,21 +71,18 @@ chk "empty object: status ok" '[[ "$_PF_CONFIG_STATUS" == ok ]]'
 reset; cp "$R/defaults/config.company.json" "$CFG"; _pf_config_load
 chk "company: list joined with :"           '[[ "$PROJ_DIRS" == "$HOME/projects:$HOME/work:$HOME/src" ]]'
 chk "company: string value"                 '[[ "$AWS_PROFILE_DEFAULT" == my-dev-profile ]]'
-chk "company: optional_env_vars joined with space" '[[ "$_OPTIONAL_ENV_VARS" == NPM_TOKEN ]]'
 chk "company: true -> 1"                    '[[ "$_CHECK_AWS" == 1 ]]'
 reset; cp "$R/defaults/config.general.json" "$CFG"; _pf_config_load
 chk "general: false -> 0"                   '[[ "$_CHECK_AWS" == 0 ]]'
-chk "general: empty list -> empty string"   '[[ -z "$_OPTIONAL_ENV_VARS" ]]'
 chk "general: OWL_OMP_CONFIG expanded from \$PREFLIGHT_STATE_DIR" '[[ "$OWL_OMP_CONFIG" == "$PREFLIGHT_STATE_DIR/owl/theme-catppuccin.omp.json" ]]'
 chk "exported: OP_ACCOUNT"                  '$PF_SHELL -c '"'"'[ -n "$OP_ACCOUNT" ]'"'"' 2>/dev/null'
 chk "not exported: _CHECK_AWS"              '! $PF_SHELL -c '"'"'[ -n "${_CHECK_AWS+x}" ]'"'"''
 
 # ── value handling ────────────────────────────────────────────────────────────
-reset; put '{"op":{"account":"it'"'"'s \"x\" $(echo no)"},"projects":{"dirs":["~/a","$HOME/b","/c","$OTHER/d"]},"optional_env_vars":["A","B"],"git":{"main_branch":"trunk"}}'
+reset; put '{"op":{"account":"it'"'"'s \"x\" $(echo no)"},"projects":{"dirs":["~/a","$HOME/b","/c","$OTHER/d"]},"git":{"main_branch":"trunk"}}'
 _pf_config_load
 chk "quotes, apostrophes and \$() survive verbatim" '[[ "$OP_ACCOUNT" == "it'"'"'s \"x\" \$(echo no)" ]]'
 chk "path expansion: ~/, \$HOME/, absolute; other \$VAR untouched" '[[ "$PROJ_DIRS" == "$HOME/a:$HOME/b:/c:\$OTHER/d" ]]'
-chk "space-joined list"                     '[[ "$_OPTIONAL_ENV_VARS" == "A B" ]]'
 chk "other keys fall back to defaults"      '[[ "$_CHECK_SSH" == 1 && -z "$GITEA_HOST" ]]'
 
 # A wrong-typed key takes its default alone.
@@ -159,10 +156,8 @@ _pf_config_cmd set checks.aws no >/dev/null
 chk "set bool writes a JSON boolean"        '[[ "$(jq -c .checks.aws "$CFG")" == false && "$_CHECK_AWS" == 0 ]]'
 _pf_config_cmd set projects.dirs "~/x:~/y" >/dev/null
 chk "set list writes a JSON array"          '[[ "$(jq -c .projects.dirs "$CFG")" == "[\"~/x\",\"~/y\"]" ]]'
-_pf_config_cmd set optional_env_vars "A  B" >/dev/null
-chk "set space list writes a JSON array"    '[[ "$(jq -c .optional_env_vars "$CFG")" == "[\"A\",\"B\"]" ]]'
-_pf_config_cmd set optional_env_vars "" >/dev/null
-chk "set empty list writes []"              '[[ "$(jq -c .optional_env_vars "$CFG")" == "[]" ]]'
+_pf_config_cmd set projects.dirs "" >/dev/null
+chk "set empty list writes []"              '[[ "$(jq -c .projects.dirs "$CFG")" == "[]" ]]'
 before=$(cat "$CFG")
 out=$(_pf_config_cmd set checks.aws maybe 2>&1); rc=$?
 chk "set rejects a bad boolean, file unchanged" '[[ $rc -ne 0 && "$(cat "$CFG")" == "$before" ]]'
@@ -217,13 +212,12 @@ while IFS='|' read -r k var type exp def; do
   case "$type" in
     s|p)  want=string ;;
     b)    want=boolean ;;
-    pl|sl) want=array ;;
+    pl)   want=array ;;
   esac
   [[ "$stype" == "$want" ]] || bad="$bad $k(type)"
   case "$type" in
     b)  [[ "$sdef" == "true" && "$def" == 1 || "$sdef" == "false" && "$def" == 0 ]] || bad="$bad $k(default)" ;;
     pl) [[ "$(printf '%s' "$sdef" | tr '\001' ':')" == "$def" ]] || bad="$bad $k(default)" ;;
-    sl) [[ "$(printf '%s' "$sdef" | tr '\001' ' ')" == "$def" ]] || bad="$bad $k(default)" ;;
     *)  [[ "$sdef" == "$def" ]] || bad="$bad $k(default)" ;;
   esac
   # The '|' column separator and JSON building assume plain values.

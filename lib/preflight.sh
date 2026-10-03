@@ -242,18 +242,20 @@ preflight() {
   _pf_section "Environment Variables"
   _pf_status "Env: checking tokens..."
 
-  if [[ -n "${_OPTIONAL_ENV_VARS:-}" ]]; then
-    local _env_var
-    for _env_var in $_OPTIONAL_ENV_VARS; do
-      if [[ -n "${!_env_var:-}" ]]; then
-        _pf_line "✅ $_env_var is set"
-      else
-        issue_msgs+=("$_env_var is not set")
-        _pf_line "⚠️  $_env_var is not set"
-        ((issues++))
-      fi
-    done
-  fi
+  # Every variable in an active env set (op-env) should be set once secrets have
+  # loaded. There is no separate list to keep in step with the sets.
+  local _env_var
+  while IFS= read -r _env_var; do
+    [[ -n "$_env_var" ]] || continue
+    # Portable indirect test (bash's ${!var} is a zsh error).
+    if eval "[ -n \"\${$_env_var:-}\" ]"; then
+      _pf_line "✅ $_env_var is set"
+    else
+      issue_msgs+=("$_env_var is not set")
+      _pf_line "⚠️  $_env_var is not set"
+      ((issues++))
+    fi
+  done < <(_op_env_entries 2>/dev/null | cut -f1)
 
   if [[ "${_CHECK_GH:-1}" == "1" ]]; then
     if ! command -v gh >/dev/null 2>&1; then

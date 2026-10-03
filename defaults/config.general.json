@@ -6,6 +6,5 @@
   "git": { "main_branch": "main" },
   "gitea": { "username": "", "host": "" },
   "checks": { "aws": false, "gh": true, "ssh": true, "git_config": true },
-  "optional_env_vars": [],
   "owl": { "omp_config": "$PREFLIGHT_STATE_DIR/owl/theme-catppuccin.omp.json" }
 }

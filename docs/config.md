@@ -37,7 +37,6 @@ editor's JSON settings at it) for hover help and validation; the loader ignores 
 | `git.main_branch` | `GIT_MAIN_BRANCH` | string | `main` | git helpers |
 | `gitea.username`, `gitea.host` | `GITEA_USERNAME`, `GITEA_HOST` | string | empty | HTTPS credential for Gitea |
 | `checks.aws`, `checks.gh`, `checks.ssh`, `checks.git_config` | `_CHECK_AWS`, `_CHECK_GH`, `_CHECK_SSH`, `_CHECK_GIT_CONFIG` | boolean (to `1`/`0`) | all `true` | which `preflight` sections run |
-| `optional_env_vars` | `_OPTIONAL_ENV_VARS` | list (joined with a space) | empty | variables `preflight` reports as a note when unset |
 | `owl.omp_config` | `OWL_OMP_CONFIG` | path | `$PREFLIGHT_STATE_DIR/owl/theme-catppuccin.omp.json` | Oh My Posh JSON that `owl-theme` patches; empty turns Oh My Posh off |
 
 `op.account` is the sign-in address (`my-team.1password.com`) under WSL desktop integration, because the desktop-fed
@@ -88,7 +87,7 @@ There is no automatic conversion. Pick the profile that is closest, then set wha
 | `export GIT_MAIN_BRANCH="m"` | `preflight config set git.main_branch m` |
 | `export GITEA_USERNAME` / `GITEA_HOST` | `preflight config set gitea.username …` / `gitea.host …` |
 | `_CHECK_AWS=0` and the other `_CHECK_*` | `preflight config set checks.aws false` |
-| `_OPTIONAL_ENV_VARS="A B"` | `preflight config set optional_env_vars "A B"` |
+| `_OPTIONAL_ENV_VARS="A B"` | not a setting: variables are env-set entries (`op-env add SET VAR op://...`), and `preflight` checks every variable in the active sets |
 | `export OWL_OMP_CONFIG="/path"` | `preflight config set owl.omp_config /path` |
 | `export EDITOR=…`, `VISUAL=…`, other exports | your shell rc file, or `lib/local.sh` |
 

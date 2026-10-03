@@ -9,7 +9,7 @@
 # and shipped profiles. Add a setting by adding a row and a schema entry.
 #
 # Columns: key | shell variable | type | export | built-in default
-#   type    s string, p path, b boolean (1/0), pl path list joined ':', sl list joined ' '
+#   type    s string, p path, b boolean (1/0), pl path list joined ':'
 #   export  x = exported, - = shell variable only
 # '|' separates the columns, not TAB: `read` collapses runs of whitespace separators,
 # which would swallow every empty default.
@@ -23,7 +23,6 @@ checks.aws|_CHECK_AWS|b|-|1
 checks.gh|_CHECK_GH|b|-|1
 checks.ssh|_CHECK_SSH|b|-|1
 checks.git_config|_CHECK_GIT_CONFIG|b|-|1
-optional_env_vars|_OPTIONAL_ENV_VARS|sl|-|
 owl.omp_config|OWL_OMP_CONFIG|p|x|$PREFLIGHT_STATE_DIR/owl/theme-catppuccin.omp.json'
 
 # Names the loader has set (not exported). A variable that is already set but is not on
@@ -106,7 +105,6 @@ def val_of($ty; $v):
   elif $ty == "p" then (if ($v | type) == "string" then ($v | px) else error("type") end)
   elif $ty == "b" then (if $v == true then "1" elif $v == false then "0" else error("type") end)
   elif $ty == "pl" then (if ($v | type) == "array" then ($v | map(select(type == "string") | px) | join(":")) else error("type") end)
-  elif $ty == "sl" then (if ($v | type) == "array" then ($v | map(select(type == "string")) | join(" ")) else error("type") end)
   else error("type") end;
 . as $c
 | $t[] | . as [$k, $var, $type, $exp, $d]
@@ -203,8 +201,8 @@ Usage: preflight config <command>
 Keys:
 $(_pf_config_keys)
 
-Lists (projects.dirs: ':' separated; optional_env_vars: space separated) and
-booleans (true/false, 1/0, yes/no) are written as JSON arrays and booleans.
+The list (projects.dirs, ':' separated) and booleans (true/false, 1/0, yes/no) are
+written as a JSON array and JSON booleans.
 A variable you have already set in your environment wins over the file.
 Reference: docs/config.md
 EOF
@@ -236,7 +234,7 @@ _pf_config_check() {
         | select(
             (($type == "s" or $type == "p") and ($v | type) != "string")
             or ($type == "b" and ($v | type) != "boolean")
-            or (($type == "pl" or $type == "sl") and (($v | type) != "array" or ($v | any(type != "string"))))
+            or ($type == "pl" and (($v | type) != "array" or ($v | any(type != "string"))))
           )
         | "wrong type for \($k)")' "$_pf_cfg_file" 2>&1)
   while IFS= read -r line; do
@@ -276,7 +274,6 @@ _pf_config_set_cmd() {
                 elif . == "false" or . == "0" or . == "no" or . == "off" then false
                 else error("expected true or false") end)
           elif $type == "pl" then ($v | split(":") | map(select(length > 0)))
-          elif $type == "sl" then ($v | [splits("[[:space:]]+")] | map(select(length > 0)))
           else $v end)' 2>&1 >"$tmp"); then
     echo "preflight config: could not set $key: ${err%%$'\n'*}" >&2
     rm -f "$tmp"; return 1

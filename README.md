@@ -406,7 +406,6 @@ preflight config check     # invalid JSON, unknown keys, wrong types
 | `aws.default_profile` | Default AWS profile (`preflight` sets `AWS_PROFILE` from this at startup) |
 | `git.main_branch`, `gitea.username`, `gitea.host` | Git helper and Gitea credential settings |
 | `checks.aws`, `checks.gh`, `checks.ssh`, `checks.git_config` | Which `preflight` sections run |
-| `optional_env_vars` | Variables `preflight` notes when unset |
 | `owl.omp_config` | Oh My Posh JSON that `owl-theme` patches (empty disables OMP integration) |
 
 A variable you have already set in your environment wins over the file. Every key, its variable, types, defaults and the loading rules are in [docs/config.md](./docs/config.md).
