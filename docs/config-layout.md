@@ -1,6 +1,6 @@
 # Config layout and settings file
 
-Status: proposal, decisions settled (see Decisions). Nothing here is implemented.
+Status: decisions settled (see Decisions). Phase 1 is implemented in #48; Phase 2 is not.
 
 ## Problem
 
@@ -44,7 +44,7 @@ Nothing user-owned lives inside the repo afterwards, so `.gitignore` drops its `
 
 ## Phase 1: move (no format change)
 
-Resolve the directories once, in `init.sh`, through one function, and export `PREFLIGHT_CONFIG_DIR` and
+Resolve the directories once, in `init.sh`, through one function (`_pf_resolve_dirs` in `lib/paths.sh`), and export `PREFLIGHT_CONFIG_DIR` and
 `PREFLIGHT_STATE_DIR`. Everything that builds a path from `$PREFLIGHT_DIR/config` or `$PREFLIGHT_DIR/state`
 uses them instead:
 
@@ -66,7 +66,7 @@ uses them instead:
 
 **`preflight uninstall`.** Removes code only. It prints where config, state and cache live, and removes
 them only with `--purge`. Every `rm -rf` here goes through the guard in `lib/cache.sh` (refuse empty, `/` and
-`$HOME`), extended to also refuse `$XDG_CONFIG_HOME`, `$XDG_STATE_HOME` and `$XDG_CACHE_HOME` themselves, so a
+`$HOME`), extended to also refuse `$XDG_CONFIG_HOME`, `$XDG_STATE_HOME` and `$XDG_CACHE_HOME` themselves (implemented as `_pf_safe_rm_dir` in `lib/paths.sh`, which `preflight-cache-clear` now shares), so a
 `PREFLIGHT_CONFIG_DIR=~/.config` typo cannot purge every application's config. Today `uninstall` runs a bare
 `rm -rf "$dir"` (`lib/preflight.sh`), and `--purge` must not be the first path that deletes something outside
 the clone.
@@ -185,8 +185,8 @@ So Phase 2 covers both:
 - That makes the `.tsv` format a cross-language contract. It gets a short spec in `docs/config.md`, and a
   shared fixture (one set of input files and the expected merged output) that both test suites check, so the
   implementations cannot drift.
-- The per-secret account column being added on `feat/op-env-per-secret-account` has to land first, or
-  PowerShell would implement the old format and then change.
+- The per-secret account column (optional third TAB column, landed in #46) is part of the format the
+  PowerShell port and the shared fixture implement.
 
 Risk: PowerShell cannot be tested on the machine this was written on, so the PowerShell half needs a
 Windows or `pwsh` run before merge. Say so in that PR's test plan rather than claiming it.
@@ -253,5 +253,5 @@ Phase 2 may split into bash and PowerShell PRs if it gets large; the shared fixt
 
 ## Still open
 
-- The set format: Phase 1 and 2 assume the per-secret account column from `feat/op-env-per-secret-account`
-  lands first. If its final format differs, the table in Phase 2 and the shared fixture change with it.
+Nothing. The set format question was settled by #46: an optional third TAB column names a 1Password
+account, and `op-load-env` groups entries by account.
