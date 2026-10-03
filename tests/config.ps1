@@ -413,6 +413,16 @@ esac
         Invoke-Op { Invoke-OpEnv clear }
         chk 'reload: a plain clear still clears a variable whose definition is gone' { -not $env:A1 -and -not $env:B1 }
 
+        # The real thing, not a re-dot-source: Import-Module -Force builds a fresh module scope (Update-Preflight
+        # does this), so a $script: memory would be forgotten. Only a $global: one survives it.
+        Reset-TestSets; New-TestSet 'a' @("A1`top://v/i/a1")
+        $psd1 = Join-Path $Repo 'pwsh/Preflight.psd1'
+        $modOut = & (Get-Process -Id $PID).Path -NoProfile -Command ("Import-Module '$psd1' -Force 3>`$null; op-env load *>`$null; " +
+            "Import-Module '$psd1' -Force 3>`$null; `$before = [bool]`$env:A1; Remove-Item '$(Join-Path $opSetsDir 'a.tsv')'; op-env clear *>`$null; " +
+            "'LOADED=' + `$before + ' CLEARED=' + (-not `$env:A1)") 2>&1 | Out-String
+        chk 'Import-Module -Force: clear still clears what a load set before the reload (memory is global)' { $modOut -match 'LOADED=True CLEARED=True' }
+        Reset-TestSets
+
         # A plain load unsets what a previous load set and the sets no longer define.
         Reset-TestSets; New-TestSet 'a' @("A1`top://v/i/a1", "X1`top://v/i/x1")
         Invoke-Op { Import-OpEnv }
