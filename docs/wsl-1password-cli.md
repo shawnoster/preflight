@@ -32,8 +32,10 @@ WSL shell ──> op.exe (Windows) ──> 1Password desktop app (Windows)
 Set `op.account` (`OP_ACCOUNT`) to your **sign-in address**, with `preflight config set op.account ADDRESS`, not a shorthand. The desktop-fed `op.exe` lists accounts by address and does not carry the manual `op account add` shorthand:
 
 ```bash
-export OP_ACCOUNT="my-team.1password.com"
+preflight config set op.account my-team.1password.com
 ```
+
+This writes `config.json` (and applies to the current shell), so it persists; an `export` in a shell or rc file would only last for that shell and, once set, would also override the file.
 
 Find your address with:
 

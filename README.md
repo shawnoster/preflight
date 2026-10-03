@@ -20,11 +20,11 @@ The installer:
 After installing:
 
 ```bash
-# 1. Configure your accounts
-preflight config set op.account my-team.1password.com   # and projects.dirs, etc.; see `preflight config help`
-
-# 2. Reload your shell (op-env and the other commands only exist after this)
+# 1. Reload your shell (preflight, op-env and the other commands only exist after this)
 source ~/.bashrc   # or open a new terminal
+
+# 2. Configure your accounts
+preflight config set op.account my-team.1password.com   # and projects.dirs, etc.; see `preflight config help`
 
 # 3. Register your 1Password secrets (VAR -> op:// ref)
 op-env add
