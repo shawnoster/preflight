@@ -277,45 +277,13 @@ preflight() {
     _pf_section "SSH"
     _pf_status "SSH: checking agent..."
 
-    # Detect WSL. With the agent bridge (SSH_AUTH_SOCK is a live socket) use the
-    # generic native-agent check below; otherwise fall back to the legacy ssh-add.exe
-    # interop check and point at `preflight configure`.
     local _is_wsl=false
     grep -qi microsoft /proc/version 2>/dev/null && _is_wsl=true
 
-    if [[ "$_is_wsl" == true && ! -S "${SSH_AUTH_SOCK:-}" ]]; then
-      # Resolve ssh-add.exe: try PATH first, fall back to canonical Windows path
-      local _ssh_add_exe=""
-      command -v ssh-add.exe &>/dev/null && _ssh_add_exe="ssh-add.exe"
-      [[ -z "$_ssh_add_exe" && -f "/mnt/c/Windows/System32/OpenSSH/ssh-add.exe" ]] && \
-        _ssh_add_exe="/mnt/c/Windows/System32/OpenSSH/ssh-add.exe"
-
-      if [[ -n "$_ssh_add_exe" ]]; then
-        local _agent_output _agent_exit _key_count
-        _agent_output=$(timeout 10 "$_ssh_add_exe" -l 2>&1); _agent_exit=$?
-        # Count lines that look like key fingerprints (SHA256: prefix)
-        _key_count=$(echo "$_agent_output" | grep -c 'SHA256:' || true)
-        if [[ $_agent_exit -ne 0 && $_key_count -eq 0 ]]; then
-          issue_msgs+=("1Password SSH agent unreachable — run: preflight configure (sets up the agent bridge)")
-          _pf_line "⚠️  1Password SSH agent unreachable"
-          ((issues++))
-        elif [[ "$_key_count" -gt 0 ]]; then
-          _pf_line "✅ 1Password SSH agent active ($_key_count key(s) via ssh-add.exe)"
-        else
-          issue_msgs+=("1Password SSH agent has no keys — check 1Password Developer settings")
-          _pf_line "⚠️  ssh-add.exe found but no keys loaded"
-          ((issues++))
-        fi
-      else
-        issue_msgs+=("ssh-add.exe not found — Windows OpenSSH or WSL interop may be disabled")
-        _pf_line "⚠️  ssh-add.exe not found (see docs/wsl-ssh-setup.md)"
-        ((issues++))
-      fi
-    elif [[ -n "$SSH_AUTH_SOCK" ]]; then
+    if [[ -n "${SSH_AUTH_SOCK:-}" ]]; then
       _pf_line "✅ SSH_AUTH_SOCK is set: $SSH_AUTH_SOCK"
       # Bounded: a locked or wedged 1Password makes ssh-add -l hang, and this must not
-      # block the whole preflight run. Running it under `timeout` also bypasses any
-      # ssh-add alias left over from the old ssh.exe setup.
+      # block the whole preflight run.
       timeout 10 ssh-add -l &>/dev/null; local _agent_rc=$?
       if [[ $_agent_rc -eq 0 ]]; then
         _pf_line "✅ SSH agent has keys loaded"
@@ -332,7 +300,11 @@ preflight() {
         _pf_line "⚠️  SSH agent running but no keys loaded"
       fi
     else
-      issue_msgs+=("SSH agent not available — on WSL, ensure 1Password SSH agent is running")
+      if [[ "$_is_wsl" == true ]]; then
+        issue_msgs+=("1Password SSH agent bridge not found — run: preflight configure")
+      else
+        issue_msgs+=("SSH agent not available — start ssh-agent or your password manager's agent")
+      fi
       _pf_line "⚠️  No SSH agent found"
       ((issues++))
     fi
@@ -1555,7 +1527,7 @@ GITIGNORE
       [[ "$_n" -gt 0 ]] && _bridge_verified=true
     fi
     if [[ "$_bridge_verified" != true ]]; then
-      echo "ℹ️  Bridge not verified yet, so ~/.profile, ~/.ssh/config and the old ssh.exe aliases are left alone."
+      echo "ℹ️  Bridge not verified yet, so ~/.profile, and ~/.ssh/config are left alone."
       echo "   Fix the problem above, or unlock 1Password with 'Use the SSH agent' on, then re-run: preflight configure"
       echo ""
     fi

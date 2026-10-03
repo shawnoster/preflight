@@ -165,21 +165,6 @@ To sign commits with your 1Password SSH key (optional):
 
 This sets `gpg.format = ssh`, `user.signingkey`, and `gpg.ssh.program` to 1Password's `op-ssh-sign-wsl` binary. 1Password app versions 8.11.18+ moved that binary to `…/Microsoft/WindowsApps/op-ssh-sign-wsl.exe`. If signing breaks after an app upgrade, re-copy the snippet.
 
-## Fallback without systemd
-
-If you can't enable systemd, use 1Password's interop approach instead. It only covers interactive shells and `git`:
-
-```bash
-# ~/.bashrc
-export SSH_AUTH_SOCK=$HOME/.1password/agent.sock   # optional
-alias ssh='/mnt/c/Windows/System32/OpenSSH/ssh.exe'
-alias ssh-add='/mnt/c/Windows/System32/OpenSSH/ssh-add.exe'
-
-git config --global core.sshCommand /mnt/c/Windows/System32/OpenSSH/ssh.exe
-```
-
-In this mode `preflight` still reports agent status, but `preflight configure` doesn't set anything up.
-
 ## Troubleshooting
 
 Each heading below is a symptom, followed by its likely causes.

@@ -309,16 +309,14 @@ function Clear-OpEnv {
     .SYNOPSIS
         Clear sensitive environment variables loaded by Import-OpEnv.
     .DESCRIPTION
-        Removes every var Import-OpEnv sets, plus the legacy GitHub token
-        names in case they were set by hand (matching bash op-clear-env).
+        Removes every var Import-OpEnv sets (matching bash op-clear-env).
     .EXAMPLE
         Clear-OpEnv
     #>
     [CmdletBinding()]
     param()
 
-    $extras = @('GITHUB_TOKEN', 'GITHUB_PERSONAL_ACCESS_TOKEN')
-    $allVars = @((Get-OpEnvMap).Keys) + $extras
+    $allVars = @((Get-OpEnvMap).Keys)
 
     foreach ($var in $allVars) {
         if (Test-Path -LiteralPath "env:$var") {
