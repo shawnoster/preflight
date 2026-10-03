@@ -725,6 +725,53 @@ chk "subset load: ...sets nothing from the set"         '[[ -z "${B1:-}${B2:-}" 
 chk "subset load: ...and leaves the memory unchanged"   '[[ "$_OP_LOADED_VARS" == "$before" && "$A1" == val-of-a1 ]]'
 op-env clear >/dev/null 2>&1
 
+# A set may be called "note" (a legal name): it is validated like any other, not read as a flag.
+oplog_reset
+out=$(op-env clear note 2>&1); rc=$?
+chk "clear note (no such set): fails with the name, like any other set" '[[ $rc -ne 0 && "$out" == *"No env set"*note* ]]'
+out=$(op-env load a note 2>&1); rc=$?
+chk "load a note (no such set): fails, nothing loaded, no op call"      '[[ $rc -ne 0 && "$out" == *"No env set"*note* && "$(oplog_count)" == 0 ]]'
+mkset note $'N1\top://v/i/n1'
+op-env load note >/dev/null 2>&1
+chk "a real set called note loads by name"  '[[ "$N1" == val-of-n1 ]]'
+op-env clear note >/dev/null 2>&1
+chk "...and clears by name"                '[[ -z "${N1:-}" ]]'
+rm "$sets/note.tsv"; op-env clear >/dev/null 2>&1
+
+# Provenance: a variable two sets define belongs to the first (as the loader decides), so clearing the
+# other set does not remove it.
+mkset s1 $'SHARED\top://v/i/from-s1' $'ONLY1\top://v/i/only1'
+mkset s2 $'SHARED\top://v/i/from-s2' $'ONLY2\top://v/i/only2'
+op-env load s1 s2 >/dev/null 2>&1
+chk "shared variable: the first set named supplies it" '[[ "$SHARED" == val-of-from-s1 && "$ONLY1" == val-of-only1 && "$ONLY2" == val-of-only2 ]]'
+op-env clear s2 >/dev/null 2>&1
+chk "clear the set that lost: its own variable goes"           '[[ -z "${ONLY2:-}" ]]'
+chk "clear the set that lost: the shared variable stays"       '[[ "$SHARED" == val-of-from-s1 && "$ONLY1" == val-of-only1 ]]'
+chk "clear the set that lost: the shared one stays in the memory" '[[ "$_OP_LOADED_VARS" == *SHARED* && "$_OP_LOADED_VARS" != *ONLY2* ]]'
+op-env clear s1 >/dev/null 2>&1
+chk "clear the set that won: the shared variable goes now"     '[[ -z "${SHARED:-}${ONLY1:-}" && -z "$_OP_LOADED_VARS" ]]'
+
+# Loading the losing set by name afterwards makes it the supplier of that variable.
+op-env load s1 s2 >/dev/null 2>&1
+op-env load s2 >/dev/null 2>&1
+chk "a later named load re-points the variable at the set that just loaded it" '[[ "$SHARED" == val-of-from-s2 ]]'
+op-env clear s1 >/dev/null 2>&1
+chk "...so clearing s1 leaves it"   '[[ "$SHARED" == val-of-from-s2 && -z "${ONLY1:-}" ]]'
+op-env clear s2 >/dev/null 2>&1
+chk "...and clearing s2 removes it" '[[ -z "${SHARED:-}" ]]'
+
+# A plain load records the same provenance (first active set wins).
+op-env load >/dev/null 2>&1
+op-env clear s2 >/dev/null 2>&1
+chk "after a plain load, clearing the losing active set keeps the shared variable" '[[ "$SHARED" == val-of-from-s1 && -z "${ONLY2:-}" ]]'
+op-env clear >/dev/null 2>&1
+
+# A variable that was never loaded (exported by hand) is not cleared by naming a set that defines it.
+ONLY1=mine; export ONLY1
+op-env clear s1 >/dev/null 2>&1
+chk "clear <set> does not unset a same-named variable it never loaded" '[[ "$ONLY1" == mine ]]'
+unset ONLY1; rm "$sets/s1.tsv" "$sets/s2.tsv"
+
 # Several sets, in the order given; the first definition wins.
 mkset c $'B1\top://v/i/from-c' $'C1\top://v/i/c1'
 op-env load c b >/dev/null 2>&1
