@@ -104,7 +104,7 @@ def val_of($ty; $v):
   if $ty == "s" then (if ($v | type) == "string" then $v else error("type") end)
   elif $ty == "p" then (if ($v | type) == "string" then ($v | px) else error("type") end)
   elif $ty == "b" then (if $v == true then "1" elif $v == false then "0" else error("type") end)
-  elif $ty == "pl" then (if ($v | type) == "array" then ($v | map(select(type == "string") | px) | join(":")) else error("type") end)
+  elif $ty == "pl" then (if ($v | type) == "array" and ($v | all(type == "string")) then ($v | map(px) | join(":")) else error("type") end)
   else error("type") end;
 . as $c
 | $t[] | . as [$k, $var, $type, $exp, $d]

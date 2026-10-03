@@ -85,6 +85,13 @@ chk "quotes, apostrophes and \$() survive verbatim" '[[ "$OP_ACCOUNT" == "it'"'"
 chk "path expansion: ~/, \$HOME/, absolute; other \$VAR untouched" '[[ "$PROJ_DIRS" == "$HOME/a:$HOME/b:/c:\$OTHER/d" ]]'
 chk "other keys fall back to defaults"      '[[ "$_CHECK_SSH" == 1 && -z "$GITEA_HOST" ]]'
 
+# A list with any non-string element is wrong-typed as a whole, not filtered.
+reset; put '{"op":{"account":"acct"},"projects":{"dirs":["~/custom",7]}}'
+_pf_config_load
+chk "mixed list: falls back as a whole, not the valid element alone" '[[ "$PROJ_DIRS" == "$HOME/projects:$HOME/work:$HOME/src" && "$OP_ACCOUNT" == acct ]]'
+out=$(_pf_config_check)
+chk "mixed list: check reports a wrong type" '[[ "$out" == *"wrong type for projects.dirs"* ]]'
+
 # A wrong-typed key takes its default alone.
 reset; put '{"op":{"account":"acct"},"checks":{"aws":"yes"},"projects":{"dirs":"nope"},"git":"flat"}'
 _pf_config_load
