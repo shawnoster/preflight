@@ -3,7 +3,7 @@
 #
 # Generic helpers only: this file knows how to talk to 1Password, not which
 # secrets you use. The VAR -> op:// reference lists live in env sets
-# (lib/envsets.sh, envsets/<set>.tsv); op-load-env asks _op_env_entries
+# (lib/envsets.sh, envsets/<set>.tsv); `op-env load` asks _op_env_entries
 # for them. Nothing here needs editing per install.
 #
 # Load order: init.sh sources lib/*.sh by glob, and this file relies on sorting after
@@ -104,19 +104,21 @@ op-import-csv <csv-path> [--vault <vault>] [--tag <tag>] [--dry-run]
                        Default: title,url,username,password,notes
     --dry-run          Show what would be created without calling op.
 
-op-load-env
-  Load the active env sets' secrets from 1Password into environment variables.
+op-env load [set...]
+  Load the active env sets' secrets from 1Password into environment variables
+  (or only the named sets: additive, works on an inactive set).
   Signs in to every account the active sets name, then resolves each account's
   secrets in one `op inject` call (a single-account set is a single call). Under
   WSL the sign-in step triggers the desktop unlock; native op uses the cached
   session. Falls back to per-secret reads for an account whose batch fails.
 
-op-env [add|list|rm|use|migrate]
+op-env [load|clear|add|list|rm|use|migrate]
   Manage named env sets (guild, personal, ...) of VAR -> op:// references.
   This is where the list of secrets lives. Run `op-env help` for details.
 
-op-clear-env
-  Unset every variable op-load-env set (and any the active sets define).
+op-env clear [set...]
+  Unset every variable `op-env load` set (and any the active sets define), or
+  only the named sets' variables.
 
 Configuration:
 --------------
@@ -179,12 +181,12 @@ op-signin() {
   fi
 }
 
-# Variables op-load-env exported last time (newline-separated). Lets the next
+# Variables `op-env load` exported last time (newline-separated). Lets the next
 # load unset anything that has since been removed from the env sets, and lets
-# op-clear-env clear them even if the definition is already gone.
+# `op-env clear` clear them even if the definition is already gone.
 _OP_LOADED_VARS="${_OP_LOADED_VARS:-}"
 
-# Functions to call after op-load-env finishes, whether or not every secret
+# Functions to call after `op-env load` finishes, whether or not every secret
 # loaded. Register with:  _OP_AFTER_LOAD_HOOKS+=(my_function)
 declare -p _OP_AFTER_LOAD_HOOKS &>/dev/null || _OP_AFTER_LOAD_HOOKS=()
 
@@ -213,12 +215,13 @@ _op_err_line() {
 # grouped by the account they resolve against (their own column, else
 # $OP_ACCOUNT) and each group becomes one `op inject` call.
 #
-# `op-env load` is this function; with no argument it loads the active sets and is
+# This is what `op-env load` runs (lib/envsets.sh dispatches here; there is no other entry
+# point, the old op-load-env name is gone). With no argument it loads the active sets and is
 # authoritative (anything a previous load set that is no longer defined is unset). With set
 # names it loads just those sets, adds to what is already loaded, unsets nothing, and works
 # on a set that is not active. It signs in to every account it needs before it sets a single
 # variable, and a refused set name stops it before anything is touched or signed in.
-op-load-env() {
+_op_env_load() {
   if ! declare -f _op_env_entries >/dev/null; then
     echo "❌ No env source loaded (lib/envsets.sh is missing)"
     return 1
@@ -378,7 +381,7 @@ op-load-env() {
       # vault or a bad item name all come back as "failed to load" otherwise, with
       # nothing to say which. No temp file (none to write, or no usable tmp dir)
       # just means less detail, never a failed load.
-      _op_errf=$(mktemp "${TMPDIR:-/tmp}/op-load-env.XXXXXX" 2>/dev/null) || _op_errf=/dev/null
+      _op_errf=$(mktemp "${TMPDIR:-/tmp}/op-env-load.XXXXXX" 2>/dev/null) || _op_errf=/dev/null
       while IFS= read -r _op_line; do
         [[ -n "$_op_line" ]] || continue
         _op_name2="${_op_line%%$'\t'*}"
@@ -675,7 +678,7 @@ EOF
     return 1
   fi
 
-  # Sign-in handled the same way as op-load-env.
+  # Sign-in handled the same way as `op-env load`.
   if ! "$OP_BIN" whoami --account "$OP_ACCOUNT" >/dev/null 2>&1; then
     op-signin "$OP_ACCOUNT" || return 1
   fi
@@ -926,8 +929,9 @@ PYEOF
   return 0
 }
 
-# Clear the variables op-load-env set, plus any the active env sets define.
-op-clear-env() {
+# Clear the variables `op-env load` set, plus any the active env sets define. This is what
+# `op-env clear` runs; with set names, only those sets' variables.
+_op_env_clear() {
   local _op_names _op_var _op_keep
   if [[ $# -gt 0 ]]; then
     # Only the named sets' variables. Whatever else was loaded stays loaded, and stays
@@ -957,5 +961,3 @@ op-clear-env() {
   echo "🧹 Secure environment variables cleared."
 }
 
-# Older names for `op-env load` / `op-env clear`: the same functions, kept so scripts and
-# muscle memory keep working. (op-env dispatches to op-load-env / op-clear-env.)

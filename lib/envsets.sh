@@ -474,8 +474,7 @@ op-env manages named env sets backed by 1Password references.
 
 Sets (e.g. guild, personal) are stored in envsets/<set>.tsv, one
 `VAR<TAB>op://vault/item/field` per line, and are the only list of secrets
-`op-env load` and `op-env clear` use. (`op-load-env` and `op-clear-env` are the same
-commands under their older names.)
+`op-env load` and `op-env clear` use.
 
 `op-env load` with no set loads every active set, and is authoritative: a variable
 whose definition is gone, or whose set is no longer active, is unset. `op-env load
@@ -498,8 +497,8 @@ EOF
 
 op-env() {
   case "${1:-help}" in
-    load)         shift; op-load-env "$@" ;;
-    clear)        shift; op-clear-env "$@" ;;
+    load)         shift; _op_env_load "$@" ;;
+    clear)        shift; _op_env_clear "$@" ;;
     add)          shift; _op_env_add "$@" ;;
     list|ls)      shift; _op_env_list "$@" ;;
     rm|remove)    shift; _op_env_rm "$@" ;;
@@ -548,7 +547,7 @@ _op_env_check_sets() {
   return 0
 }
 
-# Everything op-env load / clear (op-load-env / op-clear-env) need to know: one `VAR<TAB>op://ref` line
+# Everything op-env load / clear need to know: one `VAR<TAB>op://ref` line
 # per secret, from the active sets, carrying an optional third `TABaccount` column
 # when the set names one (otherwise $OP_ACCOUNT). An OP_SECRETS array still defined
 # by a leftover lib/1password.sh is honored too (and wins on a name clash) until it
