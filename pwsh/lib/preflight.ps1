@@ -632,9 +632,13 @@ function Update-Preflight {
         Update the Preflight module to the latest version from GitHub.
     .DESCRIPTION
         Clones shawnoster/preflight into a temp directory, copies the updated
-        lib/*.ps1, Preflight.psd1, and Preflight.psm1 into the module root
-        ($script:PreflightRoot — wherever the module was imported from), then
-        reloads the module.
+        lib/*.ps1, Preflight.psd1, Preflight.psm1 and install.ps1 into the module
+        root ($script:PreflightRoot — wherever the module was imported from), plus
+        the bundled defaults\ (config profiles, schema, owl base theme) into
+        <install root>\defaults, then reloads the module. Shipping install.ps1 and
+        defaults\ is what lets an install from before config.json upgrade: re-running
+        the installer from the install directory then seeds config.json and replaces
+        the old profile guard.
 
         Your settings and env sets live outside the install directory
         ($env:PREFLIGHT_CONFIG_DIR), so an update never touches them.
@@ -642,6 +646,9 @@ function Update-Preflight {
         Requires git in PATH.
     .PARAMETER DryRun
         Show what would be copied without writing anything.
+    .PARAMETER RepoUrl
+        The repository to clone (default: the upstream repo). Mirrors the bash
+        PREFLIGHT_REPO; mainly useful for testing against a local checkout.
     .EXAMPLE
         Update-Preflight
     .EXAMPLE
@@ -649,11 +656,12 @@ function Update-Preflight {
     #>
     [CmdletBinding()]
     param(
-        [switch]$DryRun
+        [switch]$DryRun,
+        [string]$RepoUrl = 'https://github.com/shawnoster/preflight.git'
     )
 
-    $installRoot = $script:PreflightRoot   # wherever the module was imported from
-    $repoUrl     = 'https://github.com/shawnoster/preflight.git'
+    $installRoot = $script:PreflightRoot   # wherever the module was imported from (the pwsh\ directory)
+    $repoUrl     = $RepoUrl
 
     Write-Host ''
     Write-Host '  ── preflight update ──' -ForegroundColor Cyan
@@ -682,19 +690,27 @@ function Update-Preflight {
             Write-Error "Cloned repo missing expected pwsh/ directory — aborting."
             return
         }
-        # Collect files to copy: lib/*.ps1, Preflight.psd1, Preflight.psm1.
-        # Only code is copied: user config lives outside the install directory.
+        # Collect files to copy: lib/*.ps1, Preflight.psd1, Preflight.psm1, install.ps1, and the
+        # bundled defaults\ (kept beside the pwsh\ directory, where install.ps1 looks for them).
+        # Only code and bundled defaults are copied: user config lives outside the install directory.
+        $installParent = Split-Path -Parent $installRoot
         $srcFiles = @(
             Get-ChildItem -LiteralPath (Join-Path $srcPwsh 'lib') -Filter '*.ps1' -File |
-                ForEach-Object { @{ Src = $_.FullName; Rel = "lib\$($_.Name)" } }
-            @{ Src = Join-Path $srcPwsh 'Preflight.psd1'; Rel = 'Preflight.psd1' }
-            @{ Src = Join-Path $srcPwsh 'Preflight.psm1'; Rel = 'Preflight.psm1' }
+                ForEach-Object { @{ Src = $_.FullName; Rel = "lib\$($_.Name)"; Dest = (Join-Path (Join-Path $installRoot 'lib') $_.Name) } }
+            @{ Src = Join-Path $srcPwsh 'Preflight.psd1'; Rel = 'Preflight.psd1'; Dest = Join-Path $installRoot 'Preflight.psd1' }
+            @{ Src = Join-Path $srcPwsh 'Preflight.psm1'; Rel = 'Preflight.psm1'; Dest = Join-Path $installRoot 'Preflight.psm1' }
+            @{ Src = Join-Path $srcPwsh 'install.ps1';    Rel = 'install.ps1';    Dest = Join-Path $installRoot 'install.ps1' }
         )
+        $srcDefaults = Join-Path $tmpDir 'defaults'
+        if (Test-Path -LiteralPath $srcDefaults -PathType Container) {
+            $srcFiles += Get-ChildItem -LiteralPath $srcDefaults -File |
+                ForEach-Object { @{ Src = $_.FullName; Rel = "..\defaults\$($_.Name)"; Dest = (Join-Path (Join-Path $installParent 'defaults') $_.Name) } }
+        }
 
         $copied = 0
         $skipped = 0
         foreach ($f in $srcFiles) {
-            $dest = Join-Path $installRoot $f.Rel
+            $dest = $f.Dest
             if (-not (Test-Path -LiteralPath $f.Src)) { continue }
 
             $srcHash  = (Get-FileHash -LiteralPath $f.Src  -Algorithm SHA256).Hash
@@ -727,12 +743,25 @@ function Update-Preflight {
         } else {
             Write-Host ("  {0} file(s) updated, {1} unchanged" -f $copied, $skipped) -ForegroundColor Green
 
+            # An install from before config.json has no settings file yet (and may still have
+            # accounts.ps1): the installer seeds it and refreshes the profile guard. Decided before the
+            # reload below, which removes this module's internal functions from under us.
+            $cfgPath      = Get-PreflightConfigPath
+            $legacyCfg    = Join-Path (Join-Path $installRoot 'config') 'accounts.ps1'
+            $needsInstaller = (-not $cfgPath) -or (-not (Test-Path -LiteralPath $cfgPath)) -or (Test-Path -LiteralPath $legacyCfg)
+
             if ($copied -gt 0) {
                 Write-Host '  Reloading module...' -ForegroundColor DarkGray
                 $manifest = Join-Path $installRoot 'Preflight.psd1'
                 Remove-Module Preflight -Force -ErrorAction SilentlyContinue
                 Import-Module $manifest -Force -Global
                 Write-Host '  ✅ Preflight reloaded' -ForegroundColor Green
+            }
+
+            if ($needsInstaller) {
+                Write-Host ''
+                Write-Host "  ℹ️  Settings moved to config.json. Run this once to seed it and refresh your profile:" -ForegroundColor Yellow
+                Write-Host "      & '$(Join-Path $installRoot 'install.ps1')' -InstallRoot '$installParent'" -ForegroundColor Yellow
             }
         }
         Write-Host ''

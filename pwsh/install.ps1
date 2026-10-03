@@ -642,6 +642,18 @@ function Invoke-Install {
         }
     }
 
+    # Keep the bundled defaults beside pwsh\ (Update-Preflight refreshes them): a later run of this
+    # installer from the deployed tree, with no checkout, finds them there, and the module takes
+    # their presence as proof that the installer is current.
+    if ($repoRoot -and -not $DryRun) {
+        $bundled = Join-Path $repoRoot 'defaults'
+        if ((Test-Path -LiteralPath $bundled -PathType Container) -and
+            ((Resolve-Path -LiteralPath $bundled).Path -ne (Resolve-Path -LiteralPath $installDefaults -ErrorAction SilentlyContinue)?.Path)) {
+            if (-not (Test-Path -LiteralPath $installDefaults)) { New-Item -ItemType Directory -Path $installDefaults -Force | Out-Null }
+            Copy-Item -Path (Join-Path $bundled '*') -Destination $installDefaults -Force
+        }
+    }
+
     # 4) Seed the owl-theme base theme. owl-theme needs a USER-OWNED OMP config to patch (it refuses
     # to touch $env:POSH_THEMES_PATH). The bundled theme is copied to <state dir>\owl; config.json's
     # owl.omp_config points at it by default, so nothing needs to be exported from $PROFILE.
