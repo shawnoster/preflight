@@ -207,6 +207,10 @@ echo "no_such_set" >> "$sets/.active"; echo "junk" >> "$sets/.active"
 chk "garbage lines dropped, good line kept" '[[ "$(_op_env_entries)" == "ok1"$'"'"'\t'"'"'"op://v/i/k" ]]'
 clean_sets
 
+# A malformed ref (op://broken is not op://vault/item/field) is dropped by the loader.
+chk "loader drops a malformed ref" '[[ "$(printf "SHORT\top://broken\n" > "$sets/bad.tsv"; _op_env_entries)" != *SHORT* ]]'
+clean_sets
+
 # ── a failed secret says why (op's own error), not just "failed to load" ───────
 # The loader used to discard op's stderr, so a wrong OP_ACCOUNT looked like a broken
 # reference: "failed to load" with nothing to go on.
@@ -363,11 +367,10 @@ fi
 if [[ "$(id -u)" != 0 ]]; then
   printf 'old\n' > "$sets/old.tsv.tmp" && rm -f "$sets/old.tsv.tmp"
   printf 'O\top://v/i/o\n' > "$sets/old.tsv"; printf 'old\n' > "$sets/.active"; chmod 444 "$sets/.active"
-  chk "unwritable .active: no half-created set" '[[ ! -e "$sets/newset.tsv" ]]'
-  chk "unwritable .active: no stray temp files" '[[ -z "$(find "$sets" -name ".tmp.*" 2>/dev/null)" ]]'
   out=$(op-env add newset FOO op://v/i/f 2>&1); rc=$?
   chk "unwritable .active: op-env add fails" '[[ $rc -ne 0 && "$out" == *"not writable"* ]]'
-  chk "unwritable .active: op-env add is all-or-nothing" '[[ ! -e "$sets/newset.tsv" ]]'
+  chk "unwritable .active: no half-created set" '[[ ! -e "$sets/newset.tsv" ]]'
+  chk "unwritable .active: no stray temp files" '[[ -z "$(find "$sets" -name ".tmp.*" 2>/dev/null)" ]]'
   chk "unwritable .active: what loads is unchanged" '[[ "$(_op_env_entries | cut -f1 | tr "\n" " ")" == "O " ]]'
   chmod 644 "$sets/.active"
   # Once fixed, the same add works and activates the set.
@@ -376,6 +379,30 @@ if [[ "$(id -u)" != 0 ]]; then
   clean_sets
 fi
 
+op-clear-env >/dev/null; clean_sets
+
+# ── a secret value with a newline must not set other variables ────────────────
+# A stray line after a record is part of that record's value, not a new variable.
+printf 'REAL\top://v/i/r\n' > "$sets/n.tsv"
+export FAKE_OP_INJECT_EXTRA='EVIL_PATH=/tmp/evil'
+op-load-env > "$T/out" 2>&1; rc=$?
+unset FAKE_OP_INJECT_EXTRA
+chk "newline value: unrequested name not exported" '[[ -z "${EVIL_PATH:-}" && $rc -eq 0 ]]'
+want_real=$'val-of-r\nEVIL_PATH=/tmp/evil'
+chk "newline value: kept intact inside its own secret" '[[ "$REAL" == "$want_real" ]]'
+op-clear-env >/dev/null; clean_sets
+
+# Copilot's case: a multi-line value forges "SAFE=..." where SAFE is ALSO a requested
+# secret. A name check alone can't tell them apart; the per-call record tag does.
+printf 'SAFE\top://v/i/safefield\nEVIL\top://v/i/evilfield\n' > "$sets/f.tsv"
+FAKE_OP_MULTILINE=evilfield op-load-env >/dev/null 2>&1
+chk "forged line cannot overwrite another requested secret" '[[ "$SAFE" == val-of-safefield ]]'
+want_evil=$'x\nSAFE=pwned'
+chk "the multi-line secret itself loads whole" '[[ "$EVIL" == "$want_evil" ]]'
+# the same, with the forging secret FIRST (order must not matter)
+printf 'EVIL\top://v/i/evilfield\nSAFE\top://v/i/safefield\n' > "$sets/f.tsv"
+FAKE_OP_MULTILINE=evilfield op-load-env >/dev/null 2>&1
+chk "forged line cannot overwrite a secret that comes later" '[[ "$SAFE" == val-of-safefield ]]'
 op-clear-env >/dev/null; clean_sets
 
 # ── set -u (OP_BIN unset): nothing may hit an unbound variable ──
