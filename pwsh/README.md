@@ -85,7 +85,7 @@ you've installed.
 **Two bash aliases are intentionally not ported:** `gc` and `gp` collide with
 PowerShell's built-in aliases for `Get-Content` and `Get-ItemProperty`. Users
 who want them can override with `Set-Alias gc git -Force` in their
-`accounts.ps1` (and accept the loss of the built-ins).
+`$PROFILE` (and accept the loss of the built-ins).
 
 **Note on `gclean`:** the PowerShell version is *more conservative* than bash
 `gclean`. It only deletes a local branch when both (a) it's merged into HEAD
@@ -98,24 +98,52 @@ Run `Get-Help Invoke-Preflight -Examples` (or any of the above) for usage.
 
 ## Configuration
 
-Edit `$HOME\.preflight\pwsh\config\accounts.ps1` (gitignored, copied from
-`accounts.ps1.template` by the installer) to override defaults like
-`$env:OP_ACCOUNT`.
+Settings and secrets live **outside** the clone, so an update never touches them. The layout and the
+file formats are the same as on the bash side ([docs/config.md](../docs/config.md)); the files are not
+shared, because Windows PowerShell reads the Windows home and a WSL bash reads the WSL home.
 
-Owl theme: the installer seeds a user-owned base theme at
-`$HOME\.preflight\state\owl\theme-catppuccin.omp.json` and defaults
-`$env:OWL_OMP_CONFIG` to it (only when not already defined) in the profile guard, so
-`owl-theme <name>` patches a working OMP config instead of
-`$env:POSH_THEMES_PATH` (which the module refuses to mutate). Override
-`$env:OWL_OMP_CONFIG` in `accounts.ps1` to use your own theme.
+| What | Where | Override |
+|---|---|---|
+| Settings | `~\.config\preflight\config.json` | `$env:PREFLIGHT_CONFIG_DIR`, then `$env:XDG_CONFIG_HOME` |
+| Secrets (env sets) | `~\.config\preflight\envsets\<set>.tsv`, `.active` | same |
+| Owl state, patched OMP theme | `~\.local\state\preflight\owl\` | `$env:PREFLIGHT_STATE_DIR`, then `$env:XDG_STATE_HOME` |
 
-With a custom `-InstallRoot`, the guard also defaults `$env:OWL_THEME_DIR` to
-`<InstallRoot>\state\owl` (only when not already defined), so the theme you pick
-is saved next to the config `owl-theme` patches. A default install needs no such
-line and its profile is unchanged.
+Setting the config or state directory to the install directory (or inside it) is refused with a warning.
+
+**Settings.** `config.json` has the same keys as bash (`op.account`, `projects.dirs`, `aws.default_profile`,
+`git.main_branch`, `gitea.*`, `owl.omp_config`; see the table in docs/config.md). Edit it by hand: there is no
+`preflight config` command here yet. `Test-PreflightConfig` reports invalid JSON, unknown keys and wrongly typed
+values, and `Invoke-Preflight` reports a bad file as a failed check. A variable you have set in your own
+environment wins over the file, and an invalid or missing file falls back to built-in defaults (including a
+placeholder `OP_ACCOUNT`) instead of failing the import. Re-importing the module (`Import-Module ... -Force`)
+picks up edits. Two differences from bash: `projects.dirs` is joined with `;` on Windows (what `project.ps1`
+splits on), and a setting whose value is empty is simply left unset, because an environment variable cannot hold
+an empty string. The bash-only `checks.*` flags are accepted and ignored.
+
+**Secrets.** The secret map is the env sets, the same files `op-env` writes on bash: one
+`VAR<TAB>op://vault/item/field[<TAB>account]` line each, in `envsets\<set>.tsv`. Without an `.active` file every
+set is active; with one, only the sets it lists, in that order. The first definition of a variable wins, and
+malformed lines are skipped (the exact rules are `tests/fixtures/envsets` plus `envsets.expected`, checked by
+both implementations). An entry that names an account is resolved against that account: `Import-OpEnv` groups
+entries by account, signs in to every account first, and runs one `op run` per account. `Invoke-Preflight` checks
+that every variable in an active set ended up set.
+
+**Owl theme.** The installer seeds a user-owned base theme at
+`~\.local\state\preflight\owl\theme-catppuccin.omp.json`, and `owl.omp_config` points at it by default, so
+`owl-theme <name>` patches a working OMP config instead of `$env:POSH_THEMES_PATH` (which the module refuses to
+mutate). Set `owl.omp_config` to use your own theme, or to an empty string to turn Oh My Posh integration off.
+The profile guard no longer exports `OWL_OMP_CONFIG` or `OWL_THEME_DIR` (a value set before the module loads would
+override `config.json`); `OWL_THEME_DIR` remains an environment-only override.
+
+**Upgrading from `accounts.ps1`.** It is no longer read, and the module warns while it is still there. Re-run
+`install.ps1` (it seeds `config.json` and replaces the old profile guard), then move what you had: your
+`$env:OP_ACCOUNT`, `PROJ_DIRS`, `AWS_PROFILE_DEFAULT` and `OWL_OMP_CONFIG` values become keys in `config.json`, and
+each `VAR = 'op://...'` entry of `$script:OpEnvMap` becomes a `VAR<TAB>op://...` line in an env set. Aliases and
+other code you kept in `accounts.ps1` belong in your `$PROFILE`. If you have owl state under
+`$HOME\.preflight\state\owl`, move it to `~\.local\state\preflight\owl`.
 
 For Windows desktop-app integration (Settings → Developer → "Integrate with
-1Password CLI"), set `OP_ACCOUNT` to your sign-in address
+1Password CLI"), set `op.account` to your sign-in address
 (for example `my-team.1password.com`). If you manually added an account with
 `op account add --shorthand`, shorthand values still work.
 
