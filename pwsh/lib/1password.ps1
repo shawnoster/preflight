@@ -163,6 +163,11 @@ function Connect-Op {
 # env sets in $env:PREFLIGHT_CONFIG_DIR\envsets (lib/02-envsets.ps1), the same files the bash
 # `op-env` reads. Add, remove or change secrets by editing a set.
 
+# Names Import-OpEnv actually exported this session. Clear-OpEnv clears these as well as the
+# current sets' names, so a secret whose set was later removed or deactivated is still cleared
+# (the same job as _OP_LOADED_VARS in the bash loader).
+$script:OpLoadedVars = [System.Collections.Generic.HashSet[string]]::new()
+
 function Get-OpEnvMap {
     <#
     .SYNOPSIS
@@ -213,6 +218,7 @@ function Import-OpEnvGroup {
             $value = (@(& op read --account $Account $entry.Ref 2>$null) -join "`n")
             if ($LASTEXITCODE -eq 0 -and $value) {
                 Set-Item -Path "env:$($entry.Name)" -Value $value
+                [void]$script:OpLoadedVars.Add($entry.Name)
                 Write-Host "✅ $($entry.Name)$via"
             } else {
                 Write-Host "⚠️  $($entry.Name) (failed to load$(if ($Label) { ", via $Label" }))"
@@ -229,6 +235,7 @@ function Import-OpEnvGroup {
             $value = try { [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($encoded)) } catch { '' }
             if ($value) {
                 Set-Item -Path "env:$key" -Value $value
+                [void]$script:OpLoadedVars.Add($key)
                 Write-Host "✅ $key$via"
                 continue
             }
@@ -309,20 +316,23 @@ function Clear-OpEnv {
     .SYNOPSIS
         Clear sensitive environment variables loaded by Import-OpEnv.
     .DESCRIPTION
-        Removes every var Import-OpEnv sets (matching bash op-clear-env).
+        Removes every var Import-OpEnv exported this session, plus the names in the active env
+        sets (matching bash op-clear-env). A variable you set by hand under another name is left
+        alone.
     .EXAMPLE
         Clear-OpEnv
     #>
     [CmdletBinding()]
     param()
 
-    $allVars = @((Get-OpEnvMap).Keys)
+    $allVars = @((Get-OpEnvMap).Keys) + @($script:OpLoadedVars) | Sort-Object -Unique
 
     foreach ($var in $allVars) {
         if (Test-Path -LiteralPath "env:$var") {
             Remove-Item -LiteralPath "env:$var"
         }
     }
+    $script:OpLoadedVars.Clear()
 
     Write-Host "🧹 Secure environment variables cleared."
 }

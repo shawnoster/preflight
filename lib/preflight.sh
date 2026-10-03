@@ -1399,7 +1399,6 @@ GITIGNORE
       echo "⚠️  systemd is not running in this WSL distro (needed for the agent bridge)"
       echo "   Add to /etc/wsl.conf:   [boot]  systemd=true"
       echo "   Then run in PowerShell: wsl --shutdown   and re-run: preflight configure"
-      echo "   (Fallback without systemd: see docs/wsl-ssh-setup.md)"
       echo ""
       _bridge_ok=false
     fi
