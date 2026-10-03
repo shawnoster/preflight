@@ -151,7 +151,7 @@ done
 fresh
 ( source "$PREFLIGHT_DIR/init.sh" >/dev/null 2>&1 </dev/null )
 mkdir -p "$HOME/.config"
-printf '# Preflight — developer environment\n[[ -f "$HOME/.preflight/init.sh" ]] && source "$HOME/.preflight/init.sh"\n' > "$HOME/.bashrc"
+printf 'export KEEP=1\n# Preflight — developer environment\n[[ -f "$HOME/.preflight/init.sh" ]] && source "$HOME/.preflight/init.sh"\n' > "$HOME/.bashrc"
 before=$(cat "$HOME/.bashrc")
 out=$( ( source "$PREFLIGHT_DIR/init.sh" >/dev/null 2>&1 </dev/null; PREFLIGHT_DIR="$HOME/.config"; printf 'y\n' | preflight uninstall ) 2>&1 )
 chk "uninstall with a protected PREFLIGHT_DIR refuses" '[[ "$out" == *"refusing to remove"* ]]'
