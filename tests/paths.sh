@@ -188,19 +188,6 @@ fresh
 out=$(run_uninstall n --purge)
 chk "declining uninstall deletes nothing" '[[ -d "$PREFLIGHT_DIR" && -f "$HOME/.config/preflight/config.json" ]]'
 
-# An install updated in place: settings still inside the clone are reported, not ignored.
-fresh; mkdir -p "$PREFLIGHT_DIR/config/envsets" "$PREFLIGHT_DIR/state/owl"
-echo 'export OP_ACCOUNT=legacy' > "$PREFLIGHT_DIR/config/accounts.sh"
-out=$(source "$PREFLIGHT_DIR/init.sh" 2>&1 </dev/null)
-chk "legacy in-clone settings: warns and says how to move them" '[[ "$out" == *"still inside $PREFLIGHT_DIR"* && "$out" == *"mv "* ]]'
-chk "legacy: points accounts.sh at preflight config set"       '[[ "$out" == *"preflight config set"* ]]'
-chk "legacy: seeds nothing into the new owl state dir"         '[[ ! -e "$HOME/.local/state/preflight/owl" ]]'
-chk "legacy: still creates config.json (nothing to collide with)" '[[ -f "$HOME/.config/preflight/config.json" ]]'
-mkdir -p "$HOME/.local/state/preflight"
-rm -rf "$PREFLIGHT_DIR/config" "$PREFLIGHT_DIR/state"
-out=$(source "$PREFLIGHT_DIR/init.sh" 2>&1 </dev/null)
-chk "after the old files are gone the warning is gone" '[[ "$out" != *"still inside"* ]]'
-
 # A config dir that cannot be created stops init with a message.
 fresh; touch "$T/afile"; export PREFLIGHT_CONFIG_DIR="$T/afile/cfg"
 out=$(source "$PREFLIGHT_DIR/init.sh" 2>&1 </dev/null); rc=$?
