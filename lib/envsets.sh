@@ -323,6 +323,14 @@ account per call, so `op-env load` batches one `op inject` per account:
   op-env add guild ATLASSIAN_TOKEN op://Employee/Some\ Item/credential my-team.1password.com
 
 Re-adding a key without an account keeps the one already on the line.
+
+Examples:
+  op-env add work NPM_TOKEN op://Private/npm/credential   Put a secret in the "work" set
+  op-env load work                                        Load just the work secrets
+  op-env clear work                                       Unset just the work secrets again
+  op-env use work personal                                Make a plain op-env load use these two
+
+Tab completes the subcommands and the set names.
 EOF
 }
 
@@ -415,3 +423,48 @@ _op_env_entries() {
   } | tr -d '\r' | awk -F'\t' -v re="$_OP_REF_RE" -v acre="$_OP_ACCT_RE" \
       'NF <= 3 && $1 ~ /^[A-Za-z_][A-Za-z0-9_]*$/ && $2 ~ re && ($3 == "" || $3 ~ acre) && !seen[$1]++'
 }
+
+# ── Tab completion ────────────────────────────────────────────────────────────
+# `op-env <TAB>` offers the subcommands; after load, clear, use, list or rm it offers the
+# existing set names (list and rm take just one; add is left alone since it may create a new set).
+
+_OP_ENV_SUBCOMMANDS="load clear add list rm use help"
+
+# Candidates, one per line. $1 is the subcommand typed so far ("" while completing the
+# subcommand itself), $2 how many arguments already follow it. Shared by both shells' wrappers.
+_op_env_candidates() {
+  case "$1" in
+    "")                  printf '%s\n' "$_OP_ENV_SUBCOMMANDS" | tr ' ' '\n' ;;
+    load|clear|use)      _op_envsets_names ;;
+    list|ls|rm|remove)   if [[ "$2" -eq 0 ]]; then _op_envsets_names; fi ;;
+  esac
+}
+
+_op_env_complete_bash() {
+  local sub="" n=0
+  if (( COMP_CWORD > 1 )); then sub="${COMP_WORDS[1]}"; n=$((COMP_CWORD - 2)); fi
+  COMPREPLY=( $(compgen -W "$(_op_env_candidates "$sub" "$n")" -- "${COMP_WORDS[COMP_CWORD]}") )
+}
+
+# zsh: $words and $CURRENT are 1-based and include op-env itself. The unquoted $(...) is
+# word-split by zsh, one candidate per line.
+_op_env_complete_zsh() {
+  local sub="" n=0
+  if (( CURRENT > 2 )); then sub="${words[2]}"; n=$((CURRENT - 3)); fi
+  compadd -- $(_op_env_candidates "$sub" "$n")
+}
+
+# compdef only exists once the user's compinit has run, which can be after this file is
+# sourced (it depends on .zshrc order). Register now if possible, else on the first prompt.
+_op_env_register_zsh() {
+  [[ -z "${_OP_ENV_COMP_DONE:-}" ]] || return 0
+  type compdef >/dev/null 2>&1 || return 1
+  compdef _op_env_complete_zsh op-env && _OP_ENV_COMP_DONE=1
+}
+
+if [[ -n "${ZSH_VERSION:-}" ]]; then
+  _op_env_register_zsh || [[ " ${precmd_functions[*]} " == *" _op_env_register_zsh "* ]] \
+    || precmd_functions+=(_op_env_register_zsh)
+elif type complete >/dev/null 2>&1; then
+  complete -F _op_env_complete_bash op-env
+fi

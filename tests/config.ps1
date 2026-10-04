@@ -583,6 +583,17 @@ esac
     # help, unknown commands, and no import noise
     Invoke-OpQuiet { op-env help }
     chk 'help: documents load, clear, add, list, rm and use' { $wOut -match 'op-env load \[set\.\.\.\]' -and $wOut -match 'op-env clear \[set\.\.\.\]' -and $wOut -match 'op-env use \[set\.\.\.\]' }
+    chk 'help: has examples and mentions tab completion' { $wOut -match 'Examples:' -and $wOut -match 'Tab completes' }
+
+    # tab completion: subcommands, then set names (list and rm take one)
+    function Get-Completions([string]$Line) { @((TabExpansion2 -inputScript $Line -cursorColumn $Line.Length).CompletionMatches | ForEach-Object CompletionText) }
+    chk 'complete: op-env offers the subcommands' { (Get-Completions 'op-env ') -join ',' -ceq 'load,clear,add,list,rm,use,help' }
+    chk 'complete: ...filtered by what is typed' { (Get-Completions 'op-env l') -join ',' -ceq 'load,list' }
+    chk 'complete: load offers the set names, for every argument' { $c = Get-Completions 'op-env load acct '; $c -ccontains 'acct' }
+    chk 'complete: ...filtered by what is typed' { (Get-Completions 'op-env use ac') -join ',' -ceq 'acct' }
+    chk 'complete: list offers set names for its first argument only' { (Get-Completions 'op-env list ') -ccontains 'acct' -and -not ((Get-Completions 'op-env list acct ') -ccontains 'acct') }
+    chk 'complete: the full command name completes too' { (Get-Completions 'Invoke-OpEnv clear a') -ccontains 'acct' }
+
     Invoke-OpQuiet { op-env bogus }
     chk 'an unknown command is an error' { $wErr.Count -gt 0 }
     Remove-Item -LiteralPath $wDir -Recurse -Force -ErrorAction SilentlyContinue

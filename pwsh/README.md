@@ -134,7 +134,7 @@ set is active; with one, only the sets it lists, in that order. The first defini
 malformed lines are skipped (the exact rules are `tests/fixtures/envsets` plus `envsets.expected`, checked by
 both implementations). An entry that names an account is resolved against that account: `op-env load` groups
 entries by account, signs in to every account first, and runs one `op run` per account. `Invoke-Preflight` checks
-that every variable in an active set ended up set.
+that every variable in an active set ended up set. Tab completes the subcommands and the set names (a `Register-ArgumentCompleter` for `Invoke-OpEnv` and its alias).
 
 **Owl theme (opt-in plugin).** Off by default: enable it with `"plugins": ["owl"]` in `config.json`
 (see [plugins/README.md](../plugins/README.md)); until then `owl-theme` and `Show-OwlSplash` do not exist. When

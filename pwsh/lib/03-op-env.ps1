@@ -58,6 +58,21 @@ function New-OpEnvTempPath {
     return (Join-Path $Dir ('.tmp.' + [guid]::NewGuid().ToString('N').Substring(0, 8)))
 }
 
+# Registered rather than put in [ArgumentCompleter()] attributes: an attribute's scriptblock is not
+# bound to this module, so it could not see the private Get-OpEnvCompletion. Both names, because
+# a completer registered for a function does not apply to its alias.
+Register-ArgumentCompleter -CommandName 'Invoke-OpEnv', 'op-env' -ParameterName Command -ScriptBlock {
+    param($cmd, $param, $word)
+    Get-OpEnvCompletion -Sub '' -Given 0 -Word $word
+}
+Register-ArgumentCompleter -CommandName 'Invoke-OpEnv', 'op-env' -ParameterName Arguments -ScriptBlock {
+    param($cmd, $param, $word, $ast, $bound)
+    # Earlier arguments are not in $bound, so count them from the command line: everything after the
+    # command and the subcommand, less the word being completed when it is not empty.
+    $given = $ast.CommandElements.Count - 2 - $(if ($word) { 1 } else { 0 })
+    Get-OpEnvCompletion -Sub "$($bound['Command'])" -Given ([Math]::Max(0, $given)) -Word $word
+}
+
 function Get-OpEnvRawLines {
     # The file's lines as written (CRs kept, no trailing empty line), like `awk 1`.
     param([string]$Path)
@@ -358,7 +373,32 @@ account per call, so `op-env load` batches one `op run` per account:
   op-env add guild ATLASSIAN_TOKEN 'op://Employee/Some Item/credential' my-team.1password.com
 
 Re-adding a key without an account keeps the one already on the line.
+
+Examples:
+  op-env add work NPM_TOKEN 'op://Private/npm/credential'   Put a secret in the "work" set
+  op-env load work                                          Load just the work secrets
+  op-env clear work                                         Unset just the work secrets again
+  op-env use work personal                                  Make a plain op-env load use these two
+
+Tab completes the subcommands and the set names.
 '@
+}
+
+function Get-OpEnvCompletion {
+    # What `op-env <TAB>` offers (mirrors bash _op_env_candidates): the subcommands, then set names
+    # after load, clear, use, list or rm (list and rm take one). Never throws: a completer that errors
+    # prints a stack trace into the user's prompt.
+    param([string]$Sub, [int]$Given, [string]$Word)
+    try {
+        $names = switch ($Sub) {
+            ''                                   { 'load', 'clear', 'add', 'list', 'rm', 'use', 'help' }
+            { $_ -in 'load', 'clear', 'use' }    { Get-OpEnvSetNameList }
+            { $_ -in 'list', 'ls', 'rm', 'remove' } { if ($Given -eq 0) { Get-OpEnvSetNameList } }
+        }
+        foreach ($n in @($names)) {
+            if ($n -like "$Word*") { [System.Management.Automation.CompletionResult]::new($n, $n, 'ParameterValue', $n) }
+        }
+    } catch { Write-Verbose "op-env completion: $_" }
 }
 
 function Invoke-OpEnv {

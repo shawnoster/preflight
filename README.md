@@ -154,6 +154,19 @@ When something is behind, the suggested upgrade command is derived from **how th
 
 **Loading just some sets.** `op-env load work personal` loads only those sets, in that order (the first definition of a variable still wins), without changing which sets are active. It adds to what is already loaded and unsets nothing, signs in to every account it needs before it sets a variable, and works on a set that is not active (it says so). A name that is not a set stops it before anything is signed in or changed. A plain `op-env load` is authoritative: it unsets variables that are no longer defined or whose set is not active, so a set you loaded by name but did not activate (`op-env use`) is unset again by the next plain load, including the one `preflight` runs. `op-env clear work` unsets just that set's variables and leaves the rest loaded.
 
+**Walkthrough: load just the work secrets.**
+
+```bash
+op-env add work NPM_TOKEN op://Private/npm/credential   # creates the "work" set (and activates it)
+op-env add personal GITHUB_PAT op://Private/gh/token
+op-env list                                            # ● work, ● personal, with their keys
+op-env load work                                       # only NPM_TOKEN is set; nothing else changes
+op-env clear work                                      # ...and gone again; personal stays loaded
+op-env use work                                        # plain `op-env load` (and `preflight`) now loads only work
+```
+
+**Tab completion.** `op-env <TAB>` completes the subcommands, and `load`, `clear`, `use`, `list` and `rm` complete the set names, in bash, zsh and PowerShell. In zsh it registers with `compdef` once your `compinit` has run, on the first prompt if that is after preflight loads.
+
 **Which secrets load (`lib/envsets.sh`):** `lib/onepassword.sh` is generic and names no secret. The list lives in env sets: `op-env` keeps named groups of `VAR → op://` references in `~/.config/preflight/envsets/<set>.tsv` (outside the clone, one `VAR<TAB>op://vault/item/field` per line, safe to hand-edit). `op-env load` and `op-env clear` use the active sets (`op-env use`; with no `envsets/.active`, every set is active). Once `.active` exists, a `.tsv` you create by hand is **not** loaded until you add it with `op-env use` (`op-env list` shows it as `○ inactive`); `op-env add` to a new set activates it for you. If two sets define the same variable, the first one wins: sets are read in the order listed in `envsets/.active` (what `op-env use` writes), or alphabetically when that file does not exist. With no secrets configured, `op-env load` does nothing and does not sign in. A variable removed from a set, or a set that is deactivated, is unset on the next plain `op-env load`. When a secret fails to load, `op-env load` prints the first line of `op`'s error under it, with the account it used, so a wrong `OP_ACCOUNT` or a missing vault is visible instead of a bare "failed to load".
 
 **Secrets in more than one account:** a line may carry an optional third TAB-separated column naming the account that holds that reference, so a set can span accounts:
