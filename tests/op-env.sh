@@ -711,15 +711,16 @@ clean_sets; unset FAKE_OP_LOG
 
 # Tab completion: the candidates are shared, each shell has a thin wrapper.
 printf 'A\top://v/i/a\n' > "$sets/alpha.tsv"; printf 'B\top://v/i/b\n' > "$sets/beta.tsv"
-cands() { _op_env_candidates "$@" | tr '\n' ' '; }
-chk "completion: no subcommand yet offers the subcommands" '[[ "$(cands "" 0)" == "load clear add list rm use help " ]]'
-chk "completion: load offers the set names, for every argument" '[[ "$(cands load 0)" == "alpha beta " && "$(cands load 3)" == "alpha beta " ]]'
-chk "completion: clear and use offer them too" '[[ "$(cands clear 0)" == "alpha beta " && "$(cands use 1)" == "alpha beta " ]]'
-chk "completion: list and rm take one set name" '[[ "$(cands list 0)" == "alpha beta " && -z "$(cands list 1)" && "$(cands rm 0)" == "alpha beta " && -z "$(cands rm 1)" ]]'
+cands() { _op_env_candidates "$@" | tr '\n' ' '; }   # SUB [typed args...]
+printf 'KEY_ONE\top://v/i/1\nKEY_TWO\top://v/i/2\n' > "$sets/alpha.tsv"
+chk "completion: no subcommand yet offers the subcommands" '[[ "$(cands "")" == "load clear add list rm use help " ]]'
+chk "completion: load, clear and use offer the set names" '[[ "$(cands load)" == "alpha beta " && "$(cands clear)" == "alpha beta " && "$(cands use)" == "alpha beta " ]]'
+chk "completion: ...but not one already on the line" '[[ "$(cands load alpha)" == "beta " && "$(cands use alpha beta)" == "" ]]'
+chk "completion: list and add take one set name" '[[ "$(cands list)" == "alpha beta " && -z "$(cands list alpha)" && "$(cands add)" == "alpha beta " && -z "$(cands add alpha)" ]]'
+chk "completion: rm takes a set, then that set's keys, then nothing" '[[ "$(cands rm)" == "alpha beta " && "$(cands rm alpha)" == "KEY_ONE KEY_TWO " && -z "$(cands rm alpha KEY_ONE)" && -z "$(cands rm nope)" ]]'
 printf 'X\top://v/i/x\n' > "$sets/Bad Name.tsv"
-chk "completion: a set name op-env would reject is not offered" '[[ "$(cands load 0)" == "alpha beta " ]]'
+chk "completion: a set name op-env would reject is not offered" '[[ "$(cands load)" == "alpha beta " ]]'
 rm -f "$sets/Bad Name.tsv"
-chk "completion: add offers nothing (it may create a set)" '[[ -z "$(cands add 0)" ]]'
 if [[ -n "${ZSH_VERSION:-}" ]]; then
   compadd() { local a; for a; do [[ "$a" == -- ]] || printf '%s ' "$a"; done; }   # stand-in for the zsh builtin: print what would be offered
   words=(op-env ""); CURRENT=2
@@ -728,6 +729,10 @@ if [[ -n "${ZSH_VERSION:-}" ]]; then
   chk "completion (zsh): set names after load" '[[ "$(_op_env_complete_zsh)" == "alpha beta " ]]'
   words=(op-env list alpha ""); CURRENT=4
   chk "completion (zsh): list takes just one" '[[ -z "$(_op_env_complete_zsh)" ]]'
+  words=(op-env load alpha ""); CURRENT=4
+  chk "completion (zsh): sets already typed are left out" '[[ "$(_op_env_complete_zsh)" == "beta " ]]'
+  words=(op-env rm alpha ""); CURRENT=4
+  chk "completion (zsh): rm <set> offers its keys" '[[ "$(_op_env_complete_zsh)" == "KEY_ONE KEY_TWO " ]]'
   unset -f compadd
   # Registered on the first prompt when compinit runs after this file is sourced.
   zout=$( autoload -Uz compinit; compinit -u -d "$T/zcompdump" >/dev/null 2>&1; _op_env_register_zsh; printf '%s' "${_comps[op-env]}" )
@@ -737,9 +742,13 @@ else
   chk "completion (bash): subcommands filtered by what is typed" '[[ "${COMPREPLY[*]}" == "load list" ]]'
   COMP_WORDS=(op-env load al); COMP_CWORD=2; _op_env_complete_bash
   chk "completion (bash): set names filtered by what is typed" '[[ "${COMPREPLY[*]}" == alpha ]]'
+  COMP_WORDS=(op-env load alpha ""); COMP_CWORD=3; _op_env_complete_bash
+  chk "completion (bash): sets already typed are left out" '[[ "${COMPREPLY[*]}" == beta ]]'
+  COMP_WORDS=(op-env rm alpha K); COMP_CWORD=3; _op_env_complete_bash
+  chk "completion (bash): rm <set> offers its keys" '[[ "${COMPREPLY[*]}" == "KEY_ONE KEY_TWO" ]]'
   chk "completion (bash): registered for op-env" '[[ "$(complete -p op-env)" == *_op_env_complete_bash* ]]'
 fi
-chk "op-env help has examples and mentions completion" '[[ "$(op-env help)" == *"Examples:"* && "$(op-env help)" == *"Tab completes"* ]]'
+chk "op-env help has examples (right after the command list) and mentions completion" '[[ "$(op-env help)" == *"op-env help"*"Examples:"*"Tab completes"*"Sets (e.g."* ]]'
 clean_sets
 
 # ── shared fixture ────────────────────────────────────────────────────────────

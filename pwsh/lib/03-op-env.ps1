@@ -63,14 +63,15 @@ function New-OpEnvTempPath {
 # a completer registered for a function does not apply to its alias.
 Register-ArgumentCompleter -CommandName 'Invoke-OpEnv', 'op-env' -ParameterName Command -ScriptBlock {
     param($cmd, $param, $word)
-    Get-OpEnvCompletion -Sub '' -Given 0 -Word $word
+    Get-OpEnvCompletion -Sub '' -Word $word
 }
 Register-ArgumentCompleter -CommandName 'Invoke-OpEnv', 'op-env' -ParameterName Arguments -ScriptBlock {
     param($cmd, $param, $word, $ast, $bound)
-    # Earlier arguments are not in $bound, so count them from the command line: everything after the
+    # Earlier arguments are not in $bound, so read them off the command line: everything after the
     # command and the subcommand, less the word being completed when it is not empty.
-    $given = $ast.CommandElements.Count - 2 - $(if ($word) { 1 } else { 0 })
-    Get-OpEnvCompletion -Sub "$($bound['Command'])" -Given ([Math]::Max(0, $given)) -Word $word
+    $typed = @($ast.CommandElements | Select-Object -Skip 2 | ForEach-Object { $_.Extent.Text })
+    if ($word -and $typed.Count -gt 0) { $typed = @($typed | Select-Object -SkipLast 1) }
+    Get-OpEnvCompletion -Sub "$($bound['Command'])" -Typed $typed -Word $word
 }
 
 function Get-OpEnvRawLines {
@@ -353,6 +354,14 @@ op-env manages named env sets backed by 1Password references.
   op-env use [set...]                 Choose active sets (a multi-select picker if omitted)
   op-env help                         This message
 
+Examples:
+  op-env add work NPM_TOKEN 'op://Private/npm/credential'   Put a secret in the "work" set
+  op-env load work                                          Load just the work secrets
+  op-env clear work                                         Unset just the work secrets again
+  op-env use work personal                                  Make a plain op-env load use these two
+
+Tab completes the subcommands, set names, and (for rm) the keys of a set.
+
 Sets (e.g. guild, personal) are stored in envsets\<set>.tsv, one
 VAR<TAB>op://vault/item/field per line, and are the only list of secrets
 `op-env load` and `op-env clear` use.
@@ -373,30 +382,28 @@ account per call, so `op-env load` batches one `op run` per account:
   op-env add guild ATLASSIAN_TOKEN 'op://Employee/Some Item/credential' my-team.1password.com
 
 Re-adding a key without an account keeps the one already on the line.
-
-Examples:
-  op-env add work NPM_TOKEN 'op://Private/npm/credential'   Put a secret in the "work" set
-  op-env load work                                          Load just the work secrets
-  op-env clear work                                         Unset just the work secrets again
-  op-env use work personal                                  Make a plain op-env load use these two
-
-Tab completes the subcommands and the set names.
 '@
 }
 
 function Get-OpEnvCompletion {
-    # What `op-env <TAB>` offers (mirrors bash _op_env_candidates): the subcommands, then set names
-    # after load, clear, use, list or rm (list and rm take one). Never throws: a completer that errors
-    # prints a stack trace into the user's prompt.
-    param([string]$Sub, [int]$Given, [string]$Word)
+    # What `op-env <TAB>` offers (mirrors bash _op_env_candidates): the subcommands; then set names
+    # (load, clear and use take any number, none twice; list, add and rm take one) and, for `rm <set>`,
+    # that set's keys. $Typed are the arguments already on the line, not the word being completed.
+    # Never throws: a completer that errors prints a stack trace into the user's prompt.
+    param([string]$Sub, [string[]]$Typed = @(), [string]$Word)
     try {
+        $typed = @($Typed)
+        $sets = { @(Get-OpEnvSetNameList | Where-Object { $_ -cmatch $script:OpSetPattern }) }
         $names = switch ($Sub) {
-            ''                                   { 'load', 'clear', 'add', 'list', 'rm', 'use', 'help' }
-            { $_ -in 'load', 'clear', 'use' }    { Get-OpEnvSetNameList }
-            { $_ -in 'list', 'ls', 'rm', 'remove' } { if ($Given -eq 0) { Get-OpEnvSetNameList } }
+            ''                                       { 'load', 'clear', 'add', 'list', 'rm', 'use', 'help' }
+            { $_ -in 'load', 'clear', 'use' }        { & $sets | Where-Object { $typed -cnotcontains $_ } }
+            { $_ -in 'list', 'ls', 'add' }           { if ($typed.Count -eq 0) { & $sets } }
+            { $_ -in 'rm', 'remove' }                {
+                if ($typed.Count -eq 0) { & $sets }
+                elseif ($typed.Count -eq 1 -and $typed[0] -cmatch $script:OpSetPattern) { (Get-PreflightEnvEntry -Set $typed[0]).Name }
+            }
         }
-        # Subcommands and valid set names only: a stray "My Set.tsv" lists but cannot be loaded.
-        foreach ($n in @($names | Where-Object { $Sub -eq '' -or $_ -cmatch $script:OpSetPattern })) {
+        foreach ($n in @($names)) {
             if ($n -like "$Word*") { [System.Management.Automation.CompletionResult]::new($n, $n, 'ParameterValue', $n) }
         }
     } catch { Write-Verbose "op-env completion: $_" }
