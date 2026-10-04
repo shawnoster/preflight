@@ -17,6 +17,13 @@ PowerShell skips a plugin with no PowerShell side (like `nanoleaf`) without a wa
 
 PowerShell reads the same `plugins` list.
 
+## Disabling
+
+Remove the name from the list and open a new terminal: the plugin's functions, `PATH` entries, hooks and colors are gone from new shells (a shell that is already open keeps them until it closes). What a plugin wrote is left alone:
+
+- `owl`: `~/.local/state/preflight/owl/` (your theme choice and the patched Oh My Posh config). Delete the directory to start over.
+- `nanoleaf`: `~/.config/nanoleaf-direct/env` keeps the last `NANOLEAF_TOKEN` (kept on purpose so cron jobs still work). **Delete that file to revoke it** once you no longer want it on disk.
+
 ## Available
 
 | Plugin | What it adds |

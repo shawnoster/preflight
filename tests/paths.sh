@@ -30,7 +30,7 @@ fresh() {
   rm -rf "$T/home" "$T/pf"
   mkdir -p "$T/home" "$T/pf"
   cp -R "$R/lib" "$R/defaults" "$R/plugins" "$R/init.sh" "$T/pf/"
-  unset PREFLIGHT_CONFIG_DIR PREFLIGHT_STATE_DIR XDG_CONFIG_HOME XDG_STATE_HOME OWL_THEME_DIR
+  unset PREFLIGHT_CONFIG_DIR PREFLIGHT_STATE_DIR XDG_CONFIG_HOME XDG_STATE_HOME OWL_THEME_DIR OWL_BODY OWL_EYES OWL_TEXT OWL_SUB
   # Settings a developer already has exported would win over config.json.
   PATH=$(printf %s "$PATH" | tr ":" "\n" | grep -v "/plugins/nanoleaf/bin$" | paste -sd: -)   # a dev with the plugin on has it on PATH
   unset OP_ACCOUNT PROJ_DIRS AWS_PROFILE_DEFAULT GIT_MAIN_BRANCH GITEA_USERNAME GITEA_HOST OWL_OMP_CONFIG PREFLIGHT_PLUGINS _CHECK_AWS _CHECK_GH _CHECK_SSH _CHECK_GIT_CONFIG
@@ -229,6 +229,12 @@ chk "plugins: one named in config.json loads (owl-theme defined)"  '[[ -n "$(sou
 chk "plugins: ...and seeds its base theme in the state dir"        '[[ -f "$HOME/.local/state/preflight/owl/theme-catppuccin.omp.json" ]]'
 printf '{"plugins": ["nanoleaf"]}' > "$HOME/.config/preflight/config.json"
 chk "plugins: nanoleaf puts its scripts on PATH and registers its after-load hook" '[[ "$(source "$PREFLIGHT_DIR/init.sh" >/dev/null 2>&1 </dev/null; command -v light-remind nanoleaf-kitt nanoleaf-streak | wc -l | tr -d " ")" == 3 && "$(source "$PREFLIGHT_DIR/init.sh" >/dev/null 2>&1 </dev/null; echo " ${_OP_AFTER_LOAD_HOOKS[*]} ")" == *" _op_sync_nanoleaf_env "* ]]'
+# Disabling: a new shell is clean again. What the plugins wrote stays (the nanoleaf token copy is kept on purpose).
+printf '{"plugins": ["owl", "nanoleaf"]}' > "$HOME/.config/preflight/config.json"
+( source "$PREFLIGHT_DIR/init.sh" >/dev/null 2>&1 </dev/null; NANOLEAF_TOKEN=tok _op_sync_nanoleaf_env )
+printf '{"plugins": []}' > "$HOME/.config/preflight/config.json"
+chk "plugins: once disabled, a new shell has no owl, no nanoleaf, no hook, no colors" '[[ -z "$(source "$PREFLIGHT_DIR/init.sh" >/dev/null 2>&1 </dev/null; type owl-theme _op_sync_nanoleaf_env >/dev/null 2>&1 && echo fn; command -v light-remind; printf %s "${OWL_BODY:-}"; case " ${_OP_AFTER_LOAD_HOOKS[*]:-} " in *_op_sync_nanoleaf_env*) echo hook ;; esac)" ]]'
+chk "plugins: ...and the files they wrote are left alone (theme state, the nanoleaf token copy)" '[[ -f "$HOME/.local/state/preflight/owl/theme-catppuccin.omp.json" && -f "$HOME/.config/nanoleaf-direct/env" ]]'
 printf '{"plugins": ["nope", "Bad Name"]}' > "$HOME/.config/preflight/config.json"
 out=$(source "$PREFLIGHT_DIR/init.sh" 2>&1 </dev/null)
 chk "plugins: an unknown plugin warns and does not stop the shell" '[[ "$out" == *"plugin '"'"'nope'"'"' not found"* && "$out" == *"ignoring plugin"* ]]'
