@@ -46,5 +46,28 @@ if (Resolve-PreflightDirs) {
     $script:PreflightConfigError  = 'the config or state directory overlaps the install directory'
 }
 
+# ---- Plugins ----------------------------------------------------------------
+# Opt-in extras (see plugins/README.md at the repo root): "plugins": ["owl"] in config.json, or
+# `$env:PREFLIGHT_PLUGINS`. Nothing loads by default. Each one is plugins\<name>.ps1, dot-sourced
+# here so it shares the module's scope. A missing or broken plugin warns and never fails the import.
+# The manifest still lists every plugin's exports; a name that was not loaded is simply not exported.
+$pluginDir = Join-Path $PSScriptRoot 'plugins'
+foreach ($pluginName in @("$env:PREFLIGHT_PLUGINS".Split([System.IO.Path]::PathSeparator, [System.StringSplitOptions]::RemoveEmptyEntries))) {
+    if ($pluginName -cnotmatch '^[a-z][a-z0-9-]*$') {
+        Write-Warning "Preflight: ignoring plugin '$pluginName' (names are lowercase letters, digits and -)"
+        continue
+    }
+    $pluginFile = Join-Path $pluginDir "$pluginName.ps1"
+    if (-not (Test-Path -LiteralPath $pluginFile -PathType Leaf)) {
+        Write-Warning "Preflight: plugin '$pluginName' not found ($pluginFile)"
+        continue
+    }
+    try {
+        . $pluginFile
+    } catch {
+        Write-Warning "Preflight: plugin '$pluginName' failed to load: $_"
+    }
+}
+
 # Functions and aliases are exported via the manifest's FunctionsToExport /
 # AliasesToExport — no Export-ModuleMember calls needed here.

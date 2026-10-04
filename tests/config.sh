@@ -32,7 +32,7 @@ source "$R/lib/paths.sh"
 source "$R/lib/prompt.sh"
 source "$R/lib/config.sh"
 
-MANAGED="OP_ACCOUNT PROJ_DIRS AWS_PROFILE_DEFAULT GIT_MAIN_BRANCH GITEA_USERNAME GITEA_HOST _CHECK_AWS _CHECK_GH _CHECK_SSH _CHECK_GIT_CONFIG OWL_OMP_CONFIG"
+MANAGED="OP_ACCOUNT PROJ_DIRS AWS_PROFILE_DEFAULT GIT_MAIN_BRANCH GITEA_USERNAME GITEA_HOST _CHECK_AWS _CHECK_GH _CHECK_SSH _CHECK_GIT_CONFIG OWL_OMP_CONFIG PREFLIGHT_PLUGINS"
 # Forget every setting, as a brand-new shell would see it.
 reset() {
   local v
@@ -254,19 +254,20 @@ chk "config help has no backtick left to run"       '[[ "$(sed -n "/^_pf_config_
 # ── preflight config init ─────────────────────────────────────────────────────
 # Answers are fed with --stdin, one per line in table order: op.account, projects.dirs,
 # aws.default_profile, git.main_branch, gitea.username, gitea.host, checks.aws, checks.gh,
-# checks.ssh, checks.git_config, owl.omp_config. Called in the current shell (process
+# checks.ssh, checks.git_config, owl.omp_config, plugins. Called in the current shell (process
 # substitution, not a pipe) so the loader's variables can be checked afterwards.
 init_with() { _pf_config_init --stdin < <(printf '%s\n' "$@") >"$T/init.out" 2>&1; }
 KEEP=""   # an empty line keeps the current value
 reset; cp "$R/defaults/config.company.json" "$CFG"; _pf_config_load; before=$(cat "$CFG")
-init_with "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP"; rc=$?
+init_with "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP"; rc=$?
 chk "init: all Enter keeps everything and writes nothing" '[[ $rc -eq 0 && "$(cat "$CFG")" == "$before" && "$(cat "$T/init.out")" == *"No changes"* ]]'
 
-init_with "new.1password.com" "~/x:~/y" "-" "trunk" "$KEEP" "gitea.example.com" "no" "$KEEP" "yes" "$KEEP" "-"; rc=$?
+init_with "new.1password.com" "~/x:~/y" "-" "trunk" "$KEEP" "gitea.example.com" "no" "$KEEP" "yes" "$KEEP" "-" "owl"; rc=$?
 chk "init: succeeds"                          '[[ $rc -eq 0 ]]'
 chk "init: string, list and clear are written" '[[ "$(jq -r .op.account "$CFG")" == new.1password.com && "$(jq -c .projects.dirs "$CFG")" == "[\"~/x\",\"~/y\"]" && "$(jq -r .aws.default_profile "$CFG")" == "" && "$(jq -r .git.main_branch "$CFG")" == trunk ]]'
 chk "init: yes/no become JSON booleans"       '[[ "$(jq -c .checks "$CFG")" == "{\"aws\":false,\"gh\":true,\"ssh\":true,\"git_config\":true}" ]]'
 chk "init: - clears the Oh My Posh path"      '[[ "$(jq -r .owl.omp_config "$CFG")" == "" ]]'
+chk "init: plugins are written as a JSON array" '[[ "$(jq -c .plugins "$CFG")" == "[\"owl\"]" && "$PREFLIGHT_PLUGINS" == owl ]]'
 chk "init: kept keys and version are untouched" '[[ "$(jq -r .version "$CFG")" == 1 && "$(jq -r .gitea.host "$CFG")" == gitea.example.com && "$(jq -r .gitea.username "$CFG")" == "" ]]'
 chk "init: the shell picks up the new values" '[[ "$OP_ACCOUNT" == new.1password.com && "$GIT_MAIN_BRANCH" == trunk && "$_CHECK_AWS" == 0 ]]'
 chk "init: reports how many changed"          '[[ "$(cat "$T/init.out")" == *"changed in"* ]]'
@@ -274,7 +275,7 @@ chk "init: leaves no temp files"              '[[ -z "$(find "$PREFLIGHT_CONFIG_
 chk "init: the result passes check"           '_pf_config_check >/dev/null'
 
 # The current value is shown as the default.
-init_with "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP"
+init_with "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP"
 chk "init: prompts show the current value"    '[[ "$(cat "$T/init.out")" == *"[new.1password.com]"* && "$(cat "$T/init.out")" == *"[~/x:~/y]"* && "$(cat "$T/init.out")" == *"[false]"* ]]'
 
 # Stopping part-way writes nothing, even after some answers were given.
@@ -303,7 +304,7 @@ chk "init: invalid JSON is refused and left alone" '[[ $rc -ne 0 && "$(cat "$CFG
 
 # No file yet: only the answered keys are written, plus the version.
 reset; rm -f "$CFG"
-init_with "fresh.1password.com" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP"; rc=$?
+init_with "fresh.1password.com" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP"; rc=$?
 chk "init: with no file, creates it with just version and the answered key" '[[ $rc -eq 0 && "$(jq -c . "$CFG")" == "{\"version\":1,\"op\":{\"account\":\"fresh.1password.com\"}}" ]]'
 
 # The "your own variable keeps winning" note is built from a newline-delimited list, so it works where an
@@ -323,7 +324,7 @@ unset GIT_MAIN_BRANCH OP_ACCOUNT
 
 # A symlinked config.json is edited at its target.
 reset; mkdir -p "$T/dots"; cp "$R/defaults/config.company.json" "$T/dots/config.json"; rm -f "$CFG"; ln -s "$T/dots/config.json" "$CFG"
-init_with "linked.1password.com" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP"
+init_with "linked.1password.com" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP"
 chk "init: through a symlink keeps the link and writes the target" '[[ -L "$CFG" && "$(jq -r .op.account "$T/dots/config.json")" == linked.1password.com ]]'
 rm -f "$CFG"
 

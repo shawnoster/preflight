@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
-# ~/.preflight/lib/owl.sh — OOO (Obtusely Optimistic Owl)
+# ~/.preflight/plugins/owl/plugin.sh — OOO (Obtusely Optimistic Owl)
+#
+# An opt-in plugin: init.sh sources it only when "owl" is in the config.json `plugins` list.
+# Loading it takes over the MOTD and (with Oh My Posh) the prompt, so it is never on by default.
 #
 # Provides:
 #   owl-theme [name]        — switch Oh My Posh palette + prompt icon (persists)
@@ -400,3 +403,52 @@ _owl_splash() {
   printf "  ${RUST}-\"-\"-${R}     ${TEXT}${date_str}${R} ${SUB}· ↑ ${uptime_str}${R}\n"
   printf "\n"
 }
+
+# ── Startup (init.sh sources this file after the settings are loaded) ─────────
+
+# Seed the user-owned OMP copy that owl-theme patches (it refuses to touch Oh My Posh's own theme
+# directory). The state dir is the user's, so owl-theme is free to rewrite the palette. Never
+# overwrites an existing copy: that one may hold the user's palette changes.
+if [[ ! -f "$PREFLIGHT_STATE_DIR/owl/theme-catppuccin.omp.json" ]] \
+    && [[ -f "$PREFLIGHT_DIR/defaults/theme-catppuccin.omp.json" ]]; then
+  mkdir -p "$PREFLIGHT_STATE_DIR/owl"
+  cp "$PREFLIGHT_DIR/defaults/theme-catppuccin.omp.json" \
+     "$PREFLIGHT_STATE_DIR/owl/theme-catppuccin.omp.json"
+  echo "📋 Created $PREFLIGHT_STATE_DIR/owl/theme-catppuccin.omp.json (owl-theme base theme)"
+fi
+
+# Load the active theme colors (exported as OWL_BODY/EYES/TEXT/SUB; lib/preflight.sh uses them).
+_owl_theme_load
+
+# Show the MOTD once per interactive session.
+#
+# This used to gate on `$SHLVL -eq 1`, which never fires under WSL + VS Code
+# (the login shell already starts at SHLVL 3), so the splash silently stopped
+# appearing. An exported marker is the right test: a genuinely new terminal
+# starts with a clean environment and shows it once, while nested shells,
+# subshells and tmux panes inherit the marker and stay quiet.
+# Set PREFLIGHT_NO_SPLASH=1 to suppress it entirely.
+if [[ $- == *i* && -z "${PREFLIGHT_SPLASH_SHOWN:-}" && -z "${PREFLIGHT_NO_SPLASH:-}" ]]; then
+  export PREFLIGHT_SPLASH_SHOWN=1
+  _owl_splash
+fi
+
+# Initialize Oh My Posh if configured and available.
+#
+# `oh-my-posh init bash` costs ~55ms of subprocess on *every* shell, which is
+# why this used to route through _preflight_cache_eval (generate once, source
+# the cached script after — see PR #31 for a real bug that path had on
+# oh-my-posh 26.x). Even with that fixed, the cache-hit path still produces a
+# wrong prompt: on a clean cache, sourcing the cached omp-init script renders
+# oh-my-posh's own fallback theme instead of $OWL_OMP_CONFIG on the first
+# prompt of a new shell — reproduced 3/3 on a clean `~/.cache/oh-my-posh` +
+# `~/.cache/preflight`, every time, regardless of _preflight_omp_generate's
+# output being correct and non-empty. A live, uncached
+# `eval "$(oh-my-posh init bash --config ...)")` — the same call `owl-theme`
+# makes — has not failed once across the same repro. The exact internal
+# oh-my-posh mechanism this depends on wasn't pinned down (a subshell/pipe
+# theory didn't hold up under testing), but the cache-vs-live split is
+# solid and repeatable, so skip the cache for this one and always eval live.
+if [[ -n "${OWL_OMP_CONFIG:-}" ]] && [[ -f "$OWL_OMP_CONFIG" ]] && command -v oh-my-posh &>/dev/null; then
+  eval "$(oh-my-posh init bash --config "$OWL_OMP_CONFIG")"
+fi

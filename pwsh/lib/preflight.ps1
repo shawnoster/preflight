@@ -689,13 +689,17 @@ function Update-Preflight {
             Write-Error "Cloned repo missing expected pwsh/ directory — aborting."
             return
         }
-        # Collect files to copy: lib/*.ps1, Preflight.psd1, Preflight.psm1, install.ps1, and the
+        # Collect files to copy: lib/*.ps1, plugins/*.ps1, Preflight.psd1, Preflight.psm1, install.ps1, and the
         # bundled defaults\ (kept beside the pwsh\ directory, where install.ps1 looks for them).
         # Only code and bundled defaults are copied: user config lives outside the install directory.
         $installParent = Split-Path -Parent $installRoot
         $srcFiles = @(
             Get-ChildItem -LiteralPath (Join-Path $srcPwsh 'lib') -Filter '*.ps1' -File |
                 ForEach-Object { @{ Src = $_.FullName; Rel = "lib\$($_.Name)"; Dest = (Join-Path (Join-Path $installRoot 'lib') $_.Name) } }
+            if (Test-Path -LiteralPath (Join-Path $srcPwsh 'plugins') -PathType Container) {
+                Get-ChildItem -LiteralPath (Join-Path $srcPwsh 'plugins') -Filter '*.ps1' -File |
+                    ForEach-Object { @{ Src = $_.FullName; Rel = "plugins\$($_.Name)"; Dest = (Join-Path (Join-Path $installRoot 'plugins') $_.Name) } }
+            }
             @{ Src = Join-Path $srcPwsh 'Preflight.psd1'; Rel = 'Preflight.psd1'; Dest = Join-Path $installRoot 'Preflight.psd1' }
             @{ Src = Join-Path $srcPwsh 'Preflight.psm1'; Rel = 'Preflight.psm1'; Dest = Join-Path $installRoot 'Preflight.psm1' }
             @{ Src = Join-Path $srcPwsh 'install.ps1';    Rel = 'install.ps1';    Dest = Join-Path $installRoot 'install.ps1' }

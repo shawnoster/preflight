@@ -41,7 +41,8 @@ Missing-file copying is the only behavior: it never overwrites an existing live 
 - **Project navigation** — `lib/project.sh`: workspace/project switching helpers
 - **Paths** — `lib/paths.sh`: `_pf_resolve_dirs` (exports `PREFLIGHT_CONFIG_DIR` / `PREFLIGHT_STATE_DIR`, refuses a layout that shares the clone) and `_pf_safe_rm_dir` (the guard every `rm -rf` of a directory goes through, including `preflight uninstall --purge`)
 - **Prompting** — `lib/prompt.sh`: `_pf_ask`, the Bash/zsh-portable replacement for `read -p`
-- **OOO Theme Engine** — `lib/owl.sh`: shell MOTD splash (`_owl_splash`) and Oh My Posh theme switcher (`owl-theme`). 8 themes, each with a name, color palette for the splash, and hex palette for OMP. Theme state persists in `$PREFLIGHT_STATE_DIR/owl/current`. OMP integration is optional — configured via the `owl.omp_config` key in `config.json`.
+- **Plugins** — `plugins/<name>/plugin.sh` (bash/zsh) and `pwsh/plugins/<name>.ps1` (PowerShell), loaded only when named in the `plugins` list in `config.json` (`PREFLIGHT_PLUGINS`); nothing loads by default, so the core never changes how a shell looks. `init.sh` / `Preflight.psm1` do the loading; the core must not depend on a plugin. See `plugins/README.md`.
+- **OOO Theme Engine (the `owl` plugin)** — `plugins/owl/plugin.sh`: shell MOTD splash (`_owl_splash`) and Oh My Posh theme switcher (`owl-theme`). 8 themes, each with a name, color palette for the splash, and hex palette for OMP. Theme state persists in `$PREFLIGHT_STATE_DIR/owl/current`. OMP integration is optional — configured via the `owl.omp_config` key in `config.json`.
 
 ## Patterns & Tech
 
@@ -59,7 +60,7 @@ Read this repo when working on:
 - **WSL SSH setup with 1Password** — `docs/wsl-ssh-setup.md` covers prerequisites; `preflight configure` installs the systemd + npiperelay agent bridge 
 - **Adding new shell utilities for all engineers** — add a new `lib/<domain>.sh` file
 - **1Password CLI integration for secrets** — `lib/onepassword.sh` has the sign-in flow for WSL/headless environments; `lib/envsets.sh` has the list of secrets
-- **Shell MOTD or theme customization** — `lib/owl.sh` has the theme engine and splash; the `owl.omp_config` key controls `OWL_OMP_CONFIG`; `OWL_THEME_DIR` is environment-only
+- **Shell MOTD or theme customization** — `plugins/owl/plugin.sh` has the theme engine and splash (an opt-in plugin); the `owl.omp_config` key controls `OWL_OMP_CONFIG`; `OWL_THEME_DIR` is environment-only
 
 **Skip this repo when**: You need CI/CD automation, GitHub Actions, deployed tooling, or anything that runs outside a developer's local shell.
 
@@ -77,7 +78,8 @@ Read this repo when working on:
 | 1Password utilities | `lib/onepassword.sh` |
 | Which secrets load (`op-env`) | `lib/envsets.sh` (data in `$PREFLIGHT_CONFIG_DIR/envsets/*.tsv`, outside the clone) |
 | Account/env config | `lib/config.sh` (table + loader + `preflight config`), `docs/config.md`, `defaults/config.*.json` (profile auto-copied to `$PREFLIGHT_CONFIG_DIR/config.json` on first load) |
-| Owl theme + OMP config | `owl.omp_config` in `config.json`; base theme in `defaults/theme-catppuccin.omp.json` |
+| Owl theme + OMP config | `owl.omp_config` in `config.json`; base theme in `defaults/theme-catppuccin.omp.json` (seeded by the owl plugin) |
+| Opt-in plugins | `plugins/README.md`, `plugins/<name>/plugin.sh`, `pwsh/plugins/` |
 | Config/state directories, safe-rm guard | `lib/paths.sh` |
 | PowerShell settings + env sets + `op-env` (`pwsh/lib/00-paths.ps1`, `01-config.ps1`, `02-envsets.ps1`, `03-op-env.ps1`; same formats and rules as bash; `op-env` is the alias of `Invoke-OpEnv`) | `pwsh/README.md`, tested by `tests/config.ps1` (run from `tests/config.sh` when `pwsh` is installed; `tests/op-env.sh` checks that both `op-env`s write identical files) |
 | WSL SSH setup guide | `docs/wsl-ssh-setup.md` |

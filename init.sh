@@ -96,18 +96,6 @@ if [[ ! -f "$PREFLIGHT_CONFIG_DIR/config.json" ]]; then
   unset _pf_profiles _pf_file _pf_base _pf_idx _pf_label _pf_choice _pf_pick
 fi
 
-# Owl base theme: ensure the user-owned OMP copy that owl-theme patches exists
-# (covers installs that predate the bundled theme, and `preflight update`).
-# The state dir is the user's, so owl-theme is free to rewrite the palette. Never
-# overwrites an existing copy — that one may hold the user's palette changes.
-if [[ ! -f "$PREFLIGHT_STATE_DIR/owl/theme-catppuccin.omp.json" ]] \
-    && [[ -f "$PREFLIGHT_DIR/defaults/theme-catppuccin.omp.json" ]]; then
-  mkdir -p "$PREFLIGHT_STATE_DIR/owl"
-  cp "$PREFLIGHT_DIR/defaults/theme-catppuccin.omp.json" \
-     "$PREFLIGHT_STATE_DIR/owl/theme-catppuccin.omp.json"
-  echo "📋 Created $PREFLIGHT_STATE_DIR/owl/theme-catppuccin.omp.json (owl-theme base theme)"
-fi
-
 # ── Source all library scripts ────────────────────────────────────────────────
 
 # A fixed path in a world-writable /tmp is both a symlink-clobber target and a
@@ -128,45 +116,33 @@ unset _pf_lib_err lib
 
 _pf_config_load
 
-# ── Owl theme + splash ────────────────────────────────────────────────────────
+# ── Plugins ───────────────────────────────────────────────────────────────────
 
-# Load active theme colors (exported as OWL_BODY/EYES/TEXT/SUB for preflight.sh)
-# Guarded: lib sourcing above tolerates a failed owl.sh, so this must too —
-# otherwise a broken owl.sh turns into a command-not-found on every shell.
-declare -F _owl_theme_load >/dev/null && _owl_theme_load
-
-# Show MOTD once per interactive session.
-#
-# This used to gate on `$SHLVL -eq 1`, which never fires under WSL + VS Code
-# (the login shell already starts at SHLVL 3), so the splash silently stopped
-# appearing. An exported marker is the right test: a genuinely new terminal
-# starts with a clean environment and shows it once, while nested shells,
-# subshells and tmux panes inherit the marker and stay quiet.
-# Set PREFLIGHT_NO_SPLASH=1 to suppress it entirely.
-if [[ $- == *i* && -z "${PREFLIGHT_SPLASH_SHOWN:-}" && -z "${PREFLIGHT_NO_SPLASH:-}" ]]; then
-  export PREFLIGHT_SPLASH_SHOWN=1
-  declare -F _owl_splash >/dev/null && _owl_splash
-fi
-
-# Initialize Oh My Posh if configured and available.
-#
-# `oh-my-posh init bash` costs ~55ms of subprocess on *every* shell, which is
-# why this used to route through _preflight_cache_eval (generate once, source
-# the cached script after — see PR #31 for a real bug that path had on
-# oh-my-posh 26.x). Even with that fixed, the cache-hit path still produces a
-# wrong prompt: on a clean cache, sourcing the cached omp-init script renders
-# oh-my-posh's own fallback theme instead of $OWL_OMP_CONFIG on the first
-# prompt of a new shell — reproduced 3/3 on a clean `~/.cache/oh-my-posh` +
-# `~/.cache/preflight`, every time, regardless of _preflight_omp_generate's
-# output being correct and non-empty. A live, uncached
-# `eval "$(oh-my-posh init bash --config ...)")` — the same call `owl-theme`
-# makes — has not failed once across the same repro. The exact internal
-# oh-my-posh mechanism this depends on wasn't pinned down (a subshell/pipe
-# theory didn't hold up under testing), but the cache-vs-live split is
-# solid and repeatable, so skip the cache for this one and always eval live.
-if [[ -n "${OWL_OMP_CONFIG:-}" ]] && [[ -f "$OWL_OMP_CONFIG" ]] && command -v oh-my-posh &>/dev/null; then
-  eval "$(oh-my-posh init bash --config "$OWL_OMP_CONFIG")"
-fi
+# Opt-in extras that change how the shell looks or behaves beyond the core helpers
+# (see plugins/README.md). Nothing loads by default: name them in config.json
+# ("plugins": ["owl"]) or `preflight config set plugins owl`. Each one is
+# plugins/<name>/plugin.sh. A missing or broken plugin warns and never blocks the shell.
+_pf_plugins_load() {
+  local name file rest="${PREFLIGHT_PLUGINS:-}"
+  # Split on ':' by hand: `read -a` is Bash-only and zsh does not word-split a bare $var.
+  while [[ -n "$rest" ]]; do
+    name="${rest%%:*}"
+    if [[ "$rest" == *:* ]]; then rest="${rest#*:}"; else rest=""; fi
+    [[ -n "$name" ]] || continue
+    if [[ ! "$name" =~ ^[a-z][a-z0-9-]*$ ]]; then
+      echo "⚠️  preflight: ignoring plugin '$name' (names are lowercase letters, digits and -)"
+      continue
+    fi
+    file="$PREFLIGHT_DIR/plugins/$name/plugin.sh"
+    if [[ ! -f "$file" ]]; then
+      echo "⚠️  preflight: plugin '$name' not found ($file)"
+      continue
+    fi
+    source "$file" || echo "⚠️  preflight: plugin '$name' failed to load"
+  done
+}
+_pf_plugins_load
+unset -f _pf_plugins_load
 
 # ── Optional: print loaded status ────────────────────────────────────────────
 

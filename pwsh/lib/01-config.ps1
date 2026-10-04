@@ -26,6 +26,7 @@ checks.gh|_CHECK_GH|b|-|1
 checks.ssh|_CHECK_SSH|b|-|1
 checks.git_config|_CHECK_GIT_CONFIG|b|-|1
 owl.omp_config|OWL_OMP_CONFIG|p|x|$PREFLIGHT_STATE_DIR/owl/theme-catppuccin.omp.json
+plugins|PREFLIGHT_PLUGINS|pl|x|
 '@
 
 # ok | missing | invalid, with the reason in PreflightConfigError. Invoke-Preflight reports it.
