@@ -128,20 +128,3 @@ _preflight_uuid() {
   printf -v _var '%x' $(( (16#${_h:16:1} & 3) | 8 ))   # RFC 4122 variant
   _pf_uuid="${_h:0:8}-${_h:8:4}-4${_h:13:3}-${_var}${_h:17:3}-${_h:20:12}"
 }
-
-# ── Generators ───────────────────────────────────────────────────────────────
-
-# oh-my-posh embeds a fresh POSH_SESSION_ID UUID in its init output, which is
-# the one line that must NOT be cached — every shell sharing a session id would
-# make oh-my-posh treat separate terminals as the same session. It is set once
-# and never read back by the script itself, so dropping it here and exporting a
-# per-shell value before sourcing (see init.sh) is safe.
-_preflight_omp_generate() {
-  # Older oh-my-posh emits POSH_SESSION_ID on its own line; 26.x collapses
-  # the whole init output into one line — `export POSH_SESSION_ID="...";
-  # source $'...'` — so a whole-line grep -v strips 100% of the output on
-  # that version, leaving an empty cache and a silently broken prompt.
-  # Strip just the assignment prefix instead, wherever it starts a line.
-  oh-my-posh init bash --config "$OWL_OMP_CONFIG" \
-    | sed -E 's/^export POSH_SESSION_ID="[^"]*";?[[:space:]]*//'
-}

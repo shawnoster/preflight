@@ -442,8 +442,8 @@ fi
 # wrong prompt: on a clean cache, sourcing the cached omp-init script renders
 # oh-my-posh's own fallback theme instead of $OWL_OMP_CONFIG on the first
 # prompt of a new shell — reproduced 3/3 on a clean `~/.cache/oh-my-posh` +
-# `~/.cache/preflight`, every time, regardless of _preflight_omp_generate's
-# output being correct and non-empty. A live, uncached
+# `~/.cache/preflight`, every time, regardless of the generated init output
+# being correct and non-empty. A live, uncached
 # `eval "$(oh-my-posh init bash --config ...)")` — the same call `owl-theme`
 # makes — has not failed once across the same repro. The exact internal
 # oh-my-posh mechanism this depends on wasn't pinned down (a subshell/pipe

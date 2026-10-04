@@ -231,10 +231,7 @@ unset PREFLIGHT_CONFIG_DIR
 
 # ── plugins: opt-in, named in config.json ─────────────────────────────────────
 fresh
-cat > "$HOME/.config-plugins.json" <<'J'
-{"plugins": ["owl"]}
-J
-mkdir -p "$HOME/.config/preflight"; cp "$HOME/.config-plugins.json" "$HOME/.config/preflight/config.json"
+mkdir -p "$HOME/.config/preflight"; echo '{"plugins": ["owl"]}' > "$HOME/.config/preflight/config.json"
 chk "plugins: one named in config.json loads (owl-theme defined)"  '[[ -n "$(source "$PREFLIGHT_DIR/init.sh" >/dev/null 2>&1 </dev/null; declare -F owl-theme)" ]]'
 chk "plugins: ...and seeds its base theme in the state dir"        '[[ -f "$HOME/.local/state/preflight/owl/theme-catppuccin.omp.json" ]]'
 printf '{"plugins": ["nope", "Bad Name"]}' > "$HOME/.config/preflight/config.json"

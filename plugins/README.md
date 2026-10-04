@@ -20,7 +20,7 @@ PowerShell reads the same `plugins` list.
 
 | Plugin | What it adds |
 |---|---|
-| `owl` | The OOO theme engine: `owl-theme`, the once-per-session MOTD splash, and Oh My Posh prompt integration (`owl.omp_config`). Seeds `~/.local/state/preflight/owl/theme-catppuccin.omp.json` on first load. |
+| `owl` | The OOO theme engine: `owl-theme`, a MOTD splash (shown once per session in bash/zsh; in PowerShell call `Show-OwlSplash` yourself) and Oh My Posh prompt integration (`owl.omp_config`). Seeds `~/.local/state/preflight/owl/theme-catppuccin.omp.json` on first load. |
 
 ## Writing one
 
