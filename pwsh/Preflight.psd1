@@ -1,7 +1,7 @@
 ﻿@{
     # Module identity
     RootModule        = 'Preflight.psm1'
-    ModuleVersion     = '0.7.0'
+    ModuleVersion     = '0.8.0'
     GUID              = 'b3a12e1b-332f-4ada-8340-a6ae2f40c86a'
     Author            = 'Shawn Oster'
     CompanyName       = 'shawnoster'
@@ -20,6 +20,7 @@
         'Connect-Op'
         'Import-OpEnv'
         'Clear-OpEnv'
+        'Invoke-OpEnv'
         'New-OpItem'
         'Import-OpCsv'
         'Get-PreflightHelp'
@@ -57,8 +58,7 @@
     AliasesToExport   = @(
         'op-status'
         'op-signin'
-        'op-load-env'
-        'op-clear-env'
+        'op-env'
         'op-new'
         'op-import-csv'
         'op-help'
@@ -96,6 +96,13 @@
             LicenseUri   = 'https://github.com/shawnoster/preflight/blob/main/LICENSE'
             ProjectUri   = 'https://github.com/shawnoster/preflight'
             ReleaseNotes = @'
+0.8.0 — op-env ported from bash (BREAKING: the op-load-env / op-clear-env aliases are removed):
+  - Invoke-OpEnv (alias: op-env) with load, clear, add, list, rm and use, matching the bash
+    env sets. `op-env load` / `op-env clear` run Import-OpEnv / Clear-OpEnv, which no longer
+    carry aliases.
+  - Env-set files are written atomically (mode 600 on POSIX); named-set loads are additive and
+    `op-env clear <set>` unsets only what that set supplied.
+
 0.7.0 — Owl theme engine ported from bash lib/owl.sh:
   - Set-OwlTheme (alias: owl-theme) — list/switch/query 8 themes
     (catppuccin / honeypot / twilight / moonlit / autumn / rose /

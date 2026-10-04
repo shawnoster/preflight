@@ -72,7 +72,9 @@ function Select-FromList {
           3. numbered Read-Host fallback (works in any TTY)
           4. error if non-interactive
 
-        Returns the selected string, or $null if nothing was chosen.
+        Returns the selected string, or $null if nothing was chosen. With -Multiple, returns the chosen
+        strings (an empty array if nothing was chosen): Out-GridView -OutputMode Multiple, fzf -m, or
+        space- or comma-separated numbers at the prompt.
     .PARAMETER Items
         The list of strings to choose from. Pipeline-friendly.
     .PARAMETER Prompt
@@ -85,7 +87,9 @@ function Select-FromList {
         [Parameter(ValueFromPipeline = $true)]
         [string[]]$Items,
 
-        [string]$Prompt = 'Select item'
+        [string]$Prompt = 'Select item',
+
+        [switch]$Multiple
     )
     begin { $all = New-Object System.Collections.Generic.List[string] }
     process { foreach ($i in $Items) { if ($i) { $all.Add($i) } } }
@@ -94,12 +98,12 @@ function Select-FromList {
             Write-Verbose "Select-FromList: no items provided"
             return
         }
-        if ($all.Count -eq 1) { return $all[0] }
+        if ($all.Count -eq 1 -and -not $Multiple) { return $all[0] }
 
         # 1) Out-GridView when available (Windows GUI).
         if (Get-Command Out-GridView -ErrorAction SilentlyContinue) {
             try {
-                $sel = $all | Out-GridView -Title $Prompt -OutputMode Single
+                $sel = $all | Out-GridView -Title $Prompt -OutputMode $(if ($Multiple) { 'Multiple' } else { 'Single' })
                 # Cancel and "no selection" both return $null. Treat that as
                 # "user said no" — don't fall through to fzf or a numbered
                 # prompt, which would feel like the picker is repeating itself.
@@ -115,7 +119,7 @@ function Select-FromList {
 
         # 2) fzf when on PATH.
         if (Get-Command fzf -ErrorAction SilentlyContinue) {
-            $sel = $all | & fzf --prompt "$Prompt > "
+            $sel = if ($Multiple) { $all | & fzf -m --prompt "$Prompt > " } else { $all | & fzf --prompt "$Prompt > " }
             return $sel
         }
 
@@ -128,6 +132,15 @@ function Select-FromList {
         Write-Host "$Prompt`:"
         for ($i = 0; $i -lt $all.Count; $i++) {
             Write-Host ("  {0,3}) {1}" -f ($i + 1), $all[$i])
+        }
+        if ($Multiple) {
+            $many = Read-Host "Choose [1-$($all.Count), several separated by spaces or commas]"
+            $picked = [System.Collections.Generic.List[string]]::new()
+            foreach ($tok in ("$many" -split '[\s,]+')) {
+                $n = 0
+                if ([int]::TryParse($tok, [ref]$n) -and $n -ge 1 -and $n -le $all.Count -and -not $picked.Contains($all[$n - 1])) { $picked.Add($all[$n - 1]) }
+            }
+            return $picked.ToArray()
         }
         $answer = Read-Host "Choose [1-$($all.Count)]"
         # Capture the parsed integer with a real out variable so we don't
