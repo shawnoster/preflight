@@ -108,7 +108,7 @@ $script:CommentMarker    = '# preflight:superseded'
 # module supersedes them. The module exports same-named functions/aliases
 # so the user's muscle memory keeps working.
 $script:SupersededFunctions = @(
-    @{ Name = 'Set-SecureEnv';         SupersededBy = 'Import-OpEnv (alias: op-env load)' }
+    @{ Name = 'Set-SecureEnv';         SupersededBy = 'Invoke-OpEnv (alias: op-env; run `op-env load`)' }
     @{ Name = 'Switch-AWSProfile';     SupersededBy = 'Set-AwsProfile (alias: awsp)' }
     @{ Name = 'Switch-GitBranch';      SupersededBy = 'Switch-GitBranch (alias: gco) — same name, now from Preflight module' }
     @{ Name = 'Remove-MergedBranches'; SupersededBy = 'Remove-MergedGitBranches (alias: gclean)' }

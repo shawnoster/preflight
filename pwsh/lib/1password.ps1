@@ -4,8 +4,9 @@
 # Phase 1 surface:
 #   Get-OpStatus     (alias: op-status)
 #   Connect-Op       (alias: op-signin)
-#   Import-OpEnv     (alias: op-load-env)
-#   Clear-OpEnv      (alias: op-clear-env)
+#   Invoke-OpEnv     (alias: op-env; load/clear/add/list/rm/use)
+#   Import-OpEnv     (no alias; run as `op-env load`)
+#   Clear-OpEnv      (no alias; run as `op-env clear`)
 #   New-OpItem       (alias: op-new)
 #   Import-OpCsv     (alias: op-import-csv)
 #
@@ -186,7 +187,7 @@ function Get-OpEnvMap {
 }
 
 function Import-OpEnvGroup {
-    # Resolve one account's entries and export them. Strategy A hands every reference to one
+    # Resolve one account's entries and export them. Returns the entries it actually exported. Strategy A hands every reference to one
     # `op run`; if that fails, fall back to per-secret `op read` so the broken one is named.
     [CmdletBinding()]
     param(
@@ -226,6 +227,7 @@ function Import-OpEnvGroup {
             if ($LASTEXITCODE -eq 0 -and $value) {
                 Set-Item -Path "env:$($entry.Name)" -Value $value
                 Write-Host "✅ $($entry.Name)$via"
+                $entry
             } else {
                 Write-Host "⚠️  $($entry.Name) (failed to load$(if ($Label) { ", via $Label" }))"
             }
@@ -242,6 +244,7 @@ function Import-OpEnvGroup {
             if ($value) {
                 Set-Item -Path "env:$key" -Value $value
                 Write-Host "✅ $key$via"
+                $Entries | Where-Object { $_.Name -ceq $key } | Select-Object -First 1
                 continue
             }
         }
@@ -340,13 +343,10 @@ function Import-OpEnv {
         }
     }
 
-    # Only now record what this load manages. If a sign-in failed above, the memory stays as it was, so
-    # Clear-OpEnv still knows what is in the environment. A plain load replaces it; a named load adds to
-    # it and re-points whatever it just reloaded at the set that supplied it.
-    $sources = if ($subset) { @(Get-PreflightEnvSource -Set $Set) } else { @(Get-PreflightEnvSource) }
+    # A plain load replaces what is remembered; a named load adds to it. Sign-in failures above return
+    # before this, so the memory stays as it was and Clear-OpEnv still knows what is in the environment.
     if (-not $subset) { $global:OpLoadedVars.Clear(); $global:OpLoadedSrc.Clear() }
-    foreach ($e in $entries) { [void]$global:OpLoadedVars.Add($e.Name) }
-    foreach ($src in $sources) { $global:OpLoadedSrc[$src.Name] = $src.Set }
+    $sources = if ($subset) { @(Get-PreflightEnvSource -Set $Set) } else { @(Get-PreflightEnvSource) }
 
     # Header — skipped when called from Invoke-Preflight, which prints its own.
     if (-not $env:_PREFLIGHT_NESTED) {
@@ -355,7 +355,13 @@ function Import-OpEnv {
 
     $multi = $groups.Count -gt 1
     foreach ($acct in @($groups.Keys)) {
-        Import-OpEnvGroup -Account $acct -Entries $groups[$acct] -Label $(if ($multi) { $acct } else { '' })
+        # Remember only what was really exported, so a failed read never claims a variable the user set
+        # by hand (`op-env clear <set>` would delete it).
+        foreach ($e in @(Import-OpEnvGroup -Account $acct -Entries $groups[$acct] -Label $(if ($multi) { $acct } else { '' }))) {
+            [void]$global:OpLoadedVars.Add($e.Name)
+            $src = $sources | Where-Object { $_.Name -ceq $e.Name } | Select-Object -First 1
+            if ($src) { $global:OpLoadedSrc[$e.Name] = $src.Set }
+        }
     }
 }
 

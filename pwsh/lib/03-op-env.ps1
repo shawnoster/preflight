@@ -30,7 +30,10 @@ function Set-OpEnvFileMode {
     # [File]::SetUnixFileMode, which needs a newer .NET than the module's PowerShell 7.0 floor.
     param([string]$Path, [string]$Mode)
     if ($IsWindows) { return }
-    try { & chmod $Mode -- $Path 2>$null } catch { Write-Verbose "chmod $Mode $Path failed: $_" }
+    # A native command's non-zero exit does not throw, so check it: a failed chmod must abort the write
+    # rather than leave the secret map at the default mode.
+    & chmod $Mode -- $Path 2>$null
+    if ($LASTEXITCODE -ne 0) { throw "chmod $Mode failed (exit $LASTEXITCODE) for $Path" }
 }
 
 function Initialize-OpEnvSetsDir {
