@@ -1,6 +1,6 @@
 # Preflight — Developer Environment Scripts
 
-A modular collection of shell utilities for development workflows. Drop it in `~/.preflight`, source it from `.bashrc`, and get fuzzy-powered shortcuts for AWS, Docker, Git, 1Password, and project navigation — plus an owl-themed MOTD and Oh My Posh color switcher.
+A modular collection of shell utilities for development workflows. Drop it in `~/.preflight`, source it from `.bashrc`, and get fuzzy-powered shortcuts for AWS, Docker, Git, 1Password, and project navigation — plus opt-in [plugins](plugins/README.md) such as an owl-themed MOTD and Oh My Posh color switcher.
 
 > **PowerShell users**: a Windows-native sibling lives in [`pwsh/`](pwsh/README.md) and is installed separately via `pwsh/install.ps1`. Phase 1 ships the 1Password layer (`Get-OpStatus`, `Connect-Op`, `op-env` with `load`, `clear`, `add`, `list`, `rm` and `use`, `New-OpItem`, `Import-OpCsv`); more layers follow.
 
@@ -15,7 +15,7 @@ The installer:
 - Adds a source line to your shell rc file (`.bashrc` or `.zshrc`), with the correct syntax for your shell
 - Requires `jq` (settings are read from `config.json` with it) and stops with an install hint if it is missing
 - On the first shell load, creates `~/.config/preflight/config.json` from a profile you pick (your config lives outside the clone; see [Where things live](#where-things-live))
-- Seeds a user-owned owl base theme into `~/.local/state/preflight/owl/theme-catppuccin.omp.json`, so `owl-theme` has an OMP config to patch out of the box
+- Changes nothing about how your shell looks: no prompt, MOTD or theme unless you enable a [plugin](plugins/README.md)
 
 After installing:
 
@@ -65,7 +65,7 @@ preflight uninstall
 
 Removes `~/.preflight` and the source line from your shell profile(s). Prompts for confirmation first.
 
-Your config (`~/.config/preflight`), state (`~/.local/state/preflight`) and cache (`~/.cache/preflight`) are kept, and uninstall prints where they are. `preflight uninstall --purge` deletes them too; it refuses to touch `$HOME` or a bare `~/.config`, `~/.local/state` or `~/.cache`, so a mistyped `PREFLIGHT_CONFIG_DIR` cannot wipe other applications.
+Your config (`~/.config/preflight`) and state (`~/.local/state/preflight`) are kept, and uninstall prints where they are. `preflight uninstall --purge` deletes them too; it refuses to touch `$HOME` or a bare `~/.config`, `~/.local/state` or `~/.cache`, so a mistyped `PREFLIGHT_CONFIG_DIR` cannot wipe other applications.
 
 ## Manual Installation
 
@@ -96,10 +96,11 @@ source ~/.bashrc
 │   ├── envsets.sh       # op-env: named sets of VAR -> op:// refs (+ optional account)
 │   ├── help.sh          # Unified help system (dev-help / devhelp)
 │   ├── nanoleaf.sh      # op-env load hook: hands NANOLEAF_TOKEN to the nanoleaf-* scripts
-│   ├── owl.sh           # OOO theme engine + MOTD splash
 │   ├── postgres.sh      # PostgreSQL cluster start/stop (pg-up / pg-down)
 │   ├── preflight.sh     # Session startup + environment health check
 │   └── project.sh       # Build tool wrappers
+├── plugins/             # Opt-in extras, off by default (see plugins/README.md)
+│   └── owl/plugin.sh    # OOO theme engine + MOTD splash + Oh My Posh integration
 ├── defaults/            # Tracked starting points: config.<profile>.json, config.schema.json, owl base theme
 ├── pwsh/                # PowerShell sibling — see pwsh/README.md
 │   ├── Preflight.psd1   # Module manifest
@@ -272,7 +273,9 @@ nanoleaf-streak --direction in --color red  # red converging from ends
 See the `nanoleaf-direct` project notebook for the auth/layout/effects
 references.
 
-### Owl Theme + MOTD (`lib/owl.sh`)
+### Owl Theme + MOTD (opt-in plugin: `plugins/owl/plugin.sh`)
+
+**Off by default.** Enable it with `preflight config set plugins owl` (or `"plugins": ["owl"]` in `config.json`) and open a new terminal; it takes over your MOTD and, with Oh My Posh, your prompt, so it is never loaded unasked. See [plugins/README.md](plugins/README.md).
 
 OOO (Obtusely Optimistic Owl) — a shell MOTD that appears once per interactive session, and a theme switcher that patches your Oh My Posh prompt palette.
 
@@ -291,33 +294,11 @@ and stay quiet. (This previously keyed off `$SHLVL -eq 1`, which never fired in
 environments that start you at a deeper shell level — under WSL + VS Code the
 login shell begins at `SHLVL=3`, so the MOTD silently never appeared.)
 
-**Oh My Posh integration is optional.** `OWL_OMP_CONFIG` (config key `owl.omp_config`) defaults to `$PREFLIGHT_STATE_DIR/owl/theme-catppuccin.omp.json` — the bundled owl base theme the installer seeds into the state dir, which `owl-theme` patches. Point it at your own OMP JSON to use a different base, or leave it empty to disable OMP integration — `owl-theme` still switches splash colors, it just won't touch your prompt.
+**Oh My Posh integration is optional.** `OWL_OMP_CONFIG` (config key `owl.omp_config`) defaults to `$PREFLIGHT_STATE_DIR/owl/theme-catppuccin.omp.json` — the bundled owl base theme the plugin seeds into the state dir on first load, which `owl-theme` patches. Point it at your own OMP JSON to use a different base, or leave it empty to disable OMP integration — `owl-theme` still switches splash colors, it just won't touch your prompt.
 
 ```bash
 # After installing, switch themes live — owl-theme patches ~/.local/state/preflight/owl/theme-catppuccin.omp.json:
 owl-theme moonlit
-```
-
-### Startup Cache (`lib/cache.sh`)
-
-| Command | Description |
-|---------|-------------|
-| `preflight-cache-clear` | Delete cached tool init scripts; they regenerate on the next shell |
-
-Tools that expect `eval "$(tool init bash)"` cost a subprocess on *every* shell.
-`_preflight_cache_eval` generates that output once, sources the cached script
-afterwards, and regenerates only when the tool binary or its config file changes
-— which roughly halves preflight's startup cost. Freshness is decided with
-bash's builtin `-nt` test, so a cache hit never forks.
-
-Cache location: `$XDG_CACHE_HOME/preflight` (default `~/.cache/preflight`),
-overridable with `PREFLIGHT_CACHE_DIR`.
-
-To cache another tool, add a generator function and call it:
-
-```bash
-_preflight_foo_generate() { foo init bash; }
-_preflight_cache_eval foo-init _preflight_foo_generate "$(command -v foo)" "$FOO_CONFIG"
 ```
 
 ### Git (`lib/git.sh`)
@@ -371,8 +352,7 @@ Commands that require interactive selection will exit with a usage message when 
 |---|---|---|
 | Settings (`config.json`) | `~/.config/preflight/` | `PREFLIGHT_CONFIG_DIR`, then `XDG_CONFIG_HOME` |
 | Env sets (`envsets/<set>.tsv`, `.active`) | `~/.config/preflight/envsets/` | same |
-| Owl state, patched OMP theme | `~/.local/state/preflight/owl/` | `PREFLIGHT_STATE_DIR`, then `XDG_STATE_HOME` |
-| Cache | `~/.cache/preflight/` | `PREFLIGHT_CACHE_DIR`, then `XDG_CACHE_HOME` |
+| Owl plugin state, patched OMP theme | `~/.local/state/preflight/owl/` | `PREFLIGHT_STATE_DIR`, then `XDG_STATE_HOME` |
 
 Setting `PREFLIGHT_DIR` to the config or state directory is refused at load time, since code and data would then share a directory.
 

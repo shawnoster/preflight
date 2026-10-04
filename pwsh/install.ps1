@@ -12,16 +12,13 @@
          directory ($env:PREFLIGHT_CONFIG_DIR, default ~\.config\preflight). Skipped
          if it already exists. Your settings and env sets live there, outside the
          clone, so an update never touches them.
-      3. Seed the owl-theme base theme (defaults\theme-catppuccin.omp.json ->
-         <state dir>\owl\theme-catppuccin.omp.json) so owl-theme has a
-         user-owned OMP config to patch.
-      4. Back up your current $PROFILE to <profile>.bak.<timestamp>.
-      5. Comment out functions in $PROFILE that are superseded by the
+      3. Back up your current $PROFILE to <profile>.bak.<timestamp>.
+      4. Comment out functions in $PROFILE that are superseded by the
          Preflight module (Set-SecureEnv, Switch-AWSProfile,
          Switch-GitBranch, Remove-MergedBranches, bake), tagging each
          with a marker so
          uninstall can reverse the change.
-      6. Append an Import-Module line that loads Preflight from
+      5. Append an Import-Module line that loads Preflight from
          $HOME\.preflight\pwsh\Preflight.psd1, guarded so reload is
          idempotent. An existing guard is replaced in place.
 
@@ -652,28 +649,7 @@ function Invoke-Install {
         }
     }
 
-    # 4) Seed the owl-theme base theme. owl-theme needs a USER-OWNED OMP config to patch (it refuses
-    # to touch $env:POSH_THEMES_PATH). The bundled theme is copied to <state dir>\owl; config.json's
-    # owl.omp_config points at it by default, so nothing needs to be exported from $PROFILE.
-    if ($dirs) {
-        $themeSrc  = Find-BundledDefault 'theme-catppuccin.omp.json'
-        $themeDest = Join-Path (Join-Path $dirs.StateDir 'owl') 'theme-catppuccin.omp.json'
-        if (-not $themeSrc) {
-            Write-Step "Owl theme source (defaults\theme-catppuccin.omp.json) not found — owl-theme will have no OMP config to patch" 'warn'
-        } elseif (Test-Path -LiteralPath $themeDest -PathType Leaf) {
-            Write-Step "Owl theme already present: $themeDest" 'ok'
-        } elseif ($DryRun) {
-            Write-Step "Would install owl theme -> $themeDest" 'dry'
-        } else {
-            $owlDir = Split-Path -Parent $themeDest
-            if (-not (Test-Path -LiteralPath $owlDir)) { New-Item -ItemType Directory -Path $owlDir -Force | Out-Null }
-            Copy-Item -LiteralPath $themeSrc -Destination $themeDest
-            Save-BundledDefault $themeSrc
-            Write-Step "Installed owl theme -> $themeDest" 'ok'
-        }
-    }
-
-    # 5) Update $PROFILE.
+    # 4) Update $PROFILE.
     if (-not (Test-Path -LiteralPath $ProfilePath)) {
         Write-Step "No $ProfilePath yet — will create one" 'info'
         $original         = ''

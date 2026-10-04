@@ -1,7 +1,7 @@
 ﻿@{
     # Module identity
     RootModule        = 'Preflight.psm1'
-    ModuleVersion     = '0.8.0'
+    ModuleVersion     = '0.9.0'
     GUID              = 'b3a12e1b-332f-4ada-8340-a6ae2f40c86a'
     Author            = 'Shawn Oster'
     CompanyName       = 'shawnoster'
@@ -96,6 +96,14 @@
             LicenseUri   = 'https://github.com/shawnoster/preflight/blob/main/LICENSE'
             ProjectUri   = 'https://github.com/shawnoster/preflight'
             ReleaseNotes = @'
+0.9.0 — Plugins (BREAKING: the owl theme engine is now opt-in):
+  - New "plugins" list in config.json (PREFLIGHT_PLUGINS). Each name loads pwsh\plugins\<name>.ps1
+    after the settings; nothing loads by default, so a fresh install never changes your UI.
+  - owl (Set-OwlTheme / owl-theme, Show-OwlSplash) moved from lib\owl.ps1 to plugins\owl.ps1 and is
+    off unless "owl" is listed. It now seeds its base theme on load instead of install.ps1 doing it.
+  - Upgrading: add "plugins": ["owl"] to config.json to keep it, and delete the old
+    $HOME\.preflight\pwsh\lib\owl.ps1 (an update copies files, it does not remove them).
+
 0.8.0 — op-env ported from bash (BREAKING: the op-load-env / op-clear-env aliases are removed):
   - Invoke-OpEnv (alias: op-env) with load, clear, add, list, rm and use, matching the bash
     env sets. `op-env load` / `op-env clear` run Import-OpEnv / Clear-OpEnv, which no longer

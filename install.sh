@@ -178,17 +178,6 @@ main() {
   # config.json is created by init.sh on the first shell load, which also offers
   # the profile choice; doing it here would skip that prompt.
 
-  # Owl base theme: place the bundled OMP theme in the state dir so owl-theme
-  # has a user-owned config to patch (it refuses to touch Oh My Posh's own
-  # theme directory). init.sh re-ensures this on later updates.
-  mkdir -p "$PREFLIGHT_STATE_DIR/owl"
-  if [[ ! -f "$PREFLIGHT_STATE_DIR/owl/theme-catppuccin.omp.json" ]] \
-      && [[ -f "$PREFLIGHT_DIR/defaults/theme-catppuccin.omp.json" ]]; then
-    cp "$PREFLIGHT_DIR/defaults/theme-catppuccin.omp.json" \
-       "$PREFLIGHT_STATE_DIR/owl/theme-catppuccin.omp.json"
-    _pf_ok "Created $PREFLIGHT_STATE_DIR/owl/theme-catppuccin.omp.json (owl-theme OMP base theme)"
-  fi
-
   # Done
   local reload_cmd="source ~/.bashrc"
   [[ "$shell_name" == "zsh" ]]  && reload_cmd="source ${ZDOTDIR:-~}/.zshrc"

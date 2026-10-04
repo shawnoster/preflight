@@ -23,7 +23,8 @@ checks.aws|_CHECK_AWS|b|-|1
 checks.gh|_CHECK_GH|b|-|1
 checks.ssh|_CHECK_SSH|b|-|1
 checks.git_config|_CHECK_GIT_CONFIG|b|-|1
-owl.omp_config|OWL_OMP_CONFIG|p|x|$PREFLIGHT_STATE_DIR/owl/theme-catppuccin.omp.json'
+owl.omp_config|OWL_OMP_CONFIG|p|x|$PREFLIGHT_STATE_DIR/owl/theme-catppuccin.omp.json
+plugins|PREFLIGHT_PLUGINS|pl|x|'
 
 # Names the loader has set (not exported). A variable that is already set but is not on
 # this list was set by you, and wins over the file. A nested shell inherits the exported
@@ -202,7 +203,7 @@ Usage: preflight config <command>
 Keys:
 $(_pf_config_keys)
 
-The list (projects.dirs, ':' separated) and booleans (true/false, 1/0, yes/no) are
+The lists (projects.dirs, plugins; ':' separated) and booleans (true/false, 1/0, yes/no) are
 written as a JSON array and JSON booleans.
 A variable you have already set in your environment wins over the file.
 Reference: docs/config.md
@@ -343,7 +344,8 @@ _pf_config_prompt_text() {
     checks.gh)           echo "Run the GitHub CLI auth check in 'preflight'? (yes/no)" ;;
     checks.ssh)          echo "Run the SSH agent check in 'preflight'? (yes/no)" ;;
     checks.git_config)   echo "Run the global git configuration check in 'preflight'? (yes/no)" ;;
-    owl.omp_config)      echo "Oh My Posh JSON that 'owl-theme' patches; - turns Oh My Posh integration off" ;;
+    plugins)             echo "Opt-in plugins to load, separated by ':' (for example owl); - for none" ;;
+    owl.omp_config)      echo "Oh My Posh JSON the owl plugin's 'owl-theme' patches; - turns Oh My Posh integration off" ;;
     *)                   echo "$1" ;;
   esac
 }

@@ -44,7 +44,8 @@ editor's JSON settings at it) for hover help and validation; the loader ignores 
 | `git.main_branch` | `GIT_MAIN_BRANCH` | string | `main` | git helpers |
 | `gitea.username`, `gitea.host` | `GITEA_USERNAME`, `GITEA_HOST` | string | empty | HTTPS credential for Gitea |
 | `checks.aws`, `checks.gh`, `checks.ssh`, `checks.git_config` | `_CHECK_AWS`, `_CHECK_GH`, `_CHECK_SSH`, `_CHECK_GIT_CONFIG` | boolean (to `1`/`0`) | all `true` | which `preflight` sections run |
-| `owl.omp_config` | `OWL_OMP_CONFIG` | path | `$PREFLIGHT_STATE_DIR/owl/theme-catppuccin.omp.json` | Oh My Posh JSON that `owl-theme` patches; empty turns Oh My Posh off |
+| `plugins` | `PREFLIGHT_PLUGINS` | list (joined with `:`) | empty | opt-in plugins to load (see [plugins/README.md](../plugins/README.md)) |
+| `owl.omp_config` | `OWL_OMP_CONFIG` | path | `$PREFLIGHT_STATE_DIR/owl/theme-catppuccin.omp.json` | Oh My Posh JSON that the owl plugin's `owl-theme` patches (read only when the plugin is enabled); empty turns Oh My Posh off |
 
 `op.account` is the sign-in address (`my-team.1password.com`) under WSL desktop integration, because the desktop-fed
 `op.exe` does not carry a manual `op account add` shorthand. On native `op` it is the shorthand.

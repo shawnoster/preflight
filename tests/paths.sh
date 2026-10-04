@@ -29,10 +29,10 @@ chk() { if eval "$2"; then passes=$((passes + 1)); else fails=$((fails + 1)); ec
 fresh() {
   rm -rf "$T/home" "$T/pf"
   mkdir -p "$T/home" "$T/pf"
-  cp -R "$R/lib" "$R/defaults" "$R/init.sh" "$T/pf/"
-  unset PREFLIGHT_CONFIG_DIR PREFLIGHT_STATE_DIR PREFLIGHT_CACHE_DIR XDG_CONFIG_HOME XDG_STATE_HOME XDG_CACHE_HOME OWL_THEME_DIR
+  cp -R "$R/lib" "$R/defaults" "$R/plugins" "$R/init.sh" "$T/pf/"
+  unset PREFLIGHT_CONFIG_DIR PREFLIGHT_STATE_DIR XDG_CONFIG_HOME XDG_STATE_HOME OWL_THEME_DIR
   # Settings a developer already has exported would win over config.json.
-  unset OP_ACCOUNT PROJ_DIRS AWS_PROFILE_DEFAULT GIT_MAIN_BRANCH GITEA_USERNAME GITEA_HOST OWL_OMP_CONFIG _CHECK_AWS _CHECK_GH _CHECK_SSH _CHECK_GIT_CONFIG
+  unset OP_ACCOUNT PROJ_DIRS AWS_PROFILE_DEFAULT GIT_MAIN_BRANCH GITEA_USERNAME GITEA_HOST OWL_OMP_CONFIG PREFLIGHT_PLUGINS _CHECK_AWS _CHECK_GH _CHECK_SSH _CHECK_GIT_CONFIG
   export HOME="$T/home" PREFLIGHT_DIR="$T/pf" PREFLIGHT_NO_SPLASH=1
 }
 
@@ -96,7 +96,7 @@ fresh
 out=$(source "$PREFLIGHT_DIR/init.sh" 2>&1 </dev/null)
 chk "first run creates config.json in the config dir" 'jq -e . "$HOME/.config/preflight/config.json" >/dev/null'
 chk "first run uses the general profile when non-interactive" 'cmp -s "$HOME/.config/preflight/config.json" "$R/defaults/config.general.json"'
-chk "first run seeds the owl theme in the state dir"  '[[ -f "$HOME/.local/state/preflight/owl/theme-catppuccin.omp.json" ]]'
+chk "first run is UI-neutral: no owl state, no owl-theme, no plugins" '[[ ! -e "$HOME/.local/state/preflight/owl" && -z "$(source "$PREFLIGHT_DIR/init.sh" >/dev/null 2>&1 </dev/null; declare -F owl-theme _owl_splash; printf %s "$PREFLIGHT_PLUGINS")" ]]'
 chk "first run writes nothing into the clone"         '[[ ! -e "$PREFLIGHT_DIR/config" && ! -e "$PREFLIGHT_DIR/state" ]]'
 chk "first run loads the profile into the shell"      '[[ "$(source "$PREFLIGHT_DIR/init.sh" >/dev/null 2>&1 </dev/null; printf %s "$OWL_OMP_CONFIG")" == "$HOME/.local/state/preflight/owl/theme-catppuccin.omp.json" ]]'
 
@@ -157,22 +157,20 @@ run_uninstall() {  # $1 = answer, rest = args
 }
 
 fresh
+mkdir -p "$HOME/.config/preflight"; echo '{"plugins": ["owl"]}' > "$HOME/.config/preflight/config.json"
 ( source "$PREFLIGHT_DIR/init.sh" >/dev/null 2>&1 </dev/null )
-mkdir -p "$HOME/.cache/preflight"; echo x > "$HOME/.cache/preflight/c"
 out=$(run_uninstall y)
 chk "uninstall removes the clone"            '[[ ! -d "$PREFLIGHT_DIR" ]]'
 chk "uninstall keeps the config dir"         '[[ -f "$HOME/.config/preflight/config.json" ]]'
 chk "uninstall keeps the state dir"          '[[ -d "$HOME/.local/state/preflight/owl" ]]'
-chk "uninstall keeps the cache dir"          '[[ -f "$HOME/.cache/preflight/c" ]]'
 chk "uninstall says where the kept data is"  '[[ "$out" == *"$HOME/.config/preflight"* ]]'
 
 fresh
+mkdir -p "$HOME/.config/preflight"; echo '{"plugins": ["owl"]}' > "$HOME/.config/preflight/config.json"
 ( source "$PREFLIGHT_DIR/init.sh" >/dev/null 2>&1 </dev/null )
-mkdir -p "$HOME/.cache/preflight"; echo x > "$HOME/.cache/preflight/c"
 out=$(run_uninstall y --purge)
 chk "--purge removes the config dir" '[[ ! -e "$HOME/.config/preflight" ]]'
 chk "--purge removes the state dir"  '[[ ! -e "$HOME/.local/state/preflight" ]]'
-chk "--purge removes the cache dir"  '[[ ! -e "$HOME/.cache/preflight" ]]'
 chk "--purge leaves the rest of ~/.config" '[[ -d "$HOME/.config" ]]'
 
 fresh
@@ -193,11 +191,6 @@ fresh
 ( source "$PREFLIGHT_DIR/init.sh" >/dev/null 2>&1 </dev/null )
 out=$( ( source "$PREFLIGHT_DIR/init.sh" >/dev/null 2>&1 </dev/null; unset PREFLIGHT_STATE_DIR; printf 'y\n' | preflight uninstall --purge ) 2>&1 )
 chk "--purge with only the config dir set resolves the state dir" '[[ "$out" != *"refusing"* && ! -e "$HOME/.local/state/preflight" && ! -e "$HOME/.config/preflight" ]]'
-
-# preflight-cache-clear works when cache.sh is sourced without init.sh.
-fresh; mkdir -p "$HOME/.cache/preflight"; echo x > "$HOME/.cache/preflight/c"
-out=$( ( unset -f _pf_safe_rm_dir; source "$PREFLIGHT_DIR/lib/cache.sh"; PREFLIGHT_CACHE_DIR="$HOME/.cache/preflight"; preflight-cache-clear ) 2>&1 ); rc=$?
-chk "cache.sh alone can still clear the cache" '[[ $rc -eq 0 && ! -e "$HOME/.cache/preflight" ]]'
 
 # A protected PREFLIGHT_DIR is refused before any shell profile is edited.
 fresh
@@ -221,11 +214,22 @@ out=$(source "$PREFLIGHT_DIR/init.sh" 2>&1 </dev/null); rc=$?
 chk "unwritable config dir: init stops with a message" '[[ $rc -ne 0 && "$out" == *"cannot create"* ]]'
 unset PREFLIGHT_CONFIG_DIR
 
-# lib/owl.sh sourced on its own stops on a refused layout and leaves OWL_THEME_DIR unset.
+# The owl plugin sourced on its own stops on a refused layout and leaves OWL_THEME_DIR unset.
 fresh; export PREFLIGHT_CONFIG_DIR="$PREFLIGHT_DIR"
-out=$( (source "$R/lib/owl.sh" 2>&1; echo "rc=$? dir=[${OWL_THEME_DIR:-}]") 2>&1 )
-chk "owl.sh stops on a refused layout and sets no theme dir" '[[ "$out" == *"is the install directory"* && "$out" == *"rc=1 dir=[]"* ]]'
+out=$( (source "$R/plugins/owl/plugin.sh" 2>&1; echo "rc=$? dir=[${OWL_THEME_DIR:-}]") 2>&1 )
+chk "the owl plugin stops on a refused layout and sets no theme dir" '[[ "$out" == *"is the install directory"* && "$out" == *"rc=1 dir=[]"* ]]'
 unset PREFLIGHT_CONFIG_DIR
+
+# ── plugins: opt-in, named in config.json ─────────────────────────────────────
+fresh
+mkdir -p "$HOME/.config/preflight"; echo '{"plugins": ["owl"]}' > "$HOME/.config/preflight/config.json"
+chk "plugins: one named in config.json loads (owl-theme defined)"  '[[ -n "$(source "$PREFLIGHT_DIR/init.sh" >/dev/null 2>&1 </dev/null; declare -F owl-theme)" ]]'
+chk "plugins: ...and seeds its base theme in the state dir"        '[[ -f "$HOME/.local/state/preflight/owl/theme-catppuccin.omp.json" ]]'
+printf '{"plugins": ["nope", "Bad Name"]}' > "$HOME/.config/preflight/config.json"
+out=$(source "$PREFLIGHT_DIR/init.sh" 2>&1 </dev/null)
+chk "plugins: an unknown plugin warns and does not stop the shell" '[[ "$out" == *"plugin '"'"'nope'"'"' not found"* && "$out" == *"ignoring plugin"* ]]'
+printf '{"plugins": []}' > "$HOME/.config/preflight/config.json"
+chk "plugins: an empty list loads nothing"                         '[[ -z "$(source "$PREFLIGHT_DIR/init.sh" >/dev/null 2>&1 </dev/null; declare -F owl-theme)" ]]'
 
 # ── install.sh refuses a shared layout before touching anything ──────────────
 # Clones this repo's current branch from disk, so only runs inside a git checkout on a

@@ -136,8 +136,10 @@ both implementations). An entry that names an account is resolved against that a
 entries by account, signs in to every account first, and runs one `op run` per account. `Invoke-Preflight` checks
 that every variable in an active set ended up set.
 
-**Owl theme.** The installer seeds a user-owned base theme at
-`~\.local\state\preflight\owl\theme-catppuccin.omp.json`, and `owl.omp_config` points at it by default, so
+**Owl theme (opt-in plugin).** Off by default: enable it with `"plugins": ["owl"]` in `config.json`
+(see [plugins/README.md](../plugins/README.md)); until then `owl-theme` and `Show-OwlSplash` do not exist. When
+enabled, it seeds a user-owned base theme at
+`~\.local\state\preflight\owl\theme-catppuccin.omp.json` on load, and `owl.omp_config` points at it by default, so
 `owl-theme <name>` patches a working OMP config instead of `$env:POSH_THEMES_PATH` (which the module refuses to
 mutate). Set `owl.omp_config` to use your own theme, or to an empty string to turn Oh My Posh integration off.
 The profile guard no longer exports `OWL_OMP_CONFIG` or `OWL_THEME_DIR` (a value set before the module loads would

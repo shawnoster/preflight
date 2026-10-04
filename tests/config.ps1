@@ -27,7 +27,7 @@ try {
         throw "HOME ($HOME) is not under the temp directory: run through tests/config.sh or set HOME first."
     }
 
-    $managedVars = 'OP_ACCOUNT', 'PROJ_DIRS', 'AWS_PROFILE_DEFAULT', 'GIT_MAIN_BRANCH', 'GITEA_USERNAME', 'GITEA_HOST', 'OWL_OMP_CONFIG'
+    $managedVars = 'OP_ACCOUNT', 'PROJ_DIRS', 'AWS_PROFILE_DEFAULT', 'GIT_MAIN_BRANCH', 'GITEA_USERNAME', 'GITEA_HOST', 'OWL_OMP_CONFIG', 'PREFLIGHT_PLUGINS'
     function Reset-Env {
         foreach ($v in $managedVars + 'PREFLIGHT_CONFIG_DIR', 'PREFLIGHT_STATE_DIR', 'XDG_CONFIG_HOME', 'XDG_STATE_HOME') {
             Remove-Item -LiteralPath "Env:$v" -ErrorAction SilentlyContinue
@@ -599,6 +599,28 @@ esac
     chk 'import: op-env is an alias of Invoke-OpEnv'             { $imp -match 'TYPE=Alias' -and $imp -match 'EXPORTED=True' }
     chk 'import: op-load-env and op-clear-env no longer exist'    { $imp -match 'OLD=FalseFalse' }
 
+    # ---- plugins -------------------------------------------------------------------
+    $pdir = Join-Path $T 'plug'; New-Item -ItemType Directory -Path (Join-Path $pdir 'cfg') -Force | Out-Null
+    $pimp = { param([string]$json)
+        [System.IO.File]::WriteAllText((Join-Path $pdir 'cfg/config.json'), $json)
+        Remove-Item -LiteralPath (Join-Path $pdir 'state') -Recurse -Force -ErrorAction SilentlyContinue
+        & $pwshExe -NoProfile -Command ("`$env:PREFLIGHT_CONFIG_DIR = '$(Join-Path $pdir 'cfg')'; `$env:PREFLIGHT_STATE_DIR = '$(Join-Path $pdir 'state')'; " +
+            "Import-Module '$(Join-Path $Repo 'pwsh/Preflight.psd1')' -Force; [bool](Get-Command Set-OwlTheme -ErrorAction SilentlyContinue)") 2>&1 | Out-String }
+    $pwshExe = (Get-Process -Id $PID).Path
+    $o = & $pimp '{"version":1}'
+    chk 'plugins: nothing loads by default (no Set-OwlTheme, no warnings, no owl state)' { $o.Trim() -ceq 'False' -and -not (Test-Path (Join-Path $pdir 'state/owl')) }
+    $o = & $pimp '{"version":1,"plugins":["owl"]}'
+    chk 'plugins: one named in config.json loads (Set-OwlTheme exported)' { $o.Trim() -ceq 'True' }
+    chk 'plugins: ...and seeds its base theme into the state dir' { Test-Path (Join-Path $pdir 'state/owl/theme-catppuccin.omp.json') }
+    $o = & $pimp '{"version":1,"plugins":["nope","Bad Name"]}'
+    chk 'plugins: an unknown or badly named plugin warns and the import still works' { $o -match "plugin 'nope' not found" -and $o -match "ignoring plugin" -and $o.Trim().EndsWith('False') }
+
+    $inside = Join-Path $Repo 'pf-test-state-inside'
+    $o = & $pwshExe -NoProfile -Command ("`$env:PREFLIGHT_CONFIG_DIR = '$(Join-Path $pdir 'cfg')'; `$env:PREFLIGHT_STATE_DIR = '$inside'; `$env:PREFLIGHT_PLUGINS = 'owl'; " +
+        "Import-Module '$(Join-Path $Repo 'pwsh/Preflight.psd1')' -Force 3>`$null; [bool](Get-Command Set-OwlTheme -ErrorAction SilentlyContinue)") 2>&1 | Out-String
+    chk 'plugins: a refused layout loads no plugin and writes nothing inside the install tree' { $o.Trim() -ceq 'False' -and -not (Test-Path -LiteralPath $inside) }
+    Remove-Item -LiteralPath $inside -Recurse -Force -ErrorAction SilentlyContinue
+
     # ---- installer ---------------------------------------------------------------
     $ih = Join-Path $T 'ihome'; New-Item -ItemType Directory -Path $ih | Out-Null
     $prof = Join-Path $T 'profile.ps1'
@@ -608,7 +630,7 @@ esac
     Reset-Env; $env:PREFLIGHT_CONFIG_DIR = Join-Path $ih 'cfg'; $env:PREFLIGHT_STATE_DIR = Join-Path $ih 'state'
     $o = & $inst
     chk 'install: seeds config.json from the general profile' { (Get-Content (Join-Path $ih 'cfg/config.json') -Raw) -ceq (Get-Content (Join-Path $Repo 'defaults/config.general.json') -Raw) }
-    chk 'install: seeds the owl theme into the state dir' { Test-Path (Join-Path $ih 'state/owl/theme-catppuccin.omp.json') }
+    chk 'install: seeds no owl state (the owl plugin does that when enabled)' { -not (Test-Path (Join-Path $ih 'state/owl')) }
     $pc = Get-Content -LiteralPath $prof -Raw
     chk 'install: the profile guard sets no OWL_ variable, and an existing guard is replaced in place' { $pc -notmatch 'OWL_' -and $pc -match 'Import-Module' -and $pc -notmatch 'Import-Module x' }
     $before = $pc; $o = & $inst
@@ -652,6 +674,7 @@ esac
         $o = & $run "Update-Preflight -RepoUrl '$up'"
         chk 'update: install.ps1 is replaced by the current installer' { (Get-Content (Join-Path $uh 'pwsh/install.ps1') -Raw) -ceq (Get-Content (Join-Path $Repo 'pwsh/install.ps1') -Raw) }
         chk 'update: the bundled defaults are delivered beside pwsh\' { (Test-Path (Join-Path $uh 'defaults/config.general.json')) -and (Test-Path (Join-Path $uh 'defaults/theme-catppuccin.omp.json')) }
+        chk 'update: plugins\ are delivered too' { Test-Path (Join-Path $uh 'pwsh/plugins/owl.ps1') }
         chk 'update: user config is never written by an update' { -not (Test-Path (Join-Path $ucfg 'config.json')) }
 
         # The installer then runs from the installed tree, with no checkout.
@@ -660,7 +683,7 @@ esac
         $o = & $pwshExe -NoProfile -Command ("`$env:PREFLIGHT_CONFIG_DIR = '$ucfg'; `$env:PREFLIGHT_STATE_DIR = '$ust'; " +
             "& '$(Join-Path $uh 'pwsh/install.ps1')' -Force -InstallRoot '$uh' -ProfilePath '$uprof'") 2>&1 | Out-String
         chk 'update then install: config.json is seeded from the delivered defaults' { Test-Path (Join-Path $ucfg 'config.json') }
-        chk 'update then install: the owl theme is seeded into the state dir' { Test-Path (Join-Path $ust 'owl/theme-catppuccin.omp.json') }
+        chk 'update then install: no owl state is seeded' { -not (Test-Path (Join-Path $ust 'owl')) }
         chk 'update then install: the profile guard is added and the rest of the profile kept' { $pc = Get-Content $uprof -Raw; $pc -match 'Import-Module' -and $pc -match '# mine' }
     } else {
         Write-Host 'skipped: Update-Preflight tests (git not installed)'

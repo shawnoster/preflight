@@ -108,6 +108,15 @@
         }
       }
     },
+    "plugins": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9-]*$"
+      },
+      "default": [],
+      "description": "Opt-in plugins to load (PREFLIGHT_PLUGINS, joined with ':'; ';' on Windows). Each is plugins/<name>/plugin.sh in bash and pwsh/plugins/<name>.ps1 in PowerShell. Nothing loads by default; \"owl\" is the theme engine, MOTD and Oh My Posh integration."
+    },
     "owl": {
       "type": "object",
       "additionalProperties": false,
@@ -115,7 +124,7 @@
         "omp_config": {
           "type": "string",
           "default": "$PREFLIGHT_STATE_DIR/owl/theme-catppuccin.omp.json",
-          "description": "Oh My Posh JSON that owl-theme patches (OWL_OMP_CONFIG). Empty turns Oh My Posh integration off; owl-theme still switches splash colors. A leading $PREFLIGHT_STATE_DIR/ or $PREFLIGHT_CONFIG_DIR/ is expanded."
+          "description": "Oh My Posh JSON that the owl plugin's owl-theme patches (OWL_OMP_CONFIG; only read when the owl plugin is enabled). Empty turns Oh My Posh integration off; owl-theme still switches splash colors. A leading $PREFLIGHT_STATE_DIR/ or $PREFLIGHT_CONFIG_DIR/ is expanded."
         }
       }
     }

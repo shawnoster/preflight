@@ -1,6 +1,7 @@
-﻿# lib/owl.ps1 — Obtusely Optimistic Owl: theme engine + MOTD splash.
+﻿# plugins/owl.ps1 — Obtusely Optimistic Owl: theme engine + MOTD splash.
 #
-# PowerShell sibling of bash lib/owl.sh. Provides:
+# An opt-in plugin: Preflight.psm1 dot-sources it only when "owl" is in the config.json `plugins`
+# list. PowerShell sibling of bash plugins/owl/plugin.sh. Provides:
 #
 #   Set-OwlTheme [-Name <theme>] [-List] [-Current]   (alias: owl-theme)
 #   Show-OwlSplash                                    — opt-in MOTD; no auto-fire
@@ -368,9 +369,22 @@ function Get-OwlSavedThemeName {
 function Initialize-OwlTheme {
     <#
     .SYNOPSIS
-        Module-load hook: read the saved theme and export $env:OWL_* colors.
-        Called by Preflight.psm1; not exported.
+        Plugin-load hook: seed the base theme, read the saved theme and export $env:OWL_* colors.
+        Called at the end of this file; not exported.
     #>
+    # Seed the user-owned OMP base theme that Set-OwlTheme patches (it refuses to touch
+    # $env:POSH_THEMES_PATH). The bundled copy sits in defaults\ beside pwsh\. Never overwrites an
+    # existing copy: it may hold the user's palette changes.
+    if ($env:PREFLIGHT_STATE_DIR) {
+        $dest = Join-Path (Join-Path $env:PREFLIGHT_STATE_DIR 'owl') 'theme-catppuccin.omp.json'
+        $src  = Join-Path (Join-Path (Split-Path -Parent $script:PreflightRoot) 'defaults') 'theme-catppuccin.omp.json'
+        if (-not (Test-Path -LiteralPath $dest) -and (Test-Path -LiteralPath $src)) {
+            try {
+                New-Item -ItemType Directory -Path (Split-Path -Parent $dest) -Force | Out-Null
+                Copy-Item -LiteralPath $src -Destination $dest
+            } catch { Write-Verbose "owl: could not seed $dest`: $_" }
+        }
+    }
     $name = Get-OwlSavedThemeName
     $theme = $script:OwlThemes[$name]
     if ($theme) { Set-OwlEnvColors -Theme $theme }
@@ -571,7 +585,7 @@ function Show-OwlSplash {
 # ---- Aliases ---------------------------------------------------------------
 Set-Alias -Name 'owl-theme' -Value Set-OwlTheme -Force -Scope Script
 
-# ---- Module-load hook ------------------------------------------------------
+# ---- Plugin-load hook ------------------------------------------------------
 # Read the saved theme name and export $env:OWL_* colors so the splash
 # inherits them. No splash auto-fire — opt-in only (see docstring above).
 Initialize-OwlTheme

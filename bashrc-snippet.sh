@@ -2,7 +2,7 @@
 # Example .bashrc addition - add this near the end of your .bashrc
 #
 # Keep this the ONLY place your shell initializes oh-my-posh: init.sh already runs
-# `oh-my-posh init bash --config <owl theme>`, and a second bare `oh-my-posh init bash`
+# `oh-my-posh init bash --config <owl theme>` when the owl plugin is enabled, and a second bare `oh-my-posh init bash`
 # after it replaces the theme with the default. Put any other PATH additions
 # (guarded with a `case ":$PATH:"` check) above this line.
 #
