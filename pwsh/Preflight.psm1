@@ -50,7 +50,7 @@ if ($dirsOk) {
 # ---- Plugins ----------------------------------------------------------------
 # Opt-in extras (see plugins/README.md at the repo root): "plugins": ["owl"] in config.json, or
 # `$env:PREFLIGHT_PLUGINS`. Nothing loads by default. Each one is plugins\<name>.ps1, dot-sourced
-# here so it shares the module's scope. A missing or broken plugin warns and never fails the import.
+# here so it shares the module's scope. A bad name or a broken plugin warns, a plugin with no PowerShell side is skipped quietly, and none fails the import.
 # The manifest still lists every plugin's exports; a name that was not loaded is simply not exported.
 $pluginDir = Join-Path $PSScriptRoot 'plugins'
 # Skipped when the layout was refused: a plugin must not write state inside the install tree.
@@ -62,7 +62,8 @@ foreach ($pluginName in $pluginNames) {
     }
     $pluginFile = Join-Path $pluginDir "$pluginName.ps1"
     if (-not (Test-Path -LiteralPath $pluginFile -PathType Leaf)) {
-        Write-Warning "Preflight: plugin '$pluginName' not found ($pluginFile)"
+        # The list is per user, not per shell, and some plugins (nanoleaf) are bash/zsh only: not an error.
+        Write-Verbose "Preflight: no PowerShell implementation of plugin '$pluginName' ($pluginFile)"
         continue
     }
     try {

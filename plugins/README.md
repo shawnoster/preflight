@@ -11,20 +11,29 @@ preflight config set plugins owl        # one or more names, separated by ':'  (
 ```
 
 or in `config.json`: `"plugins": ["owl"]`. Open a new terminal (or `source ~/.bashrc`). To turn one off, remove it from
-the list (`preflight config set plugins ''` clears it) or edit the file. A name that is not a plugin, or is not a valid name
-(lowercase letters, digits and `-`), is skipped with a warning; it never stops the shell from starting.
+the list (`preflight config set plugins ''` clears it) or edit the file. A name that is not valid (lowercase letters, digits and `-`), or has no `plugins/<name>/plugin.sh`, is skipped
+with a warning in bash/zsh; it never stops the shell from starting. The list is per user, not per shell, so
+PowerShell skips a plugin with no PowerShell side (like `nanoleaf`) without a warning.
 
 PowerShell reads the same `plugins` list.
+
+## Disabling
+
+Remove the name from the list and open a new terminal: the plugin's functions, `PATH` entries, hooks and colors are gone from new shells (a shell that is already open keeps them until it closes). What a plugin wrote is left alone:
+
+- `owl`: `~/.local/state/preflight/owl/` (your theme choice and the patched Oh My Posh config). Delete the directory to start over.
+- `nanoleaf`: `~/.config/nanoleaf-direct/env` keeps the last `NANOLEAF_TOKEN` (kept on purpose so cron jobs still work). **Delete that file to revoke it** once you no longer want it on disk.
 
 ## Available
 
 | Plugin | What it adds |
 |---|---|
+| `nanoleaf` | Hands `NANOLEAF_TOKEN` to cron on every `op-env load` (copies it to `~/.config/nanoleaf-direct/env`, mode 600), and puts `light-remind`, `nanoleaf-kitt` and `nanoleaf-streak` on `PATH`. bash/zsh only. |
 | `owl` | The OOO theme engine: `owl-theme`, a MOTD splash (shown once per session in bash/zsh; in PowerShell call `Show-OwlSplash` yourself) and Oh My Posh prompt integration (`owl.omp_config`). Seeds `~/.local/state/preflight/owl/theme-catppuccin.omp.json` on first load. |
 
 ## Writing one
 
-- **bash/zsh:** `plugins/<name>/plugin.sh`. `init.sh` sources it after the libraries and after the settings are loaded,
+- **bash/zsh:** `plugins/<name>/plugin.sh`; a plugin that ships scripts keeps them in `plugins/<name>/bin` and adds that to `PATH` itself. `init.sh` sources it after the libraries and after the settings are loaded,
   so it can read any setting variable. It runs in the user's shell: keep it portable to Bash and zsh (see AGENTS.md),
   guard anything interactive with `[[ $- == *i* ]]`, and never assign a setting variable at load time.
 - **PowerShell:** `pwsh/plugins/<name>.ps1`, dot-sourced by `Preflight.psm1` after the settings load. List its public

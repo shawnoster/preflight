@@ -29,9 +29,14 @@ Tones (per-panel via Nanoleaf direct API):
 
 import argparse
 import json
+import os
+import pathlib
 import subprocess
 import sys
 import time
+
+# The sibling scripts live next to this one; calling them by path keeps cron (no PATH) working.
+HERE = pathlib.Path(__file__).resolve().parent
 
 ENTITY = os.environ.get("LIGHT_ENTITY", "light.light_panels")
 
@@ -90,7 +95,7 @@ def restore(entity, saved):
 
 def apply_streak(tone, duration):
     subprocess.run(
-        ["nanoleaf-streak",
+        [str(HERE / "nanoleaf-streak"),
          "--color", tone["color"],
          "--duration", str(duration),
          "--direction", tone["direction"]],
@@ -100,7 +105,7 @@ def apply_streak(tone, duration):
 
 def apply_kitt(tone, duration):
     subprocess.run(
-        ["nanoleaf-kitt",
+        [str(HERE / "nanoleaf-kitt"),
          "--color", tone["color"],
          "--period", str(tone["period"]),
          "--trail", str(tone["trail"])],
