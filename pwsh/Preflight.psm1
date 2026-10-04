@@ -39,7 +39,8 @@ if (Test-Path -LiteralPath $libDir) {
 # ---- Load settings ----------------------------------------------------------
 # Never fails the import: a bad layout, a missing file or invalid JSON warns and the
 # built-in defaults apply (Invoke-Preflight reports it as a failed check).
-if (Resolve-PreflightDirs) {
+$dirsOk = Resolve-PreflightDirs
+if ($dirsOk) {
     Import-PreflightConfig
 } else {
     $script:PreflightConfigStatus = 'invalid'
@@ -52,7 +53,9 @@ if (Resolve-PreflightDirs) {
 # here so it shares the module's scope. A missing or broken plugin warns and never fails the import.
 # The manifest still lists every plugin's exports; a name that was not loaded is simply not exported.
 $pluginDir = Join-Path $PSScriptRoot 'plugins'
-foreach ($pluginName in @("$env:PREFLIGHT_PLUGINS".Split([System.IO.Path]::PathSeparator, [System.StringSplitOptions]::RemoveEmptyEntries))) {
+# Skipped when the layout was refused: a plugin must not write state inside the install tree.
+$pluginNames = if ($dirsOk) { @("$env:PREFLIGHT_PLUGINS".Split([System.IO.Path]::PathSeparator, [System.StringSplitOptions]::RemoveEmptyEntries)) } else { @() }
+foreach ($pluginName in $pluginNames) {
     if ($pluginName -cnotmatch '^[a-z][a-z0-9-]*$') {
         Write-Warning "Preflight: ignoring plugin '$pluginName' (names are lowercase letters, digits and -)"
         continue

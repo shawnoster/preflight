@@ -615,6 +615,12 @@ esac
     $o = & $pimp '{"version":1,"plugins":["nope","Bad Name"]}'
     chk 'plugins: an unknown or badly named plugin warns and the import still works' { $o -match "plugin 'nope' not found" -and $o -match "ignoring plugin" -and $o.Trim().EndsWith('False') }
 
+    $inside = Join-Path $Repo 'pf-test-state-inside'
+    $o = & $pwshExe -NoProfile -Command ("`$env:PREFLIGHT_CONFIG_DIR = '$(Join-Path $pdir 'cfg')'; `$env:PREFLIGHT_STATE_DIR = '$inside'; `$env:PREFLIGHT_PLUGINS = 'owl'; " +
+        "Import-Module '$(Join-Path $Repo 'pwsh/Preflight.psd1')' -Force 3>`$null; [bool](Get-Command Set-OwlTheme -ErrorAction SilentlyContinue)") 2>&1 | Out-String
+    chk 'plugins: a refused layout loads no plugin and writes nothing inside the install tree' { $o.Trim() -ceq 'False' -and -not (Test-Path -LiteralPath $inside) }
+    Remove-Item -LiteralPath $inside -Recurse -Force -ErrorAction SilentlyContinue
+
     # ---- installer ---------------------------------------------------------------
     $ih = Join-Path $T 'ihome'; New-Item -ItemType Directory -Path $ih | Out-Null
     $prof = Join-Path $T 'profile.ps1'

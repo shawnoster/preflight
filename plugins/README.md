@@ -11,7 +11,7 @@ preflight config set plugins owl        # one or more names, separated by ':'  (
 ```
 
 or in `config.json`: `"plugins": ["owl"]`. Open a new terminal (or `source ~/.bashrc`). To turn one off, remove it from
-the list (`preflight config set plugins -` clears it) or edit the file. A name that is not a plugin, or is not a valid name
+the list (`preflight config set plugins ''` clears it) or edit the file. A name that is not a plugin, or is not a valid name
 (lowercase letters, digits and `-`), is skipped with a warning; it never stops the shell from starting.
 
 PowerShell reads the same `plugins` list.
