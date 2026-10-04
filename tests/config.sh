@@ -36,7 +36,7 @@ MANAGED="OP_ACCOUNT PROJ_DIRS AWS_PROFILE_DEFAULT GIT_MAIN_BRANCH GITEA_USERNAME
 # Forget every setting, as a brand-new shell would see it.
 reset() {
   local v
-  for v in $MANAGED; do unset "$v"; done
+  for v in $(echo "$MANAGED"); do unset "$v"; done
   _PF_CONFIG_MANAGED=" "
 }
 # Quiet load; warnings from the loader land in $warn.
@@ -49,7 +49,7 @@ put() { printf '%s\n' "$1" > "$CFG"; }
 reset
 for f in "$R"/lib/*.sh; do source "$f" >/dev/null 2>&1; done
 leaked=""
-for v in $MANAGED; do eval "[ -n \"\${$v+x}\" ]" && leaked="$leaked $v"; done
+for v in $(echo "$MANAGED"); do eval "[ -n \"\${$v+x}\" ]" && leaked="$leaked $v"; done
 chk "sourcing the libs sets no config variable:$leaked" '[[ -z "$leaked" ]]'
 reset
 
@@ -60,11 +60,11 @@ chk "no file: built-in OP_ACCOUNT"          '[[ "$OP_ACCOUNT" == my.1password.co
 chk "no file: PROJ_DIRS expanded"           '[[ "$PROJ_DIRS" == "$HOME/projects:$HOME/work:$HOME/src" ]]'
 chk "no file: checks default to 1"          '[[ "$_CHECK_AWS" == 1 && "$_CHECK_GIT_CONFIG" == 1 ]]'
 chk "no file: OWL_OMP_CONFIG is the bundled theme" '[[ "$OWL_OMP_CONFIG" == "$PREFLIGHT_STATE_DIR/owl/theme-catppuccin.omp.json" ]]'
-fallback_dump=$(for v in $MANAGED; do eval "printf '%s=%s\n' $v \"\$$v\""; done)
+fallback_dump=$(for v in $(echo "$MANAGED"); do eval "printf '%s=%s\n' $v \"\$$v\""; done)
 
 # The jq path must give the same values as the shell fallback for an empty object.
 reset; put '{}'; _pf_config_load
-jq_dump=$(for v in $MANAGED; do eval "printf '%s=%s\n' $v \"\$$v\""; done)
+jq_dump=$(for v in $(echo "$MANAGED"); do eval "printf '%s=%s\n' $v \"\$$v\""; done)
 chk "jq defaults equal shell fallback defaults" '[[ "$jq_dump" == "$fallback_dump" ]]'
 chk "empty object: status ok" '[[ "$_PF_CONFIG_STATUS" == ok ]]'
 

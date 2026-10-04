@@ -942,7 +942,7 @@ PYEOF
 # Clear the variables `op-env load` set, plus any the active env sets define. This is what
 # `op-env clear` runs; with set names, only those sets' variables.
 _op_env_clear() {
-  local _op_names _op_var _op_keep
+  local _op_names _op_var _op_keep nl=$'\n'   # $nl: zsh does not expand $'\n' inside "${x:+...}"
   if [[ $# -gt 0 ]]; then
     # Only what the named sets supplied. Whatever else was loaded stays loaded, and stays in
     # the loaded-vars memory so a later full clear or load still knows about it. A variable
@@ -952,7 +952,7 @@ _op_env_clear() {
     local _op_set
     _op_names=""
     for _op_set in "$@"; do
-      _op_names="${_op_names:+$_op_names$'\n'}$(printf '%s\n' "$_OP_LOADED_SRC" | awk -F'\t' -v s="$_op_set" '$2 == s { print $1 }')"
+      _op_names="${_op_names:+$_op_names$nl}$(printf '%s\n' "$_OP_LOADED_SRC" | awk -F'\t' -v s="$_op_set" '$2 == s { print $1 }')"
     done
     while IFS= read -r _op_var; do
       [[ -n "$_op_var" ]] && unset "$_op_var"
@@ -960,7 +960,7 @@ _op_env_clear() {
     _op_keep=""
     while IFS= read -r _op_var; do
       [[ -n "$_op_var" ]] || continue
-      grep -qxF -- "$_op_var" <<< "$_op_names" || _op_keep="${_op_keep:+$_op_keep$'\n'}$_op_var"
+      grep -qxF -- "$_op_var" <<< "$_op_names" || _op_keep="${_op_keep:+$_op_keep$nl}$_op_var"
     done <<< "$_OP_LOADED_VARS"
     _OP_LOADED_VARS="$_op_keep"
     _OP_LOADED_SRC=$(printf '%s\n' "$_OP_LOADED_SRC" | PF_GONE="$_op_names" awk -F'\t' '

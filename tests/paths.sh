@@ -96,7 +96,7 @@ fresh
 out=$(source "$PREFLIGHT_DIR/init.sh" 2>&1 </dev/null)
 chk "first run creates config.json in the config dir" 'jq -e . "$HOME/.config/preflight/config.json" >/dev/null'
 chk "first run uses the general profile when non-interactive" 'cmp -s "$HOME/.config/preflight/config.json" "$R/defaults/config.general.json"'
-chk "first run is UI-neutral: no owl state, no owl-theme, no plugins" '[[ ! -e "$HOME/.local/state/preflight/owl" && -z "$(source "$PREFLIGHT_DIR/init.sh" >/dev/null 2>&1 </dev/null; declare -F owl-theme _owl_splash; printf %s "$PREFLIGHT_PLUGINS")" ]]'
+chk "first run is UI-neutral: no owl state, no owl-theme, no plugins" '[[ ! -e "$HOME/.local/state/preflight/owl" && -z "$(source "$PREFLIGHT_DIR/init.sh" >/dev/null 2>&1 </dev/null; type owl-theme >/dev/null 2>&1 && echo owl; printf %s "$PREFLIGHT_PLUGINS")" ]]'
 chk "first run writes nothing into the clone"         '[[ ! -e "$PREFLIGHT_DIR/config" && ! -e "$PREFLIGHT_DIR/state" ]]'
 chk "first run loads the profile into the shell"      '[[ "$(source "$PREFLIGHT_DIR/init.sh" >/dev/null 2>&1 </dev/null; printf %s "$OWL_OMP_CONFIG")" == "$HOME/.local/state/preflight/owl/theme-catppuccin.omp.json" ]]'
 
@@ -223,13 +223,13 @@ unset PREFLIGHT_CONFIG_DIR
 # ── plugins: opt-in, named in config.json ─────────────────────────────────────
 fresh
 mkdir -p "$HOME/.config/preflight"; echo '{"plugins": ["owl"]}' > "$HOME/.config/preflight/config.json"
-chk "plugins: one named in config.json loads (owl-theme defined)"  '[[ -n "$(source "$PREFLIGHT_DIR/init.sh" >/dev/null 2>&1 </dev/null; declare -F owl-theme)" ]]'
+chk "plugins: one named in config.json loads (owl-theme defined)"  '[[ -n "$(source "$PREFLIGHT_DIR/init.sh" >/dev/null 2>&1 </dev/null; type owl-theme >/dev/null 2>&1 && echo owl)" ]]'
 chk "plugins: ...and seeds its base theme in the state dir"        '[[ -f "$HOME/.local/state/preflight/owl/theme-catppuccin.omp.json" ]]'
 printf '{"plugins": ["nope", "Bad Name"]}' > "$HOME/.config/preflight/config.json"
 out=$(source "$PREFLIGHT_DIR/init.sh" 2>&1 </dev/null)
 chk "plugins: an unknown plugin warns and does not stop the shell" '[[ "$out" == *"plugin '"'"'nope'"'"' not found"* && "$out" == *"ignoring plugin"* ]]'
 printf '{"plugins": []}' > "$HOME/.config/preflight/config.json"
-chk "plugins: an empty list loads nothing"                         '[[ -z "$(source "$PREFLIGHT_DIR/init.sh" >/dev/null 2>&1 </dev/null; declare -F owl-theme)" ]]'
+chk "plugins: an empty list loads nothing"                         '[[ -z "$(source "$PREFLIGHT_DIR/init.sh" >/dev/null 2>&1 </dev/null; type owl-theme >/dev/null 2>&1 && echo owl)" ]]'
 
 # ── install.sh refuses a shared layout before touching anything ──────────────
 # Clones this repo's current branch from disk, so only runs inside a git checkout on a

@@ -379,7 +379,7 @@ if [[ "$(id -u)" != 0 ]]; then
   clean_sets
 fi
 
-op-clear-env >/dev/null; clean_sets
+op-env clear >/dev/null; clean_sets
 
 # ── a secret value with a newline must not set other variables ────────────────
 # A stray line after a record is part of that record's value, not a new variable.
