@@ -119,7 +119,7 @@ _pf_config_table_json() {
   local k var type exp def out=""
   while IFS='|' read -r k var type exp def; do
     [[ -n "$k" ]] || continue
-    out="$out[\"$k\",\"$var\",\"$type\",\"$exp\",\"$def\"],"
+    out="${out}[\"$k\",\"$var\",\"$type\",\"$exp\",\"$def\"],"
   done <<< "$_PF_CONFIG_TABLE"
   _pf_cfg_out="[${out%,}]"
 }

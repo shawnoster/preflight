@@ -1618,7 +1618,7 @@ GITIGNORE
     # 8. 1Password CLI: prefer the Windows op.exe (desktop-app approval, no WSL
     #    install). Windows PATH is often not appended, so use the resolver.
     unset OP_BIN
-    if declare -F _op_resolve_bin &>/dev/null && _op_resolve_bin && [[ "$OP_BIN" == *op.exe ]]; then
+    if type _op_resolve_bin &>/dev/null && _op_resolve_bin && [[ "$OP_BIN" == *op.exe ]]; then
       echo "✅ 1Password CLI: $OP_BIN"
       ((kept++))
     elif [[ -n "${OP_BIN:-}" ]]; then

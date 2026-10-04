@@ -377,7 +377,7 @@ _op_env_check_sets() {
 # both define it.
 # Usage: _op_env_sources [set...]
 _op_env_sources() {
-  local sets set n seen=""
+  local sets set n seen="" nl=$'\n'   # $nl: zsh does not expand $'\n' inside "${x:+...}"
   if [[ $# -gt 0 ]]; then sets=$(printf '%s\n' "$@"); else sets=$(_op_envsets_active); fi
   while IFS= read -r set; do
     [[ -n "$set" ]] || continue
@@ -387,7 +387,7 @@ _op_env_sources() {
       [[ -n "$n" ]] || continue
       grep -qxF -- "$n" <<< "$seen" && continue
       printf '%s\t%s\n' "$n" "$set"
-      seen="${seen:+$seen$'\n'}$n"
+      seen="${seen:+$seen$nl}$n"
     done <<< "$(_op_env_entries "$set" | cut -f1)"
   done <<< "$sets"
 }
