@@ -83,9 +83,7 @@ source ~/.bashrc
 ~/.preflight/
 ├── init.sh              # Main loader (also adds bin/ to PATH)
 ├── bin/                 # Distributed scripts (auto on PATH)
-│   ├── light-remind     # Visual reminder (snapshot/flash/restore)
-│   ├── nanoleaf-streak  # Per-panel streak via Nanoleaf direct API
-│   └── nanoleaf-kitt    # KITT-style scanner with comet trail
+│   └── git-credential-op  # Git credential helper backed by 1Password
 ├── lib/
 │   ├── paths.sh         # Where your config and state live (resolver + safe-rm guard)
 │   ├── onepassword.sh  # 1Password CLI utilities (generic; holds no secret names)
@@ -95,11 +93,11 @@ source ~/.bashrc
 │   ├── config.sh        # config.json loader + `preflight config`
 │   ├── envsets.sh       # op-env: named sets of VAR -> op:// refs (+ optional account)
 │   ├── help.sh          # Unified help system (dev-help / devhelp)
-│   ├── nanoleaf.sh      # op-env load hook: hands NANOLEAF_TOKEN to the nanoleaf-* scripts
 │   ├── postgres.sh      # PostgreSQL cluster start/stop (pg-up / pg-down)
 │   ├── preflight.sh     # Session startup + environment health check
 │   └── project.sh       # Build tool wrappers
 ├── plugins/             # Opt-in extras, off by default (see plugins/README.md)
+│   ├── nanoleaf/        # plugin.sh (op-env load hook) + bin/ (light-remind, nanoleaf-kitt, nanoleaf-streak)
 │   └── owl/plugin.sh    # OOO theme engine + MOTD splash + Oh My Posh integration
 ├── defaults/            # Tracked starting points: config.<profile>.json, config.schema.json, owl base theme
 ├── pwsh/                # PowerShell sibling — see pwsh/README.md
@@ -178,7 +176,7 @@ NPM_TOKEN<TAB>op://Private/Item/credential
 
 Leave the column out to use `$OP_ACCOUNT` (the default from `op.account`), which is why two-column lines — every line written before this existed — keep working untouched. `op-env add` takes the account as an optional 4th argument and never prompts for it; re-adding a key without one keeps whatever the line already said, so changing a reference can't quietly move the secret to another account. `op` resolves a reference against exactly one account per call, so `op-env load` groups the entries by account and runs one `op inject` per account (a set that stays single-account still resolves in one call, as before). Every account is signed in up front, so a sign-in failure aborts before any variable is set rather than leaving a half-loaded environment; a batch that fails falls back to per-secret reads so the broken reference is named. With more than one account in play, `op-env load` labels each secret with the account it came from.
 
-To run extra code after a load (for example `lib/nanoleaf.sh` copying `NANOLEAF_TOKEN` for cron jobs), add a function name to `_OP_AFTER_LOAD_HOOKS`.
+To run extra code after a load (for example the `nanoleaf` plugin copying `NANOLEAF_TOKEN` for cron jobs), add a function name to `_OP_AFTER_LOAD_HOOKS`.
 
 **Auth model:** the helpers resolve an `op` binary and **prefer the Windows `op.exe` under WSL**, so secret reads are authorized by the Windows 1Password desktop app (Windows Hello / desktop unlock) — no password typed in WSL. On native Linux/macOS they fall back to the platform `op` and the manual session-token sign-in. See [docs/wsl-1password-cli.md](./docs/wsl-1password-cli.md) for the full WSL setup.
 
@@ -257,7 +255,9 @@ no desktop-app integration and always reports "not currently signed in". It
 also strips CR from `op.exe` output — Windows line endings would otherwise
 corrupt the token and surface as a confusing auth failure.
 
-### Office Light Reminders (`bin/`)
+### Office Light Reminders (opt-in plugin: `plugins/nanoleaf/`)
+
+**Off by default.** Enable it with `preflight config set plugins nanoleaf` (see [plugins/README.md](plugins/README.md)). It puts the three scripts below on `PATH` and, on every `op-env load`, copies `NANOLEAF_TOKEN` (when a set defines it) to `~/.config/nanoleaf-direct/env` for cron, so it stays opt-in. bash/zsh only.
 
 Visual reminders driven through Home Assistant + Nanoleaf Light Panels.
 `light-remind` shells out to a local `ha` CLI helper for HA REST API

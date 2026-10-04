@@ -17,7 +17,7 @@ if ! mkdir -p "$PREFLIGHT_CONFIG_DIR"; then
   return 1
 fi
 
-# Add bin/ to PATH so distributed scripts (light-remind, nanoleaf-*) are
+# Add bin/ to PATH so distributed scripts (git-credential-op) are
 # findable. Idempotent — safe to source multiple times.
 case ":$PATH:" in
   *":$PREFLIGHT_DIR/bin:"*) ;;

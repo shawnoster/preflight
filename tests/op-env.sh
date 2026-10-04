@@ -113,6 +113,8 @@ mode() { stat -c %a "$1" 2>/dev/null || stat -f %Lp "$1"; }
 load_libs() { local f; for f in "$R"/lib/*.sh; do source "$f" || echo "SOURCE FAIL $f"; done; }
 cp "$R"/lib/*.sh "$PREFLIGHT_DIR/lib/" 2>/dev/null
 load_libs
+# The nanoleaf plugin is opt-in; these tests exercise the after-load hook it registers.
+source "$R/plugins/nanoleaf/plugin.sh"
 
 # ── empty ─────────────────────────────────────────────────────────────────────
 out=$(op-env load 2>&1); rc=$?
@@ -546,7 +548,7 @@ chk "add without an account still writes exactly the two-column line" '[[ "$(cat
 unset FAKE_OP_LOG; clean_sets; op-env clear >/dev/null
 
 # ── hooks ─────────────────────────────────────────────────────────────────────
-source "$R/lib/nanoleaf.sh"; source "$R/lib/onepassword.sh"
+source "$R/plugins/nanoleaf/plugin.sh"; source "$R/lib/onepassword.sh"
 chk "after-load hook registered exactly once across re-sourcing" '[[ ${#_OP_AFTER_LOAD_HOOKS[@]} -eq 1 ]]'
 
 # ── op-env load / clear (named sets) ──────────────────────────────────────────

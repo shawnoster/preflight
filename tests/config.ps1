@@ -631,7 +631,7 @@ esac
     chk 'plugins: one named in config.json loads (Set-OwlTheme exported)' { $o.Trim() -ceq 'True' }
     chk 'plugins: ...and seeds its base theme into the state dir' { Test-Path (Join-Path $pdir 'state/owl/theme-catppuccin.omp.json') }
     $o = & $pimp '{"version":1,"plugins":["nope","Bad Name"]}'
-    chk 'plugins: an unknown or badly named plugin warns and the import still works' { $o -match "plugin 'nope' not found" -and $o -match "ignoring plugin" -and $o.Trim().EndsWith('False') }
+    chk 'plugins: a badly named plugin warns, one with no PowerShell side is skipped quietly, and the import still works' { $o -match "ignoring plugin 'Bad Name'" -and $o -notmatch "nope" -and $o.Trim().EndsWith('False') }
 
     $inside = Join-Path $Repo 'pf-test-state-inside'
     $o = & $pwshExe -NoProfile -Command ("`$env:PREFLIGHT_CONFIG_DIR = '$(Join-Path $pdir 'cfg')'; `$env:PREFLIGHT_STATE_DIR = '$inside'; `$env:PREFLIGHT_PLUGINS = 'owl'; " +

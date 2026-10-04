@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# ~/.preflight/lib/nanoleaf.sh - Nanoleaf token hand-off for the bin/nanoleaf-* scripts
+# ~/.preflight/plugins/nanoleaf/plugin.sh - Nanoleaf token hand-off and the light scripts
 #
-# Hooks into op-env load (lib/onepassword.sh) so the generic loader stays free of
+# An opt-in plugin: init.sh sources it only when "nanoleaf" is in the config.json `plugins` list.
+# It puts plugins/nanoleaf/bin (light-remind, nanoleaf-kitt, nanoleaf-streak) on PATH and hooks
+# into op-env load (lib/onepassword.sh) so the generic loader stays free of
 # secret-specific logic. Nothing happens unless NANOLEAF_TOKEN is in the
 # environment, i.e. an active env set maps it to an op:// reference.
 #
@@ -42,4 +44,10 @@ _op_sync_nanoleaf_env() {
 case " ${_OP_AFTER_LOAD_HOOKS[*]:-} " in
   *" _op_sync_nanoleaf_env "*) ;;
   *) _OP_AFTER_LOAD_HOOKS+=(_op_sync_nanoleaf_env) ;;
+esac
+
+# The plugin's own scripts. Idempotent, like the core bin/ entry in init.sh.
+case ":$PATH:" in
+  *":${PREFLIGHT_DIR:-$HOME/.preflight}/plugins/nanoleaf/bin:"*) ;;
+  *) PATH="${PREFLIGHT_DIR:-$HOME/.preflight}/plugins/nanoleaf/bin:$PATH" ;;
 esac

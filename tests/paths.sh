@@ -32,6 +32,7 @@ fresh() {
   cp -R "$R/lib" "$R/defaults" "$R/plugins" "$R/init.sh" "$T/pf/"
   unset PREFLIGHT_CONFIG_DIR PREFLIGHT_STATE_DIR XDG_CONFIG_HOME XDG_STATE_HOME OWL_THEME_DIR
   # Settings a developer already has exported would win over config.json.
+  PATH=$(printf %s "$PATH" | tr ":" "\n" | grep -v "/plugins/nanoleaf/bin$" | paste -sd: -)   # a dev with the plugin on has it on PATH
   unset OP_ACCOUNT PROJ_DIRS AWS_PROFILE_DEFAULT GIT_MAIN_BRANCH GITEA_USERNAME GITEA_HOST OWL_OMP_CONFIG PREFLIGHT_PLUGINS _CHECK_AWS _CHECK_GH _CHECK_SSH _CHECK_GIT_CONFIG
   export HOME="$T/home" PREFLIGHT_DIR="$T/pf" PREFLIGHT_NO_SPLASH=1
 }
@@ -96,6 +97,7 @@ fresh
 out=$(source "$PREFLIGHT_DIR/init.sh" 2>&1 </dev/null)
 chk "first run creates config.json in the config dir" 'jq -e . "$HOME/.config/preflight/config.json" >/dev/null'
 chk "first run uses the general profile when non-interactive" 'cmp -s "$HOME/.config/preflight/config.json" "$R/defaults/config.general.json"'
+chk "first run has no nanoleaf scripts on PATH, no hook, no nanoleaf state" '[[ -z "$(source "$PREFLIGHT_DIR/init.sh" >/dev/null 2>&1 </dev/null; command -v light-remind nanoleaf-kitt nanoleaf-streak; case " ${_OP_AFTER_LOAD_HOOKS[*]:-} " in *_op_sync_nanoleaf_env*) echo hook ;; esac)" && ! -e "$HOME/.config/nanoleaf-direct" ]]'
 chk "first run is UI-neutral: no owl state, no owl-theme, no plugins" '[[ ! -e "$HOME/.local/state/preflight/owl" && -z "$(source "$PREFLIGHT_DIR/init.sh" >/dev/null 2>&1 </dev/null; type owl-theme >/dev/null 2>&1 && echo owl; printf %s "$PREFLIGHT_PLUGINS")" ]]'
 chk "first run writes nothing into the clone"         '[[ ! -e "$PREFLIGHT_DIR/config" && ! -e "$PREFLIGHT_DIR/state" ]]'
 chk "first run loads the profile into the shell"      '[[ "$(source "$PREFLIGHT_DIR/init.sh" >/dev/null 2>&1 </dev/null; printf %s "$OWL_OMP_CONFIG")" == "$HOME/.local/state/preflight/owl/theme-catppuccin.omp.json" ]]'
@@ -225,6 +227,8 @@ fresh
 mkdir -p "$HOME/.config/preflight"; echo '{"plugins": ["owl"]}' > "$HOME/.config/preflight/config.json"
 chk "plugins: one named in config.json loads (owl-theme defined)"  '[[ -n "$(source "$PREFLIGHT_DIR/init.sh" >/dev/null 2>&1 </dev/null; type owl-theme >/dev/null 2>&1 && echo owl)" ]]'
 chk "plugins: ...and seeds its base theme in the state dir"        '[[ -f "$HOME/.local/state/preflight/owl/theme-catppuccin.omp.json" ]]'
+printf '{"plugins": ["nanoleaf"]}' > "$HOME/.config/preflight/config.json"
+chk "plugins: nanoleaf puts its scripts on PATH and registers its after-load hook" '[[ "$(source "$PREFLIGHT_DIR/init.sh" >/dev/null 2>&1 </dev/null; command -v light-remind nanoleaf-kitt nanoleaf-streak | wc -l | tr -d " ")" == 3 && "$(source "$PREFLIGHT_DIR/init.sh" >/dev/null 2>&1 </dev/null; echo " ${_OP_AFTER_LOAD_HOOKS[*]} ")" == *" _op_sync_nanoleaf_env "* ]]'
 printf '{"plugins": ["nope", "Bad Name"]}' > "$HOME/.config/preflight/config.json"
 out=$(source "$PREFLIGHT_DIR/init.sh" 2>&1 </dev/null)
 chk "plugins: an unknown plugin warns and does not stop the shell" '[[ "$out" == *"plugin '"'"'nope'"'"' not found"* && "$out" == *"ignoring plugin"* ]]'
