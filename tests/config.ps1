@@ -583,6 +583,24 @@ esac
     # help, unknown commands, and no import noise
     Invoke-OpQuiet { op-env help }
     chk 'help: documents load, clear, add, list, rm and use' { $wOut -match 'op-env load \[set\.\.\.\]' -and $wOut -match 'op-env clear \[set\.\.\.\]' -and $wOut -match 'op-env use \[set\.\.\.\]' }
+    chk 'help: has examples and mentions tab completion' { $wOut -match 'Examples:' -and $wOut -match 'Tab completes' }
+
+    # tab completion: subcommands, then set names (list and rm take one)
+    function Get-Completions([string]$Line) { @((TabExpansion2 -inputScript $Line -cursorColumn $Line.Length).CompletionMatches | ForEach-Object CompletionText) }
+    chk 'complete: op-env offers the subcommands' { (Get-Completions 'op-env ') -join ',' -ceq 'load,clear,add,list,rm,use,help' }
+    chk 'complete: ...filtered by what is typed' { (Get-Completions 'op-env l') -join ',' -ceq 'load,list' }
+    Invoke-OpQuiet { op-env add acct KEY_ONE 'op://v/i/1' }; Invoke-OpQuiet { op-env add acct KEY_TWO 'op://v/i/2' }
+    Invoke-OpQuiet { op-env add other KEY_THREE 'op://v/i/3' }
+    chk 'complete: load offers the set names' { $c = Get-Completions 'op-env load '; ($c -ccontains 'acct') -and ($c -ccontains 'other') }
+    chk 'complete: ...filtered by what is typed' { (Get-Completions 'op-env use ac') -join ',' -ceq 'acct' }
+    chk 'complete: ...but not a set already on the line' { $c = Get-Completions 'op-env load acct '; ($c -ccontains 'other') -and -not ($c -ccontains 'acct') }
+    chk 'complete: list and add take one set name' { ((Get-Completions 'op-env list ') -ccontains 'acct') -and ((Get-Completions 'op-env add ') -ccontains 'acct') -and -not ((Get-Completions 'op-env add acct ') -ccontains 'acct') }
+    chk 'complete: rm takes a set, then that set''s keys' { ((Get-Completions 'op-env rm ') -ccontains 'acct') -and ((Get-Completions 'op-env rm acct ') -join ',') -ceq 'KEY_ONE,KEY_TWO' -and ((Get-Completions 'op-env rm acct KEY_T') -join ',') -ceq 'KEY_TWO' }
+    [System.IO.File]::WriteAllText((Join-Path $wDir 'Bad Name.tsv'), "X`top://v/i/x`n")
+    chk 'complete: a set name op-env would reject is not offered' { -not ((Get-Completions 'op-env load ') -ccontains 'Bad Name') }
+    Remove-Item -LiteralPath (Join-Path $wDir 'Bad Name.tsv') -Force
+    chk 'complete: the full command name completes too' { (Get-Completions 'Invoke-OpEnv clear a') -ccontains 'acct' }
+
     Invoke-OpQuiet { op-env bogus }
     chk 'an unknown command is an error' { $wErr.Count -gt 0 }
     Remove-Item -LiteralPath $wDir -Recurse -Force -ErrorAction SilentlyContinue

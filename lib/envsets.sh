@@ -303,6 +303,14 @@ op-env manages named env sets backed by 1Password references.
   op-env use [set...]                 Choose active sets (fzf multi-select if omitted)
   op-env help                         This message
 
+Examples:
+  op-env add work NPM_TOKEN op://Private/npm/credential   Put a secret in the "work" set
+  op-env load work                                        Load just the work secrets
+  op-env clear work                                       Unset just the work secrets again
+  op-env use work personal                                Make a plain op-env load use these two
+
+Tab completes the subcommands, set names, and (for rm) the keys of a set.
+
 Sets (e.g. guild, personal) are stored in envsets/<set>.tsv, one
 `VAR<TAB>op://vault/item/field` per line, and are the only list of secrets
 `op-env load` and `op-env clear` use.
@@ -415,3 +423,74 @@ _op_env_entries() {
   } | tr -d '\r' | awk -F'\t' -v re="$_OP_REF_RE" -v acre="$_OP_ACCT_RE" \
       'NF <= 3 && $1 ~ /^[A-Za-z_][A-Za-z0-9_]*$/ && $2 ~ re && ($3 == "" || $3 ~ acre) && !seen[$1]++'
 }
+
+# ── Tab completion ────────────────────────────────────────────────────────────
+# `op-env <TAB>` offers the subcommands; load, clear and use then offer the existing set names (none
+# twice), list, add and rm offer one set name, and `rm <set>` offers that set's keys.
+
+_OP_ENV_SUBCOMMANDS="load clear add list rm use help"
+
+# Candidates, one per line. $1 is the subcommand typed so far ("" while completing the
+# subcommand itself); the rest are the arguments already typed after it (not the word being
+# completed). Shared by both shells' wrappers.
+_op_env_candidates() {
+  local sub="${1-}"
+  [[ $# -gt 0 ]] && shift
+  case "$sub" in
+    "")                  printf '%s\n' "$_OP_ENV_SUBCOMMANDS" | tr ' ' '\n' ;;
+    load|clear|use)      _op_env_complete_sets "$@" ;;   # any number of sets, none twice
+    list|ls|add)         if [[ $# -eq 0 ]]; then _op_env_complete_sets; fi ;;
+    rm|remove)
+      if [[ $# -eq 0 ]]; then _op_env_complete_sets
+      elif [[ $# -eq 1 ]]; then _op_env_entries "$1" | cut -f1
+      fi ;;
+  esac
+}
+
+# Set names op-env would accept (a stray "My Set.tsv" is listed by `op-env list` but cannot be
+# loaded), less any given as arguments.
+_op_env_complete_sets() {
+  local set typed
+  while IFS= read -r set; do
+    _op_envsets_valid_name "$set" || continue
+    for typed in "$@"; do [[ "$typed" == "$set" ]] && continue 2; done
+    printf '%s\n' "$set"
+  done < <(_op_envsets_names)
+}
+
+_op_env_complete_bash() {
+  local sub="" i
+  set --
+  if (( COMP_CWORD > 1 )); then
+    sub="${COMP_WORDS[1]}"
+    for ((i = 2; i < COMP_CWORD; i++)); do set -- "$@" "${COMP_WORDS[i]}"; done
+  fi
+  COMPREPLY=( $(compgen -W "$(_op_env_candidates "$sub" "$@")" -- "${COMP_WORDS[COMP_CWORD]}") )
+}
+
+# zsh: $words and $CURRENT are 1-based and include op-env itself. The unquoted $(...) is
+# word-split by zsh, one candidate per line.
+_op_env_complete_zsh() {
+  local sub="" i
+  set --
+  if (( CURRENT > 2 )); then
+    sub="${words[2]}"
+    for ((i = 3; i < CURRENT; i++)); do set -- "$@" "${words[i]}"; done
+  fi
+  compadd -- $(_op_env_candidates "$sub" "$@")
+}
+
+# compdef only exists once the user's compinit has run, which can be after this file is
+# sourced (it depends on .zshrc order). Register now if possible, else on the first prompt.
+_op_env_register_zsh() {
+  [[ -z "${_OP_ENV_COMP_DONE:-}" ]] || return 0
+  type compdef >/dev/null 2>&1 || return 1
+  compdef _op_env_complete_zsh op-env && _OP_ENV_COMP_DONE=1
+}
+
+if [[ -n "${ZSH_VERSION:-}" ]]; then
+  _op_env_register_zsh || [[ " ${precmd_functions[*]} " == *" _op_env_register_zsh "* ]] \
+    || precmd_functions+=(_op_env_register_zsh)
+elif type complete >/dev/null 2>&1; then
+  complete -F _op_env_complete_bash op-env
+fi
