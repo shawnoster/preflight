@@ -395,7 +395,8 @@ function Get-OpEnvCompletion {
             { $_ -in 'load', 'clear', 'use' }    { Get-OpEnvSetNameList }
             { $_ -in 'list', 'ls', 'rm', 'remove' } { if ($Given -eq 0) { Get-OpEnvSetNameList } }
         }
-        foreach ($n in @($names)) {
+        # Subcommands and valid set names only: a stray "My Set.tsv" lists but cannot be loaded.
+        foreach ($n in @($names | Where-Object { $Sub -eq '' -or $_ -cmatch $script:OpSetPattern })) {
             if ($n -like "$Word*") { [System.Management.Automation.CompletionResult]::new($n, $n, 'ParameterValue', $n) }
         }
     } catch { Write-Verbose "op-env completion: $_" }

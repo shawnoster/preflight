@@ -592,6 +592,9 @@ esac
     chk 'complete: load offers the set names, for every argument' { $c = Get-Completions 'op-env load acct '; $c -ccontains 'acct' }
     chk 'complete: ...filtered by what is typed' { (Get-Completions 'op-env use ac') -join ',' -ceq 'acct' }
     chk 'complete: list offers set names for its first argument only' { (Get-Completions 'op-env list ') -ccontains 'acct' -and -not ((Get-Completions 'op-env list acct ') -ccontains 'acct') }
+    [System.IO.File]::WriteAllText((Join-Path $wDir 'Bad Name.tsv'), "X`top://v/i/x`n")
+    chk 'complete: a set name op-env would reject is not offered' { -not ((Get-Completions 'op-env load ') -ccontains 'Bad Name') }
+    Remove-Item -LiteralPath (Join-Path $wDir 'Bad Name.tsv') -Force
     chk 'complete: the full command name completes too' { (Get-Completions 'Invoke-OpEnv clear a') -ccontains 'acct' }
 
     Invoke-OpQuiet { op-env bogus }

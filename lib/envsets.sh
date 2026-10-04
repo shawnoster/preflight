@@ -435,9 +435,17 @@ _OP_ENV_SUBCOMMANDS="load clear add list rm use help"
 _op_env_candidates() {
   case "$1" in
     "")                  printf '%s\n' "$_OP_ENV_SUBCOMMANDS" | tr ' ' '\n' ;;
-    load|clear|use)      _op_envsets_names ;;
-    list|ls|rm|remove)   if [[ "$2" -eq 0 ]]; then _op_envsets_names; fi ;;
+    load|clear|use)      _op_env_complete_sets ;;
+    list|ls|rm|remove)   if [[ "$2" -eq 0 ]]; then _op_env_complete_sets; fi ;;
   esac
+}
+
+# Only names op-env would accept: a stray "My Set.tsv" is listed by `op-env list` but cannot be loaded.
+_op_env_complete_sets() {
+  local set
+  while IFS= read -r set; do
+    ! _op_envsets_valid_name "$set" || printf '%s\n' "$set"
+  done < <(_op_envsets_names)
 }
 
 _op_env_complete_bash() {

@@ -716,6 +716,9 @@ chk "completion: no subcommand yet offers the subcommands" '[[ "$(cands "" 0)" =
 chk "completion: load offers the set names, for every argument" '[[ "$(cands load 0)" == "alpha beta " && "$(cands load 3)" == "alpha beta " ]]'
 chk "completion: clear and use offer them too" '[[ "$(cands clear 0)" == "alpha beta " && "$(cands use 1)" == "alpha beta " ]]'
 chk "completion: list and rm take one set name" '[[ "$(cands list 0)" == "alpha beta " && -z "$(cands list 1)" && "$(cands rm 0)" == "alpha beta " && -z "$(cands rm 1)" ]]'
+printf 'X\top://v/i/x\n' > "$sets/Bad Name.tsv"
+chk "completion: a set name op-env would reject is not offered" '[[ "$(cands load 0)" == "alpha beta " ]]'
+rm -f "$sets/Bad Name.tsv"
 chk "completion: add offers nothing (it may create a set)" '[[ -z "$(cands add 0)" ]]'
 if [[ -n "${ZSH_VERSION:-}" ]]; then
   compadd() { local a; for a; do [[ "$a" == -- ]] || printf '%s ' "$a"; done; }   # stand-in for the zsh builtin: print what would be offered

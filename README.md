@@ -161,7 +161,7 @@ op-env add work NPM_TOKEN op://Private/npm/credential   # creates the "work" set
 op-env add personal GITHUB_PAT op://Private/gh/token
 op-env list                                            # ● work, ● personal, with their keys
 op-env load work                                       # only NPM_TOKEN is set; nothing else changes
-op-env clear work                                      # ...and gone again; personal stays loaded
+op-env clear work                                      # ...and gone again; anything else you had loaded stays
 op-env use work                                        # plain `op-env load` (and `preflight`) now loads only work
 ```
 
