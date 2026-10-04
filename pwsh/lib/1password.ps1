@@ -345,6 +345,10 @@ function Import-OpEnv {
 
     # A plain load replaces what is remembered; a named load adds to it. Sign-in failures above return
     # before this, so the memory stays as it was and Clear-OpEnv still knows what is in the environment.
+    # A variable a previous load managed that still fails to reload keeps its old value in the
+    # environment, so it stays remembered (else clearing or removing its definition would leak it).
+    $previous = @{}
+    foreach ($n in @($global:OpLoadedVars)) { $previous[$n] = $global:OpLoadedSrc[$n] }
     if (-not $subset) { $global:OpLoadedVars.Clear(); $global:OpLoadedSrc.Clear() }
     $sources = if ($subset) { @(Get-PreflightEnvSource -Set $Set) } else { @(Get-PreflightEnvSource) }
 
@@ -361,6 +365,14 @@ function Import-OpEnv {
             [void]$global:OpLoadedVars.Add($e.Name)
             $src = $sources | Where-Object { $_.Name -ceq $e.Name } | Select-Object -First 1
             if ($src) { $global:OpLoadedSrc[$e.Name] = $src.Set }
+        }
+    }
+    if (-not $subset) {
+        foreach ($e in $entries) {
+            if ($previous.ContainsKey($e.Name) -and -not $global:OpLoadedVars.Contains($e.Name)) {
+                [void]$global:OpLoadedVars.Add($e.Name)
+                if ($previous[$e.Name]) { $global:OpLoadedSrc[$e.Name] = $previous[$e.Name] }
+            }
         }
     }
 }

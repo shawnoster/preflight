@@ -269,6 +269,16 @@ esac
         chk 'Import-OpEnv: a failed batch falls back to per-secret reads' { $env:ONE -eq 'val-of-one@main.1password.com' }
         chk 'Import-OpEnv: ...and names the secret that failed' { $out -match 'TWO \(failed to load' }
 
+        # load succeeds -> reload fails -> definition removed: the old value must not outlive its definition.
+        Set-Sets "ONE`top://v/i/one`nTWO`top://v/i/two`n"
+        Import-OpEnv *>&1 | Out-Null
+        Set-Content -LiteralPath (Join-Path $env:PREFLIGHT_CONFIG_DIR 'envsets/s.tsv') -Value "ONE`top://v/i/one`nTWO`top://v/i/broken"
+        Import-OpEnv -WarningAction SilentlyContinue *>&1 | Out-Null
+        chk 'Import-OpEnv: a managed variable that fails to reload stays remembered' { $global:OpLoadedVars.Contains('TWO') -and $env:TWO }
+        Set-Content -LiteralPath (Join-Path $env:PREFLIGHT_CONFIG_DIR 'envsets/s.tsv') -Value "ONE`top://v/i/one"
+        Import-OpEnv *>&1 | Out-Null
+        chk 'Import-OpEnv: ...and is unset once its definition is removed' { -not $env:TWO -and -not $global:OpLoadedVars.Contains('TWO') }
+
         # A multiline value must come back whole, and must not be able to forge another variable.
         Set-Sets "ONE`top://v/i/multi`nTWO`top://v/i/two`n"
         $out = Import-OpEnv *>&1 | Out-String

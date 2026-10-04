@@ -1,7 +1,7 @@
 ﻿@{
     # Module identity
     RootModule        = 'Preflight.psm1'
-    ModuleVersion     = '0.7.0'
+    ModuleVersion     = '0.8.0'
     GUID              = 'b3a12e1b-332f-4ada-8340-a6ae2f40c86a'
     Author            = 'Shawn Oster'
     CompanyName       = 'shawnoster'
@@ -96,6 +96,13 @@
             LicenseUri   = 'https://github.com/shawnoster/preflight/blob/main/LICENSE'
             ProjectUri   = 'https://github.com/shawnoster/preflight'
             ReleaseNotes = @'
+0.8.0 — op-env ported from bash (BREAKING: the op-load-env / op-clear-env aliases are removed):
+  - Invoke-OpEnv (alias: op-env) with load, clear, add, list, rm and use, matching the bash
+    env sets. `op-env load` / `op-env clear` run Import-OpEnv / Clear-OpEnv, which no longer
+    carry aliases.
+  - Env-set files are written atomically (mode 600 on POSIX); named-set loads are additive and
+    `op-env clear <set>` unsets only what that set supplied.
+
 0.7.0 — Owl theme engine ported from bash lib/owl.sh:
   - Set-OwlTheme (alias: owl-theme) — list/switch/query 8 themes
     (catppuccin / honeypot / twilight / moonlit / autumn / rose /
@@ -137,8 +144,8 @@
 0.2.0 — AWS layer ported from bash lib/aws.sh:
   Set-AwsProfile (awsp), Get-AwsIdentity (aws-whoami), Connect-Aws (aws-login).
 
-0.1.0 — Phase 1: 1Password helpers (Get-OpStatus, Connect-Op, Invoke-OpEnv (op-env),
-  Import-OpEnv, Clear-OpEnv, New-OpItem, Import-OpCsv) and the Invoke-Preflight orchestrator.
+0.1.0 — Phase 1: 1Password helpers (Get-OpStatus, Connect-Op, Import-OpEnv,
+  Clear-OpEnv, New-OpItem, Import-OpCsv) and the Invoke-Preflight orchestrator.
 '@
         }
     }
