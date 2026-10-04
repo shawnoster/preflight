@@ -30,7 +30,7 @@ fresh() {
   rm -rf "$T/home" "$T/pf"
   mkdir -p "$T/home" "$T/pf"
   cp -R "$R/lib" "$R/defaults" "$R/plugins" "$R/init.sh" "$T/pf/"
-  unset PREFLIGHT_CONFIG_DIR PREFLIGHT_STATE_DIR PREFLIGHT_CACHE_DIR XDG_CONFIG_HOME XDG_STATE_HOME XDG_CACHE_HOME OWL_THEME_DIR
+  unset PREFLIGHT_CONFIG_DIR PREFLIGHT_STATE_DIR XDG_CONFIG_HOME XDG_STATE_HOME OWL_THEME_DIR
   # Settings a developer already has exported would win over config.json.
   unset OP_ACCOUNT PROJ_DIRS AWS_PROFILE_DEFAULT GIT_MAIN_BRANCH GITEA_USERNAME GITEA_HOST OWL_OMP_CONFIG PREFLIGHT_PLUGINS _CHECK_AWS _CHECK_GH _CHECK_SSH _CHECK_GIT_CONFIG
   export HOME="$T/home" PREFLIGHT_DIR="$T/pf" PREFLIGHT_NO_SPLASH=1
@@ -159,22 +159,18 @@ run_uninstall() {  # $1 = answer, rest = args
 fresh
 mkdir -p "$HOME/.config/preflight"; echo '{"plugins": ["owl"]}' > "$HOME/.config/preflight/config.json"
 ( source "$PREFLIGHT_DIR/init.sh" >/dev/null 2>&1 </dev/null )
-mkdir -p "$HOME/.cache/preflight"; echo x > "$HOME/.cache/preflight/c"
 out=$(run_uninstall y)
 chk "uninstall removes the clone"            '[[ ! -d "$PREFLIGHT_DIR" ]]'
 chk "uninstall keeps the config dir"         '[[ -f "$HOME/.config/preflight/config.json" ]]'
 chk "uninstall keeps the state dir"          '[[ -d "$HOME/.local/state/preflight/owl" ]]'
-chk "uninstall keeps the cache dir"          '[[ -f "$HOME/.cache/preflight/c" ]]'
 chk "uninstall says where the kept data is"  '[[ "$out" == *"$HOME/.config/preflight"* ]]'
 
 fresh
 mkdir -p "$HOME/.config/preflight"; echo '{"plugins": ["owl"]}' > "$HOME/.config/preflight/config.json"
 ( source "$PREFLIGHT_DIR/init.sh" >/dev/null 2>&1 </dev/null )
-mkdir -p "$HOME/.cache/preflight"; echo x > "$HOME/.cache/preflight/c"
 out=$(run_uninstall y --purge)
 chk "--purge removes the config dir" '[[ ! -e "$HOME/.config/preflight" ]]'
 chk "--purge removes the state dir"  '[[ ! -e "$HOME/.local/state/preflight" ]]'
-chk "--purge removes the cache dir"  '[[ ! -e "$HOME/.cache/preflight" ]]'
 chk "--purge leaves the rest of ~/.config" '[[ -d "$HOME/.config" ]]'
 
 fresh
@@ -195,11 +191,6 @@ fresh
 ( source "$PREFLIGHT_DIR/init.sh" >/dev/null 2>&1 </dev/null )
 out=$( ( source "$PREFLIGHT_DIR/init.sh" >/dev/null 2>&1 </dev/null; unset PREFLIGHT_STATE_DIR; printf 'y\n' | preflight uninstall --purge ) 2>&1 )
 chk "--purge with only the config dir set resolves the state dir" '[[ "$out" != *"refusing"* && ! -e "$HOME/.local/state/preflight" && ! -e "$HOME/.config/preflight" ]]'
-
-# preflight-cache-clear works when cache.sh is sourced without init.sh.
-fresh; mkdir -p "$HOME/.cache/preflight"; echo x > "$HOME/.cache/preflight/c"
-out=$( ( unset -f _pf_safe_rm_dir; source "$PREFLIGHT_DIR/lib/cache.sh"; PREFLIGHT_CACHE_DIR="$HOME/.cache/preflight"; preflight-cache-clear ) 2>&1 ); rc=$?
-chk "cache.sh alone can still clear the cache" '[[ $rc -eq 0 && ! -e "$HOME/.cache/preflight" ]]'
 
 # A protected PREFLIGHT_DIR is refused before any shell profile is edited.
 fresh

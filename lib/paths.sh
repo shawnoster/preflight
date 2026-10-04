@@ -8,7 +8,7 @@
 #   PREFLIGHT_STATE_DIR    owl/ (current theme, patched OMP)  default ~/.local/state/preflight
 #
 # Priority for each: the PREFLIGHT_*_DIR override, then XDG_CONFIG_HOME /
-# XDG_STATE_HOME, then the default. The cache already follows XDG (lib/cache.sh).
+# XDG_STATE_HOME, then the default.
 
 # Canonical form of a path, for comparing two spellings of one place: relative paths made
 # absolute, "//", "." and ".." collapsed, and symlinks resolved on the nearest existing

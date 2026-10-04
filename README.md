@@ -65,7 +65,7 @@ preflight uninstall
 
 Removes `~/.preflight` and the source line from your shell profile(s). Prompts for confirmation first.
 
-Your config (`~/.config/preflight`), state (`~/.local/state/preflight`) and cache (`~/.cache/preflight`) are kept, and uninstall prints where they are. `preflight uninstall --purge` deletes them too; it refuses to touch `$HOME` or a bare `~/.config`, `~/.local/state` or `~/.cache`, so a mistyped `PREFLIGHT_CONFIG_DIR` cannot wipe other applications.
+Your config (`~/.config/preflight`) and state (`~/.local/state/preflight`) are kept, and uninstall prints where they are. `preflight uninstall --purge` deletes them too; it refuses to touch `$HOME` or a bare `~/.config`, `~/.local/state` or `~/.cache`, so a mistyped `PREFLIGHT_CONFIG_DIR` cannot wipe other applications.
 
 ## Manual Installation
 
@@ -301,28 +301,6 @@ login shell begins at `SHLVL=3`, so the MOTD silently never appeared.)
 owl-theme moonlit
 ```
 
-### Startup Cache (`lib/cache.sh`)
-
-| Command | Description |
-|---------|-------------|
-| `preflight-cache-clear` | Delete cached tool init scripts; they regenerate on the next shell |
-
-Tools that expect `eval "$(tool init bash)"` cost a subprocess on *every* shell.
-`_preflight_cache_eval` generates that output once, sources the cached script
-afterwards, and regenerates only when the tool binary or its config file changes
-— which roughly halves preflight's startup cost. Freshness is decided with
-bash's builtin `-nt` test, so a cache hit never forks.
-
-Cache location: `$XDG_CACHE_HOME/preflight` (default `~/.cache/preflight`),
-overridable with `PREFLIGHT_CACHE_DIR`.
-
-To cache another tool, add a generator function and call it:
-
-```bash
-_preflight_foo_generate() { foo init bash; }
-_preflight_cache_eval foo-init _preflight_foo_generate "$(command -v foo)" "$FOO_CONFIG"
-```
-
 ### Git (`lib/git.sh`)
 
 | Command | Description |
@@ -374,8 +352,7 @@ Commands that require interactive selection will exit with a usage message when 
 |---|---|---|
 | Settings (`config.json`) | `~/.config/preflight/` | `PREFLIGHT_CONFIG_DIR`, then `XDG_CONFIG_HOME` |
 | Env sets (`envsets/<set>.tsv`, `.active`) | `~/.config/preflight/envsets/` | same |
-| Owl state, patched OMP theme | `~/.local/state/preflight/owl/` | `PREFLIGHT_STATE_DIR`, then `XDG_STATE_HOME` |
-| Cache | `~/.cache/preflight/` | `PREFLIGHT_CACHE_DIR`, then `XDG_CACHE_HOME` |
+| Owl plugin state, patched OMP theme | `~/.local/state/preflight/owl/` | `PREFLIGHT_STATE_DIR`, then `XDG_STATE_HOME` |
 
 Setting `PREFLIGHT_DIR` to the config or state directory is refused at load time, since code and data would then share a directory.
 

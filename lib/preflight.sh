@@ -8,11 +8,16 @@
 #                          each tool was installed
 #   preflight update     - pull latest changes from the upstream repo
 #   preflight uninstall [--purge]  - remove preflight and undo shell profile changes
-#                        (--purge also deletes your config, state and cache)
+#                        (--purge also deletes your config and state)
 #   preflight config <cmd>     - path | get | set | edit | check (settings in config.json)
 #   preflight configure        - interactively apply recommended settings (git globals, etc.)
 #   preflight configure --yes  - apply all without prompting
 #   preflight help       - show this usage (also -h / --help)
+
+# One dim horizontal rule, in the owl theme's sub color when that plugin is on.
+_pf_hr() {
+  printf '  \033[38;2;%sm%s\033[0m\n' "${OWL_SUB:-120;130;150}" "$(printf '%0.s-' {1..33})"
+}
 
 preflight() {
   # Dispatch subcommands before doing anything else
@@ -864,7 +869,7 @@ Usage:
   preflight config <command>         Read and change settings (config.json); see: preflight config help
   preflight update                   Pull latest changes from upstream
   preflight uninstall [--purge]      Remove preflight and shell profile changes
-                                     (--purge also deletes your config, state and cache)
+                                     (--purge also deletes your config and state)
   preflight help                     Show this help (also -h, --help)
 
 Options:
@@ -919,9 +924,9 @@ _pf_write_git_credential() {
 _preflight_update() {
   local dir="${PREFLIGHT_DIR:-$HOME/.preflight}"
 
-  printf '  \033[38;2;%sm%s\033[0m\n' "${OWL_SUB:-120;130;150}" "$(printf '%0.s-' {1..33})"
+  _pf_hr
   printf '  \033[1mPreflight Update\033[0m\n'
-  printf '  \033[38;2;%sm%s\033[0m\n' "${OWL_SUB:-120;130;150}" "$(printf '%0.s-' {1..33})"
+  _pf_hr
   echo ""
 
   if [[ ! -d "$dir/.git" ]]; then
@@ -970,7 +975,7 @@ _preflight_update() {
   if [[ "$current_sha" == "$upstream_sha" ]]; then
     echo ""
     echo "✅ Already up to date."
-    printf "  \033[38;2;${OWL_SUB:-120;130;150}m%s\033[0m\n" "$(printf '%0.s-' {1..33})"
+    _pf_hr
     return 0
   fi
 
@@ -998,7 +1003,7 @@ _preflight_update() {
     return 1
   fi
 
-  printf "  \033[38;2;${OWL_SUB:-120;130;150}m%s\033[0m\n" "$(printf '%0.s-' {1..33})"
+  _pf_hr
 }
 
 # ── preflight uninstall ───────────────────────────────────────────────────────
@@ -1018,8 +1023,7 @@ _preflight_uninstall() {
   # Both must be set: with only one in the environment the other would be empty (and --purge
   # would refuse "<unset>"), and resolving is also what checks they stay out of the clone.
   [[ -n "${PREFLIGHT_CONFIG_DIR:-}" && -n "${PREFLIGHT_STATE_DIR:-}" ]] || _pf_resolve_dirs || return 1
-  local cache_dir="${PREFLIGHT_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/preflight}"
-  local user_dirs=("$PREFLIGHT_CONFIG_DIR" "$PREFLIGHT_STATE_DIR" "$cache_dir")
+  local user_dirs=("$PREFLIGHT_CONFIG_DIR" "$PREFLIGHT_STATE_DIR")
   local ud
   # Validate the clone itself too, up front: this must not happen after the shell
   # profiles have been edited, or a refusal would leave a half-done uninstall.
@@ -1031,9 +1035,9 @@ _preflight_uninstall() {
     done
   fi
 
-  printf '  \033[38;2;%sm%s\033[0m\n' "${OWL_SUB:-120;130;150}" "$(printf '%0.s-' {1..33})"
+  _pf_hr
   printf '  \033[1mPreflight Uninstall\033[0m\n'
-  printf '  \033[38;2;%sm%s\033[0m\n' "${OWL_SUB:-120;130;150}" "$(printf '%0.s-' {1..33})"
+  _pf_hr
   echo ""
   echo "This will:"
   echo "  • Remove $dir"
@@ -1041,7 +1045,7 @@ _preflight_uninstall() {
   if [[ "$purge" == true ]]; then
     for ud in "${user_dirs[@]}"; do echo "  • Delete $ud"; done
   else
-    echo "  • Keep your config, state and cache (--purge deletes them):"
+    echo "  • Keep your config and state (--purge deletes them):"
     for ud in "${user_dirs[@]}"; do echo "      $ud"; done
   fi
   echo ""
@@ -1094,7 +1098,7 @@ _preflight_uninstall() {
   echo ""
   echo "✅ Preflight uninstalled."
   echo "   Open a new terminal or run 'hash -r' to clear the command cache."
-  printf "  \033[38;2;${OWL_SUB:-120;130;150}m%s\033[0m\n" "$(printf '%0.s-' {1..33})"
+  _pf_hr
 
   # Self-destruct: unset all preflight functions from the current shell
   unset -f preflight _preflight_update _preflight_uninstall
@@ -1111,9 +1115,9 @@ _preflight_configure() {
     return 1
   fi
 
-  printf '  \033[38;2;%sm%s\033[0m\n' "${OWL_SUB:-120;130;150}" "$(printf '%0.s-' {1..33})"
+  _pf_hr
   printf '  \033[1mPreflight: Configure\033[0m\n'
-  printf '  \033[38;2;%sm%s\033[0m\n' "${OWL_SUB:-120;130;150}" "$(printf '%0.s-' {1..33})"
+  _pf_hr
   echo ""
 
   local applied=0 skipped=0 kept=0
@@ -1635,7 +1639,7 @@ GITIGNORE
     unset -f _pf_yes _pf_ssh_global_agent
   fi # _is_wsl
 
-  printf "  \033[38;2;${OWL_SUB:-120;130;150}m%s\033[0m\n" "$(printf '%0.s-' {1..33})"
+  _pf_hr
   echo "   Applied: $applied   Kept: $kept   Skipped: $skipped"
   if [[ $applied -gt 0 ]]; then
     echo ""
@@ -1644,5 +1648,5 @@ GITIGNORE
     echo "     source ~/.bashrc   (or open a new terminal)"
     echo "   Review git changes: git config --global --list"
   fi
-  printf "  \033[38;2;${OWL_SUB:-120;130;150}m%s\033[0m\n" "$(printf '%0.s-' {1..33})"
+  _pf_hr
 }
