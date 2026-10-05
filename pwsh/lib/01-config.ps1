@@ -19,8 +19,6 @@ op.account|OP_ACCOUNT|s|x|my.1password.com
 projects.dirs|PROJ_DIRS|pl|x|~/projects:~/work:~/src
 aws.default_profile|AWS_PROFILE_DEFAULT|s|x|
 git.main_branch|GIT_MAIN_BRANCH|s|x|main
-gitea.username|GITEA_USERNAME|s|x|
-gitea.host|GITEA_HOST|s|x|
 checks.aws|_CHECK_AWS|b|-|1
 checks.gh|_CHECK_GH|b|-|1
 checks.ssh|_CHECK_SSH|b|-|1

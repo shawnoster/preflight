@@ -4,7 +4,6 @@
   "projects": { "dirs": ["~/dev", "~/src"] },
   "aws": { "default_profile": "" },
   "git": { "main_branch": "main" },
-  "gitea": { "username": "", "host": "" },
   "checks": { "aws": false, "gh": true, "ssh": true, "git_config": true },
   "plugins": [],
   "owl": { "omp_config": "$PREFLIGHT_STATE_DIR/owl/theme-catppuccin.omp.json" }

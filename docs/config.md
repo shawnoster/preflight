@@ -46,7 +46,6 @@ editor's JSON settings at it) for hover help and validation; the loader ignores 
 | `projects.dirs` | `PROJ_DIRS` | list (joined with `:`) | `~/projects`, `~/work`, `~/src` | `proj` |
 | `aws.default_profile` | `AWS_PROFILE_DEFAULT` | string | empty | `preflight` sets `AWS_PROFILE` from it |
 | `git.main_branch` | `GIT_MAIN_BRANCH` | string | `main` | git helpers |
-| `gitea.username`, `gitea.host` | `GITEA_USERNAME`, `GITEA_HOST` | string | empty | HTTPS credential for Gitea |
 | `checks.aws`, `checks.gh`, `checks.ssh`, `checks.git_config` | `_CHECK_AWS`, `_CHECK_GH`, `_CHECK_SSH`, `_CHECK_GIT_CONFIG` | boolean (to `1`/`0`) | all `true` | which `preflight` sections run |
 | `plugins` | `PREFLIGHT_PLUGINS` | list (joined with `:`) | empty | opt-in plugins to load (see [plugins/README.md](../plugins/README.md)) |
 | `owl.omp_config` | `OWL_OMP_CONFIG` | path | `$PREFLIGHT_STATE_DIR/owl/theme-catppuccin.omp.json` | Oh My Posh JSON that the owl plugin's `owl-theme` patches (read only when the plugin is enabled); empty turns Oh My Posh off |

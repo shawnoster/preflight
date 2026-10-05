@@ -65,22 +65,6 @@
         }
       }
     },
-    "gitea": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "username": {
-          "type": "string",
-          "default": "",
-          "description": "Gitea user name (GITEA_USERNAME), used to store an HTTPS credential when GITEA_TOKEN is loaded."
-        },
-        "host": {
-          "type": "string",
-          "default": "",
-          "description": "Gitea host name (GITEA_HOST)."
-        }
-      }
-    },
     "checks": {
       "type": "object",
       "additionalProperties": false,

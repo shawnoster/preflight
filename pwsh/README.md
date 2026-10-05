@@ -111,7 +111,7 @@ shared, because Windows PowerShell reads the Windows home and a WSL bash reads t
 Setting the config or state directory to the install directory (or inside it) is refused with a warning.
 
 **Settings.** `config.json` has the same keys as bash (`op.account`, `projects.dirs`, `aws.default_profile`,
-`git.main_branch`, `gitea.*`, `owl.omp_config`; see the table in docs/config.md). Edit it by hand: there is no
+`git.main_branch`, `owl.omp_config`; see the table in docs/config.md). Edit it by hand: there is no
 `preflight config` command here yet. `Test-PreflightConfig` reports invalid JSON, unknown keys and wrongly typed
 values, and `Invoke-Preflight` reports a bad file as a failed check. A variable you have set in your own
 environment wins over the file, and an invalid or missing file falls back to built-in defaults (including a

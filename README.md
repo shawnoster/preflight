@@ -386,7 +386,7 @@ preflight config apply     # recommended git/SSH settings (--yes applies all)
 | `op.account` | 1Password account reference: sign-in address (e.g. `my-team.1password.com`) for WSL desktop integration, or the `op account add` shorthand for native `op` |
 | `projects.dirs` | Directories for the `proj` command |
 | `aws.default_profile` | Default AWS profile (`preflight` sets `AWS_PROFILE` from this at startup) |
-| `git.main_branch`, `gitea.username`, `gitea.host` | Git helper and Gitea credential settings |
+| `git.main_branch` | Branch the git helpers treat as the trunk |
 | `checks.aws`, `checks.gh`, `checks.ssh`, `checks.git_config` | Which `preflight` sections run |
 | `owl.omp_config` | Oh My Posh JSON that `owl-theme` patches (empty disables OMP integration) |
 

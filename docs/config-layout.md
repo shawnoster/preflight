@@ -86,7 +86,6 @@ would put code and config in one directory. Change the example, and have the res
   "projects": { "dirs": ["~/projects", "~/work", "~/src"] },
   "aws":      { "default_profile": "" },
   "git":      { "main_branch": "main" },
-  "gitea":    { "username": "", "host": "" },
   "checks":   { "aws": true, "gh": true, "ssh": true, "git_config": true },
   "optional_env_vars": ["NPM_TOKEN"],
   "owl":      { "omp_config": "$PREFLIGHT_STATE_DIR/owl/theme-catppuccin.omp.json" }
@@ -99,7 +98,6 @@ would put code and config in one directory. Change the example, and have the res
 | `projects.dirs` (joined with `:`) | `PROJ_DIRS` | `lib/project.sh` |
 | `aws.default_profile` | `AWS_PROFILE_DEFAULT` | `lib/aws.sh`, `lib/preflight.sh` |
 | `git.main_branch` | `GIT_MAIN_BRANCH` | `lib/git.sh` |
-| `gitea.username`, `gitea.host` | `GITEA_USERNAME`, `GITEA_HOST` | `lib/preflight.sh` |
 | `checks.*` (true/false to 1/0) | `_CHECK_AWS`, `_CHECK_GH`, `_CHECK_SSH`, `_CHECK_GIT_CONFIG` | `lib/preflight.sh` |
 | `optional_env_vars` (joined with space) | `_OPTIONAL_ENV_VARS` | `lib/preflight.sh` |
 | `owl.omp_config` | `OWL_OMP_CONFIG` | `init.sh`, `lib/owl.sh` |
