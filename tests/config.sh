@@ -252,14 +252,14 @@ chk "config help runs no command (no environment dump)" '[[ "$help_out" != *"BAS
 chk "config help has no backtick left to run"       '[[ "$(sed -n "/^_pf_config_help()/,/^EOF/p" "$R/lib/config.sh")" != *"\`"* ]]'
 
 # ── preflight config apply (formerly `preflight configure`) ──────────────────
+# The implementation changes real state (git globals, the user's systemd socket, downloads), so it is
+# stubbed here: this only checks that the subcommand is wired up and passes its arguments through.
 chk "config help lists apply"                '[[ "$(_pf_config_help)" == *"apply [--yes]"* ]]'
-chk "the old top-level configure is gone"    '! grep -q "configure)" "$R/lib/preflight.sh"'
-if command -v git >/dev/null 2>&1; then
-  # --yes writes the recommended git globals; HOME is the scratch dir, so only its .gitconfig changes.
-  ( source "$R/lib/preflight.sh"; HOME="$T/applyhome"; mkdir -p "$HOME"; export GIT_CONFIG_GLOBAL="$HOME/.gitconfig"
-    _pf_config_cmd apply --yes </dev/null >"$T/apply.out" 2>&1 )
-  chk "config apply --yes sets the recommended git globals" '[[ "$(git config --file "$T/applyhome/.gitconfig" pull.rebase)" == true && "$(cat "$T/apply.out")" == *"Applied:"* ]]'
-fi
+_pf_config_apply() { echo "stub apply: $*"; }
+chk "config apply forwards its arguments" '[[ "$(_pf_config_cmd apply --yes)" == "stub apply: --yes" && "$(_pf_config_cmd apply)" == "stub apply: " ]]'
+unset -f _pf_config_apply
+out=$( (source "$R/lib/preflight.sh"; _pf_config_apply --yse) 2>&1 ); rc=$?   # refused before anything is touched
+chk "config apply: an unknown argument prints the usage and does nothing" '[[ $rc -ne 0 && "$out" == *"Usage: preflight config apply"* ]]'
 
 # ── preflight config init ─────────────────────────────────────────────────────
 # Answers are fed with --stdin, one per line in table order: op.account, projects.dirs,

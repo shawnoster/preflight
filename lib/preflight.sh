@@ -1105,7 +1105,11 @@ _preflight_uninstall() {
 
 _pf_config_apply() {
   local auto=false
-  [[ "${1:-}" == "--yes" ]] && auto=true
+  case "${1:-}" in
+    "")    ;;
+    --yes) auto=true ;;
+    *)     echo "Usage: preflight config apply [--yes]" >&2; return 1 ;;
+  esac
 
   if ! command -v git &>/dev/null; then
     echo "❌ git not found"

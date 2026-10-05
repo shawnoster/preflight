@@ -31,8 +31,7 @@ part-way (Ctrl-C, or the input ending) changes nothing; it refuses to run on an 
 `config init --stdin` reads one answer per line in key order instead, for scripting.
 
 `config apply` is the odd one out: it does not touch `config.json`. It walks through recommended git globals, the
-1Password SSH agent bridge on WSL and GitHub's host keys, asking about each (`--yes` applies all). It was `preflight
-configure` before the two commands were merged.
+1Password SSH agent bridge on WSL and GitHub's host keys, asking about each (`--yes` applies all).
 
 `config edit` checks the file when the editor returns, so a GUI editor needs its wait flag (`VISUAL="code --wait"`); without it the check runs against the unchanged file.
 
