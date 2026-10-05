@@ -27,7 +27,7 @@ The bridge avoids both. 1Password's guide doesn't cover a native Unix socket for
 
 ## Windows prerequisites
 
-These steps need the 1Password or Windows interface, or administrator rights, so `preflight configure` can't do them. Every WSL distro on the machine shares them, so skip any you have already done.
+These steps need the 1Password or Windows interface, or administrator rights, so `preflight config apply` can't do them. Every WSL distro on the machine shares them, so skip any you have already done.
 
 1. **Enable the 1Password SSH agent.** In the Windows app: Settings → Developer → **Use the SSH agent**. The badge should read **running**.
    If 1Password warns about the *OpenSSH Authentication Agent* service, disable that service (`services.msc` → Startup type: Disabled → Stop). Both agents can't listen on the same pipe.
@@ -52,7 +52,7 @@ wsl --shutdown
 ## Automated setup
 
 ```bash
-preflight configure
+preflight config apply
 ```
 
 For the WSL SSH section it does the following, asking before each step (`--yes` applies all):
@@ -70,7 +70,7 @@ For the WSL SSH section it does the following, asking before each step (`--yes` 
 
 ## Manual setup
 
-If you'd rather not use `preflight configure`:
+If you'd rather not use `preflight config apply`:
 
 ```bash
 # 1. npiperelay: the albertony fork, not jstarks (upstream is frozen at 0.1.0)
@@ -170,7 +170,7 @@ This sets `gpg.format = ssh`, `user.signingkey`, and `gpg.ssh.program` to 1Passw
 Each heading below is a symptom, followed by its likely causes.
 
 ### `Host key verification failed`
-- Native `ssh` uses the WSL `known_hosts`, not the Windows one. Run `preflight configure` (it adds GitHub's keys), or connect once interactively and accept the host key for other hosts.
+- Native `ssh` uses the WSL `known_hosts`, not the Windows one. Run `preflight config apply` (it adds GitHub's keys), or connect once interactively and accept the host key for other hosts.
 
 ### `ssh-add -l` says "Could not open a connection to your authentication agent"
 - `SSH_AUTH_SOCK` isn't set in this shell. Open a new login shell, or `export SSH_AUTH_SOCK=$HOME/.1password/agent.sock`.

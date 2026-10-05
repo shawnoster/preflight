@@ -17,6 +17,7 @@ preflight config set projects.dirs "~/dev:~/src"   # a JSON array
 preflight config init                          # walk through every setting; Enter keeps, "-" clears; one write at the end
 preflight config edit                          # ${VISUAL:-${EDITOR:-vi}}, then checks the file
 preflight config check                         # invalid JSON, unknown keys, wrongly typed values
+preflight config apply [--yes]                 # recommended git/SSH settings (not config.json; see below)
 ```
 
 `get` prints a value in the form `set` accepts, so `set KEY "$(get KEY)"` is a no-op. `set` writes through `jq` to a temporary file in the same directory and renames it into place, so an interrupted
@@ -28,6 +29,9 @@ brackets. Enter keeps it, `-` clears a string, path or list, and a yes/no questi
 tries, then it stops and writes nothing; with `--stdin` the first invalid answer stops it). Answers are collected and written once at the end through the same atomic write as `set`, so stopping
 part-way (Ctrl-C, or the input ending) changes nothing; it refuses to run on an invalid file. It needs a terminal;
 `config init --stdin` reads one answer per line in key order instead, for scripting.
+
+`config apply` is the odd one out: it does not touch `config.json`. It walks through recommended git globals, the
+1Password SSH agent bridge on WSL and GitHub's host keys, asking about each (`--yes` applies all).
 
 `config edit` checks the file when the editor returns, so a GUI editor needs its wait flag (`VISUAL="code --wait"`); without it the check runs against the unchanged file.
 

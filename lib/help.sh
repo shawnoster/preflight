@@ -42,8 +42,8 @@ preflight                # Sign in, load secrets, verify environment
   preflight update         # Pull latest changes from upstream
   preflight uninstall      # Remove preflight and undo shell profile changes
   preflight help           # Usage for preflight and its subcommands
-  preflight configure      # Apply recommended git/SSH settings
-  preflight configure --yes # Apply all without prompting
+  preflight config apply   # Apply recommended git/SSH settings
+  preflight config apply --yes # Apply all without prompting
   dev-commands             # List all available commands
 
 Quick Reference:
@@ -150,8 +150,8 @@ preflight -u         Same + check for tool updates
 preflight update     Pull latest changes from upstream repo
 preflight uninstall  Remove preflight and undo shell profile changes
 preflight help       Usage for preflight
-preflight configure  Interactively apply recommended git/SSH settings
-preflight configure --yes  Apply all recommended settings without prompting
+preflight config apply  Interactively apply recommended git/SSH settings
+preflight config apply --yes  Apply all recommended settings without prompting
 proj [directory]     Jump to project directory
 serve [port]         Quick Python HTTP server (default: 8000)
 yak [script]         Run npm script

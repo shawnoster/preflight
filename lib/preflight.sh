@@ -9,9 +9,8 @@
 #   preflight update     - pull latest changes from the upstream repo
 #   preflight uninstall [--purge]  - remove preflight and undo shell profile changes
 #                        (--purge also deletes your config and state)
-#   preflight config <cmd>     - path | get | set | edit | check (settings in config.json)
-#   preflight configure        - interactively apply recommended settings (git globals, etc.)
-#   preflight configure --yes  - apply all without prompting
+#   preflight config <cmd>     - path | get | set | init | edit | check | apply (settings in config.json;
+#                                apply = interactively apply recommended git/SSH settings, --yes for all)
 #   preflight help       - show this usage (also -h / --help)
 
 # One dim horizontal rule, in the owl theme's sub color when that plugin is on.
@@ -24,7 +23,6 @@ preflight() {
   case "${1:-}" in
     update)         _preflight_update;        return ;;
     uninstall)      _preflight_uninstall "${@:2}"; return ;;
-    configure)      _preflight_configure "${@:2}";     return ;;
     config)         _pf_config_cmd "${@:2}";           return ;;
     help|-h|--help) _preflight_help;          return ;;
   esac
@@ -298,7 +296,7 @@ preflight() {
         ((issues++))
       elif [[ "$_is_wsl" == true ]]; then
         # On WSL this socket is the 1Password bridge, so a failure is a real problem.
-        issue_msgs+=("1Password SSH agent bridge returned no keys — unlock 1Password, or run: preflight configure")
+        issue_msgs+=("1Password SSH agent bridge returned no keys — unlock 1Password, or run: preflight config apply")
         _pf_line "⚠️  SSH agent bridge returned no keys (ssh-add exit $_agent_rc)"
         ((issues++))
       else
@@ -306,7 +304,7 @@ preflight() {
       fi
     else
       if [[ "$_is_wsl" == true ]]; then
-        issue_msgs+=("1Password SSH agent bridge not found — run: preflight configure")
+        issue_msgs+=("1Password SSH agent bridge not found — run: preflight config apply")
       else
         issue_msgs+=("SSH agent not available — start ssh-agent or your password manager's agent")
       fi
@@ -865,8 +863,7 @@ preflight starts a session and checks the health of your environment.
 
 Usage:
   preflight [-v] [-u] [--no-login]   Run the health check
-  preflight configure [--yes]        Apply recommended git/SSH settings
-  preflight config <command>         Read and change settings (config.json); see: preflight config help
+  preflight config <command>         Settings (config.json) and recommended git/SSH settings; see: preflight config help
   preflight update                   Pull latest changes from upstream
   preflight uninstall [--purge]      Remove preflight and shell profile changes
                                      (--purge also deletes your config and state)
@@ -876,7 +873,7 @@ Options:
   -v, --verbose   Show every check section
   -u, --updates   Compare installed tools against latest stable versions
   --no-login      Skip sign-in steps
-  --yes           (configure) Apply all without prompting
+  --yes           (config apply) Apply all without prompting
 
 Related:
   op-env          Manage named env sets (guild, personal, ...) of 1Password refs
@@ -1104,11 +1101,15 @@ _preflight_uninstall() {
   unset -f preflight _preflight_update _preflight_uninstall
 }
 
-# ── preflight configure ───────────────────────────────────────────────────────
+# ── preflight config apply ────────────────────────────────────────────────────
 
-_preflight_configure() {
+_pf_config_apply() {
   local auto=false
-  [[ "${1:-}" == "--yes" ]] && auto=true
+  case "${1:-}" in
+    "")    ;;
+    --yes) auto=true ;;
+    *)     echo "Usage: preflight config apply [--yes]" >&2; return 1 ;;
+  esac
 
   if ! command -v git &>/dev/null; then
     echo "❌ git not found"
@@ -1116,7 +1117,7 @@ _preflight_configure() {
   fi
 
   _pf_hr
-  printf '  \033[1mPreflight: Configure\033[0m\n'
+  printf '  \033[1mPreflight: Apply recommended settings\033[0m\n'
   _pf_hr
   echo ""
 
@@ -1402,7 +1403,7 @@ GITIGNORE
     if [[ ! -d /run/systemd/system ]] || ! systemctl --user show-environment &>/dev/null; then
       echo "⚠️  systemd is not running in this WSL distro (needed for the agent bridge)"
       echo "   Add to /etc/wsl.conf:   [boot]  systemd=true"
-      echo "   Then run in PowerShell: wsl --shutdown   and re-run: preflight configure"
+      echo "   Then run in PowerShell: wsl --shutdown   and re-run: preflight config apply"
       echo ""
       _bridge_ok=false
     fi
@@ -1417,7 +1418,7 @@ GITIGNORE
     if [[ "$_bridge_ok" == true && "$_interop_on" != true ]]; then
       echo "⚠️  WSL interop is disabled (needed to run npiperelay.exe)"
       echo "   Set in /etc/wsl.conf:   [interop]  enabled=true"
-      echo "   Then run in PowerShell: wsl --shutdown   and re-run: preflight configure"
+      echo "   Then run in PowerShell: wsl --shutdown   and re-run: preflight config apply"
       echo ""
       _bridge_ok=false
     fi
@@ -1531,7 +1532,7 @@ GITIGNORE
     fi
     if [[ "$_bridge_verified" != true ]]; then
       echo "ℹ️  Bridge not verified yet, so ~/.profile and ~/.ssh/config are left alone."
-      echo "   Fix the problem above, or unlock 1Password with 'Use the SSH agent' on, then re-run: preflight configure"
+      echo "   Fix the problem above, or unlock 1Password with 'Use the SSH agent' on, then re-run: preflight config apply"
       echo ""
     fi
 

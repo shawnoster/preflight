@@ -251,6 +251,16 @@ chk "config help prints the get line intact"        '[[ "$help_out" == *"get KEY
 chk "config help runs no command (no environment dump)" '[[ "$help_out" != *"BASH="* && "$help_out" != *"BASH_VERSION"* && $(printf "%s\n" "$help_out" | wc -l) -lt 40 ]]'
 chk "config help has no backtick left to run"       '[[ "$(sed -n "/^_pf_config_help()/,/^EOF/p" "$R/lib/config.sh")" != *"\`"* ]]'
 
+# ── preflight config apply (formerly `preflight configure`) ──────────────────
+# The implementation changes real state (git globals, the user's systemd socket, downloads), so it is
+# stubbed here: this only checks that the subcommand is wired up and passes its arguments through.
+chk "config help lists apply"                '[[ "$(_pf_config_help)" == *"apply [--yes]"* ]]'
+_pf_config_apply() { echo "stub apply: $*"; }
+chk "config apply forwards its arguments" '[[ "$(_pf_config_cmd apply --yes)" == "stub apply: --yes" && "$(_pf_config_cmd apply)" == "stub apply: " ]]'
+unset -f _pf_config_apply
+out=$( (source "$R/lib/preflight.sh"; _pf_config_apply --yse) 2>&1 ); rc=$?   # refused before anything is touched
+chk "config apply: an unknown argument prints the usage and does nothing" '[[ $rc -ne 0 && "$out" == *"Usage: preflight config apply"* ]]'
+
 # ── preflight config init ─────────────────────────────────────────────────────
 # Answers are fed with --stdin, one per line in table order: op.account, projects.dirs,
 # aws.default_profile, git.main_branch, gitea.username, gitea.host, checks.aws, checks.gh,
