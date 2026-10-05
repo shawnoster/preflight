@@ -193,7 +193,7 @@ main() {
   _pf_info "     (set your account first: preflight config set op.account ADDRESS)"
   _pf_info "  3. Run: preflight"
   _pf_info ""
-  _pf_info "Available profiles (offered on first load; settings go in $PREFLIGHT_CONFIG_DIR/config.json):"
+  _pf_info "Available profiles (choose with PREFLIGHT_PROFILE, default general; settings go in $PREFLIGHT_CONFIG_DIR/config.json):"
   _pf_info "  defaults/config.general.json — Individual dev (Gitea, GitHub, minimal)"
   _pf_info "  defaults/config.company.json — Company/team (AWS, NPM, full toolchain)"
   _pf_info ""

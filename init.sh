@@ -60,9 +60,12 @@ if [[ ! -f "$PREFLIGHT_CONFIG_DIR/config.json" ]]; then
   fi
   _pf_pick="$PREFLIGHT_DIR/defaults/config.$_pf_name.json"
   if [[ -f "$_pf_pick" ]]; then
-    cp "$_pf_pick" "$PREFLIGHT_CONFIG_DIR/config.json"
-    echo "📋 Created $PREFLIGHT_CONFIG_DIR/config.json from $(basename "$_pf_pick")."
-    echo "   Change settings with: preflight config set KEY VALUE  (or: preflight config init)"
+    if cp "$_pf_pick" "$PREFLIGHT_CONFIG_DIR/config.json"; then
+      echo "📋 Created $PREFLIGHT_CONFIG_DIR/config.json from $(basename "$_pf_pick")."
+      echo "   Change settings with: preflight config set KEY VALUE  (or: preflight config init)"
+    else
+      echo "⚠️  preflight: could not write $PREFLIGHT_CONFIG_DIR/config.json (built-in defaults in use)." >&2
+    fi
   else
     echo "⚠️  preflight: $_pf_pick is missing, so no config.json was created. Reinstall preflight." >&2
   fi
