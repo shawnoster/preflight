@@ -50,17 +50,23 @@ fi
 # another defaults/config.<name>.json.
 
 if [[ ! -f "$PREFLIGHT_CONFIG_DIR/config.json" ]]; then
-  _pf_pick="$PREFLIGHT_DIR/defaults/config.${PREFLIGHT_PROFILE:-general}.json"
-  if [[ ! -f "$_pf_pick" || "${PREFLIGHT_PROFILE:-general}" == schema ]]; then
-    echo "⚠️  preflight: no profile '${PREFLIGHT_PROFILE}' in $PREFLIGHT_DIR/defaults — using general." >&2
-    _pf_pick="$PREFLIGHT_DIR/defaults/config.general.json"
+  _pf_name="${PREFLIGHT_PROFILE:-general}"
+  # A profile name is a bare word: no path separators, and the schema is not a profile.
+  if [[ ! "$_pf_name" =~ ^[A-Za-z0-9_-]+$ || "$_pf_name" == schema \
+        || ! -f "$PREFLIGHT_DIR/defaults/config.$_pf_name.json" ]]; then
+    [[ "$_pf_name" == general ]] \
+      || echo "⚠️  preflight: no profile '$_pf_name' in $PREFLIGHT_DIR/defaults — using general." >&2
+    _pf_name=general
   fi
+  _pf_pick="$PREFLIGHT_DIR/defaults/config.$_pf_name.json"
   if [[ -f "$_pf_pick" ]]; then
     cp "$_pf_pick" "$PREFLIGHT_CONFIG_DIR/config.json"
     echo "📋 Created $PREFLIGHT_CONFIG_DIR/config.json from $(basename "$_pf_pick")."
     echo "   Change settings with: preflight config set KEY VALUE  (or: preflight config init)"
+  else
+    echo "⚠️  preflight: $_pf_pick is missing, so no config.json was created. Reinstall preflight." >&2
   fi
-  unset _pf_pick
+  unset _pf_name _pf_pick
 fi
 
 # ── Source all library scripts ────────────────────────────────────────────────
