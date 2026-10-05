@@ -121,8 +121,8 @@ source ~/.bashrc
 | `preflight update` | Pull latest changes from upstream repo |
 | `preflight uninstall` | Remove preflight and undo shell profile changes |
 | `preflight help` | Usage for preflight and its subcommands (also `-h`, `--help`) |
-| `preflight configure` | Interactively apply recommended settings (git identity if unset, git globals and, on WSL, the 1Password SSH agent bridge described in [docs/wsl-ssh-setup.md](./docs/wsl-ssh-setup.md)) |
-| `preflight configure --yes` | Apply all recommended settings without prompting |
+| `preflight config apply` | Interactively apply recommended settings (git identity if unset, git globals and, on WSL, the 1Password SSH agent bridge described in [docs/wsl-ssh-setup.md](./docs/wsl-ssh-setup.md)) |
+| `preflight config apply --yes` | Apply all recommended settings without prompting |
 
 #### Tool update checks (`preflight -u`)
 
@@ -378,6 +378,7 @@ preflight config get aws.default_profile
 preflight config init      # walk through every setting
 preflight config edit      # then validates the file
 preflight config check     # invalid JSON, unknown keys, wrong types
+preflight config apply     # recommended git/SSH settings (--yes applies all)
 ```
 
 | Key | Meaning |

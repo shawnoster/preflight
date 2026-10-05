@@ -251,6 +251,16 @@ chk "config help prints the get line intact"        '[[ "$help_out" == *"get KEY
 chk "config help runs no command (no environment dump)" '[[ "$help_out" != *"BASH="* && "$help_out" != *"BASH_VERSION"* && $(printf "%s\n" "$help_out" | wc -l) -lt 40 ]]'
 chk "config help has no backtick left to run"       '[[ "$(sed -n "/^_pf_config_help()/,/^EOF/p" "$R/lib/config.sh")" != *"\`"* ]]'
 
+# ── preflight config apply (formerly `preflight configure`) ──────────────────
+chk "config help lists apply"                '[[ "$(_pf_config_help)" == *"apply [--yes]"* ]]'
+chk "the old top-level configure is gone"    '! grep -q "configure)" "$R/lib/preflight.sh"'
+if command -v git >/dev/null 2>&1; then
+  # --yes writes the recommended git globals; HOME is the scratch dir, so only its .gitconfig changes.
+  ( source "$R/lib/preflight.sh"; HOME="$T/applyhome"; mkdir -p "$HOME"; export GIT_CONFIG_GLOBAL="$HOME/.gitconfig"
+    _pf_config_cmd apply --yes </dev/null >"$T/apply.out" 2>&1 )
+  chk "config apply --yes sets the recommended git globals" '[[ "$(git config --file "$T/applyhome/.gitconfig" pull.rebase)" == true && "$(cat "$T/apply.out")" == *"Applied:"* ]]'
+fi
+
 # ── preflight config init ─────────────────────────────────────────────────────
 # Answers are fed with --stdin, one per line in table order: op.account, projects.dirs,
 # aws.default_profile, git.main_branch, gitea.username, gitea.host, checks.aws, checks.gh,

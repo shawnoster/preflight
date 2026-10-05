@@ -31,7 +31,7 @@ Missing-file copying is the only behavior: it never overwrites an existing live 
 
 ## Domains Covered
 
-- **Session startup / self-management** — `lib/preflight.sh`: session health check (`preflight`), verbose mode (`preflight -v`), tool update check (`preflight -u`), self-update (`preflight update`), uninstall (`preflight uninstall [--purge]`), opinionated git/SSH/AWS configuration (`preflight configure [--yes]`)
+- **Session startup / self-management** — `lib/preflight.sh`: session health check (`preflight`), verbose mode (`preflight -v`), tool update check (`preflight -u`), self-update (`preflight update`), uninstall (`preflight uninstall [--purge]`), opinionated git/SSH/AWS configuration (`preflight config apply [--yes]`)
 - **AWS** — `lib/aws.sh`: profile switching (`awsp`), SSO login (`aws-login`), identity check (`aws-whoami`)
 - **Git** — `lib/git.sh`: fuzzy branch checkout (`gco`), pretty log (`glog`), stash management (`gstash` — pops by default, `--apply` to keep), WIP commits (`gwip`), GH PR creation (`gpr`)
 - **Docker** — `lib/docker.sh`: container/image management utilities (`dex` tries bash first, falls back to sh)
@@ -57,7 +57,7 @@ Read this repo when working on:
 
 - **Developer onboarding shell setup** — `init.sh` and `bashrc-snippet.sh` show exactly what to add to dotfiles; `install.sh` is the one-line curl installer
 - **AWS SSO profile workflow issues** — `lib/aws.sh` has the profile switching and SSO login flow; `aws.default_profile` in `config.json` sets the session default
-- **WSL SSH setup with 1Password** — `docs/wsl-ssh-setup.md` covers prerequisites; `preflight configure` installs the systemd + npiperelay agent bridge 
+- **WSL SSH setup with 1Password** — `docs/wsl-ssh-setup.md` covers prerequisites; `preflight config apply` installs the systemd + npiperelay agent bridge 
 - **Adding new shell utilities for all engineers** — add a new `lib/<domain>.sh` file
 - **1Password CLI integration for secrets** — `lib/onepassword.sh` has the sign-in flow for WSL/headless environments; `lib/envsets.sh` has the list of secrets
 - **Shell MOTD or theme customization** — `plugins/owl/plugin.sh` has the theme engine and splash (an opt-in plugin); the `owl.omp_config` key controls `OWL_OMP_CONFIG`; `OWL_THEME_DIR` is environment-only

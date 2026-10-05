@@ -2,7 +2,7 @@
 # lib/config.sh — settings live in $PREFLIGHT_CONFIG_DIR/config.json
 #
 #   _pf_config_load        read config.json into shell variables (called by init.sh)
-#   preflight config ...   path | get KEY | set KEY VALUE | edit | check | help
+#   preflight config ...   path | get KEY | set KEY VALUE | init | edit | check | apply | help
 #
 # One table below drives everything: the loader, the built-in defaults, the type
 # handling of `config set`, the `check` report, and (via tests/config.sh) the schema
@@ -198,6 +198,8 @@ Usage: preflight config <command>
   init [--stdin]   Walk through every setting (Enter keeps, - clears); writes once at the end
   edit             Open the file in \${VISUAL:-\${EDITOR:-vi}}, then check it
   check            Report invalid JSON, unknown keys and wrongly typed values
+  apply [--yes]    Apply recommended git/SSH settings (asks about each; --yes applies all). These
+                   are your git/SSH/shell settings, not config.json
   help             Show this help
 
 Keys:
@@ -480,6 +482,7 @@ _pf_config_cmd() {
       eval "${VISUAL:-${EDITOR:-vi}} \"\$_pf_cfg_file\""
       _pf_config_check || echo "⚠️  Fix the problems above; settings load with built-in defaults until you do." >&2
       _pf_config_load ;;
+    apply)  _pf_config_apply "${@:2}" ;;
     check)
       if _pf_config_check; then _pf_config_file; echo "✅ $_pf_cfg_file is valid"; else return 1; fi ;;
     help|-h|--help) _pf_config_help ;;
