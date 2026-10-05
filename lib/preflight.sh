@@ -882,6 +882,11 @@ Related:
 EOF
 }
 
+# Print a systemd unit's effective lines: no comments, blank lines or Documentation=.
+_pf_unit_directives() {
+  grep -Ev '^[[:space:]]*([#;]|$|Documentation=)'
+}
+
 # ── Git credential helper ─────────────────────────────────────────────────────
 # Idempotently store an HTTPS git credential in ~/.git-credentials and enable the
 # `store` helper scoped to that host (so a global credential.helper is untouched).
@@ -1470,8 +1475,9 @@ GITIGNORE
       # message at EOF. Never -p: 1Password serves one pipe instance, so polling
       # loops forever and orphans a process per SSH operation.
       _want_svc=$'[Unit]\nDescription=1Password SSH agent bridge connection %i\nRequires=1password-agent.socket\n\n[Service]\nType=simple\nExecStart=%h/.local/bin/npiperelay.exe -ei -s //./pipe/openssh-ssh-agent\nStandardInput=socket\nStandardOutput=socket\nStandardError=journal\n'
-      if [[ "$(cat "$_unit_dir/1password-agent.socket" 2>/dev/null)" == "${_want_sock%$'\n'}" \
-         && "$(cat "$_unit_dir/1password-agent@.service" 2>/dev/null)" == "${_want_svc%$'\n'}" ]]; then
+      # Comments, blank lines and Documentation= don't change behavior, so an annotated unit still counts as present.
+      if [[ "$(_pf_unit_directives < "$_unit_dir/1password-agent.socket" 2>/dev/null)" == "$(_pf_unit_directives <<< "$_want_sock")" \
+         && "$(_pf_unit_directives < "$_unit_dir/1password-agent@.service" 2>/dev/null)" == "$(_pf_unit_directives <<< "$_want_svc")" ]]; then
         echo "✅ systemd units present (1password-agent.socket, 1password-agent@.service)"
         ((kept++))
       else
