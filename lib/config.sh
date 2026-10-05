@@ -17,8 +17,6 @@ _PF_CONFIG_TABLE='op.account|OP_ACCOUNT|s|x|my.1password.com
 projects.dirs|PROJ_DIRS|pl|x|~/projects:~/work:~/src
 aws.default_profile|AWS_PROFILE_DEFAULT|s|x|
 git.main_branch|GIT_MAIN_BRANCH|s|x|main
-gitea.username|GITEA_USERNAME|s|x|
-gitea.host|GITEA_HOST|s|x|
 checks.aws|_CHECK_AWS|b|-|1
 checks.gh|_CHECK_GH|b|-|1
 checks.ssh|_CHECK_SSH|b|-|1
@@ -340,8 +338,6 @@ _pf_config_prompt_text() {
     projects.dirs)       echo "Directories the 'proj' command searches, separated by ':' (for example ~/dev:~/src)" ;;
     aws.default_profile) echo "AWS profile 'preflight' exports as AWS_PROFILE at session start${_pf_init_profiles:+ (available: $_pf_init_profiles)}; - for none" ;;
     git.main_branch)     echo "Branch the git helpers treat as the trunk (main, master, ...)" ;;
-    gitea.username)      echo "Gitea user name, for the HTTPS credential stored when GITEA_TOKEN is loaded; - for none" ;;
-    gitea.host)          echo "Gitea host name (for example git.example.com); - for none" ;;
     checks.aws)          echo "Run the AWS session check in 'preflight'? (yes/no)" ;;
     checks.gh)           echo "Run the GitHub CLI auth check in 'preflight'? (yes/no)" ;;
     checks.ssh)          echo "Run the SSH agent check in 'preflight'? (yes/no)" ;;

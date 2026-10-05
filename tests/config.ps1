@@ -27,7 +27,7 @@ try {
         throw "HOME ($HOME) is not under the temp directory: run through tests/config.sh or set HOME first."
     }
 
-    $managedVars = 'OP_ACCOUNT', 'PROJ_DIRS', 'AWS_PROFILE_DEFAULT', 'GIT_MAIN_BRANCH', 'GITEA_USERNAME', 'GITEA_HOST', 'OWL_OMP_CONFIG', 'PREFLIGHT_PLUGINS'
+    $managedVars = 'OP_ACCOUNT', 'PROJ_DIRS', 'AWS_PROFILE_DEFAULT', 'GIT_MAIN_BRANCH', 'OWL_OMP_CONFIG', 'PREFLIGHT_PLUGINS'
     function Reset-Env {
         foreach ($v in $managedVars + 'PREFLIGHT_CONFIG_DIR', 'PREFLIGHT_STATE_DIR', 'XDG_CONFIG_HOME', 'XDG_STATE_HOME') {
             Remove-Item -LiteralPath "Env:$v" -ErrorAction SilentlyContinue

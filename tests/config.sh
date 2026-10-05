@@ -32,7 +32,7 @@ source "$R/lib/paths.sh"
 source "$R/lib/prompt.sh"
 source "$R/lib/config.sh"
 
-MANAGED="OP_ACCOUNT PROJ_DIRS AWS_PROFILE_DEFAULT GIT_MAIN_BRANCH GITEA_USERNAME GITEA_HOST _CHECK_AWS _CHECK_GH _CHECK_SSH _CHECK_GIT_CONFIG OWL_OMP_CONFIG PREFLIGHT_PLUGINS"
+MANAGED="OP_ACCOUNT PROJ_DIRS AWS_PROFILE_DEFAULT GIT_MAIN_BRANCH _CHECK_AWS _CHECK_GH _CHECK_SSH _CHECK_GIT_CONFIG OWL_OMP_CONFIG PREFLIGHT_PLUGINS"
 # Forget every setting, as a brand-new shell would see it.
 reset() {
   local v
@@ -84,7 +84,7 @@ reset; put '{"op":{"account":"it'"'"'s \"x\" $(echo no)"},"projects":{"dirs":["~
 _pf_config_load
 chk "quotes, apostrophes and \$() survive verbatim" '[[ "$OP_ACCOUNT" == "it'"'"'s \"x\" \$(echo no)" ]]'
 chk "path expansion: ~/, \$HOME/, absolute; other \$VAR untouched" '[[ "$PROJ_DIRS" == "$HOME/a:$HOME/b:/c:\$OTHER/d" ]]'
-chk "other keys fall back to defaults"      '[[ "$_CHECK_SSH" == 1 && -z "$GITEA_HOST" ]]'
+chk "other keys fall back to defaults"      '[[ "$_CHECK_SSH" == 1 && -z "$AWS_PROFILE_DEFAULT" ]]'
 
 # A list with any non-string element is wrong-typed as a whole, not filtered.
 reset; put '{"op":{"account":"acct"},"projects":{"dirs":["~/custom",7]}}'
@@ -136,8 +136,8 @@ chk "reload: loader-set value follows the file" '[[ "$GIT_MAIN_BRANCH" == edited
 put '{"op":{"account":"edited"}}'
 _pf_config_load
 chk "key removed from the file -> built-in default" '[[ "$GIT_MAIN_BRANCH" == main ]]'
-reset; GITEA_HOST=""; put '{"gitea":{"host":"h"}}'; _pf_config_load
-chk "a user-set empty value still wins"     '[[ -z "$GITEA_HOST" ]]'
+reset; AWS_PROFILE_DEFAULT=""; put '{"aws":{"default_profile":"h"}}'; _pf_config_load
+chk "a user-set empty value still wins"     '[[ -z "$AWS_PROFILE_DEFAULT" ]]'
 
 # Nested shell: inherits exported values, not the managed list.
 reset; put '{"git":{"main_branch":"v1"}}'; _pf_config_load
@@ -154,7 +154,7 @@ chk "config get string"                     '[[ "$(_pf_config_cmd get aws.defaul
 chk "config get list"                       '[[ "$(_pf_config_cmd get projects.dirs)" == "~/projects:~/work:~/src" ]]'
 chk "config get falls back to the default"  'jq "del(.git)" "$CFG" > "$T/x" && mv "$T/x" "$CFG"; [[ "$(_pf_config_cmd get git.main_branch)" == main ]]'
 # get prints what set accepts, including false, empty strings and lists.
-put '{"version":1,"checks":{"aws":false,"gh":true},"gitea":{"host":""},"projects":{"dirs":["~/a","~/b"]}}'
+put '{"version":1,"checks":{"aws":false,"gh":true},"aws":{"default_profile":""},"projects":{"dirs":["~/a","~/b"]}}'
 chk "get prints false for a false boolean"  '[[ "$(_pf_config_cmd get checks.aws)" == false ]]'
 chk "get prints true for a true boolean"    '[[ "$(_pf_config_cmd get checks.gh)" == true ]]'
 chk "get prints an empty string value as empty (not the default)" 'put "{\"git\":{\"main_branch\":\"\"}}"; [[ -z "$(_pf_config_cmd get git.main_branch)" ]]'
@@ -263,29 +263,29 @@ chk "config apply: an unknown argument prints the usage and does nothing" '[[ $r
 
 # ── preflight config init ─────────────────────────────────────────────────────
 # Answers are fed with --stdin, one per line in table order: op.account, projects.dirs,
-# aws.default_profile, git.main_branch, gitea.username, gitea.host, checks.aws, checks.gh,
+# aws.default_profile, git.main_branch, checks.aws, checks.gh,
 # checks.ssh, checks.git_config, owl.omp_config, plugins. Called in the current shell (process
 # substitution, not a pipe) so the loader's variables can be checked afterwards.
 init_with() { _pf_config_init --stdin < <(printf '%s\n' "$@") >"$T/init.out" 2>&1; }
 KEEP=""   # an empty line keeps the current value
 reset; cp "$R/defaults/config.company.json" "$CFG"; _pf_config_load; before=$(cat "$CFG")
-init_with "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP"; rc=$?
+init_with "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP"; rc=$?
 chk "init: all Enter keeps everything and writes nothing" '[[ $rc -eq 0 && "$(cat "$CFG")" == "$before" && "$(cat "$T/init.out")" == *"No changes"* ]]'
 
-init_with "new.1password.com" "~/x:~/y" "-" "trunk" "$KEEP" "gitea.example.com" "no" "$KEEP" "yes" "$KEEP" "-" "owl"; rc=$?
+init_with "new.1password.com" "~/x:~/y" "-" "trunk" "no" "$KEEP" "yes" "$KEEP" "-" "owl"; rc=$?
 chk "init: succeeds"                          '[[ $rc -eq 0 ]]'
 chk "init: string, list and clear are written" '[[ "$(jq -r .op.account "$CFG")" == new.1password.com && "$(jq -c .projects.dirs "$CFG")" == "[\"~/x\",\"~/y\"]" && "$(jq -r .aws.default_profile "$CFG")" == "" && "$(jq -r .git.main_branch "$CFG")" == trunk ]]'
 chk "init: yes/no become JSON booleans"       '[[ "$(jq -c .checks "$CFG")" == "{\"aws\":false,\"gh\":true,\"ssh\":true,\"git_config\":true}" ]]'
 chk "init: - clears the Oh My Posh path"      '[[ "$(jq -r .owl.omp_config "$CFG")" == "" ]]'
 chk "init: plugins are written as a JSON array" '[[ "$(jq -c .plugins "$CFG")" == "[\"owl\"]" && "$PREFLIGHT_PLUGINS" == owl ]]'
-chk "init: kept keys and version are untouched" '[[ "$(jq -r .version "$CFG")" == 1 && "$(jq -r .gitea.host "$CFG")" == gitea.example.com && "$(jq -r .gitea.username "$CFG")" == "" ]]'
+chk "init: kept keys and version are untouched" '[[ "$(jq -r .version "$CFG")" == 1 && "$(jq -r .checks.gh "$CFG")" == true ]]'
 chk "init: the shell picks up the new values" '[[ "$OP_ACCOUNT" == new.1password.com && "$GIT_MAIN_BRANCH" == trunk && "$_CHECK_AWS" == 0 ]]'
 chk "init: reports how many changed"          '[[ "$(cat "$T/init.out")" == *"changed in"* ]]'
 chk "init: leaves no temp files"              '[[ -z "$(find "$PREFLIGHT_CONFIG_DIR" -maxdepth 1 -name ".config.*")" ]]'
 chk "init: the result passes check"           '_pf_config_check >/dev/null'
 
 # The current value is shown as the default.
-init_with "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP"
+init_with "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP"
 chk "init: prompts show the current value"    '[[ "$(cat "$T/init.out")" == *"[new.1password.com]"* && "$(cat "$T/init.out")" == *"[~/x:~/y]"* && "$(cat "$T/init.out")" == *"[no]"* ]]'
 
 # Stopping part-way writes nothing, even after some answers were given.
@@ -296,9 +296,9 @@ chk "init: ...and leaves the file untouched"  '[[ "$(cat "$CFG")" == "$before" &
 chk "init: ...and stops at the first missing answer (does not keep prompting)" '[[ "$(grep -c "Input ended" "$T/init.out")" == 1 && "$(grep -c "^[a-z_.]*: " "$T/init.out")" == 3 ]]'
 
 # A bad yes/no stops it, and writes nothing.
-init_with "x" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "maybe"; rc=$?
+init_with "x" "$KEEP" "$KEEP" "$KEEP" "maybe"; rc=$?
 chk "init: a bad yes/no is refused with the key named, nothing written" '[[ $rc -ne 0 && "$(cat "$T/init.out")" == *"not yes or no for checks.aws"* && "$(cat "$CFG")" == "$before" ]]'
-init_with "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "-"; rc=$?
+init_with "$KEEP" "$KEEP" "$KEEP" "$KEEP" "-"; rc=$?
 chk "init: - is not an answer to a yes/no question" '[[ $rc -ne 0 && "$(cat "$CFG")" == "$before" ]]'
 
 # No terminal and no --stdin: refuse rather than hang.
@@ -314,7 +314,7 @@ chk "init: invalid JSON is refused and left alone" '[[ $rc -ne 0 && "$(cat "$CFG
 
 # No file yet: only the answered keys are written, plus the version.
 reset; rm -f "$CFG"
-init_with "fresh.1password.com" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP"; rc=$?
+init_with "fresh.1password.com" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP"; rc=$?
 chk "init: with no file, creates it with just version and the answered key" '[[ $rc -eq 0 && "$(jq -c . "$CFG")" == "{\"version\":1,\"op\":{\"account\":\"fresh.1password.com\"}}" ]]'
 
 # The "your own variable keeps winning" note is built from a newline-delimited list, so it works where an
@@ -334,7 +334,7 @@ unset GIT_MAIN_BRANCH OP_ACCOUNT
 
 # A symlinked config.json is edited at its target.
 reset; mkdir -p "$T/dots"; cp "$R/defaults/config.company.json" "$T/dots/config.json"; rm -f "$CFG"; ln -s "$T/dots/config.json" "$CFG"
-init_with "linked.1password.com" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP"
+init_with "linked.1password.com" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP"
 chk "init: through a symlink keeps the link and writes the target" '[[ -L "$CFG" && "$(jq -r .op.account "$T/dots/config.json")" == linked.1password.com ]]'
 rm -f "$CFG"
 
@@ -395,7 +395,7 @@ if [[ "$PF_SHELL" == bash ]] && command -v pwsh >/dev/null 2>&1; then
     done <<< "$_PF_CONFIG_TABLE"
   }
   ps_dump() {
-    env -u OP_ACCOUNT -u PROJ_DIRS -u AWS_PROFILE_DEFAULT -u GIT_MAIN_BRANCH -u GITEA_USERNAME -u GITEA_HOST -u OWL_OMP_CONFIG \
+    env -u OP_ACCOUNT -u PROJ_DIRS -u AWS_PROFILE_DEFAULT -u GIT_MAIN_BRANCH -u OWL_OMP_CONFIG \
       pwsh -NoProfile -File "$R/tests/config-dump.ps1" -Repo "$R" 2>&1
   }
   i=0
@@ -422,7 +422,7 @@ if [[ "$PF_SHELL" == bash ]] && command -v pwsh >/dev/null 2>&1; then
 CASES
   rm -f "$CFG"
 
-  psout=$(mkdir -p "$T/pwhome" && env -u OP_ACCOUNT -u PROJ_DIRS -u AWS_PROFILE_DEFAULT -u GIT_MAIN_BRANCH -u GITEA_USERNAME -u GITEA_HOST -u OWL_OMP_CONFIG \
+  psout=$(mkdir -p "$T/pwhome" && env -u OP_ACCOUNT -u PROJ_DIRS -u AWS_PROFILE_DEFAULT -u GIT_MAIN_BRANCH -u OWL_OMP_CONFIG \
             -u XDG_CONFIG_HOME -u XDG_STATE_HOME -u PREFLIGHT_CONFIG_DIR -u PREFLIGHT_STATE_DIR HOME="$T/pwhome" \
             pwsh -NoProfile -File "$R/tests/config.ps1" -Repo "$R" 2>&1)
   echo "$psout" | grep -a '^FAIL\|^  error' 

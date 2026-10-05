@@ -186,8 +186,8 @@ preflight() {
         ((issues++))
       fi
     else
-      issue_msgs+=("GITEA_TOKEN is set but GITEA_USERNAME/GITEA_HOST are not configured")
-      _pf_line "⚠️  GITEA_TOKEN set but GITEA_USERNAME/GITEA_HOST missing — skipping credential write"
+      issue_msgs+=("GITEA_TOKEN is set but GITEA_USERNAME/GITEA_HOST are not set (export them or add them with op-env add)")
+      _pf_line "⚠️  GITEA_TOKEN set but GITEA_USERNAME/GITEA_HOST not set (export them or op-env add) — skipping credential write"
       ((issues++))
     fi
   fi
