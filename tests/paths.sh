@@ -271,11 +271,15 @@ fresh
 rm -f "$PREFLIGHT_DIR/defaults/config.general.json"
 out=$(source "$PREFLIGHT_DIR/init.sh" 2>&1 </dev/null)
 chk "a missing general profile warns and creates no config.json" '[[ "$out" == *"is missing"* && ! -e "$HOME/.config/preflight/config.json" ]]'
-fresh
-mkdir -p "$HOME/.config/preflight" && chmod 555 "$HOME/.config/preflight"
-out=$(source "$PREFLIGHT_DIR/init.sh" 2>&1 </dev/null)
-chk "a failed copy does not claim the file was created" '[[ "$out" != *"Created"* ]]'
-chmod 755 "$HOME/.config/preflight"
+if [[ "$(id -u)" != 0 ]]; then   # root ignores the read-only directory
+  fresh
+  mkdir -p "$HOME/.config/preflight" && chmod 555 "$HOME/.config/preflight"
+  trap 'chmod 755 "$HOME/.config/preflight" 2>/dev/null' EXIT
+  out=$(source "$PREFLIGHT_DIR/init.sh" 2>&1 </dev/null)
+  chk "a failed copy does not claim the file was created" '[[ "$out" != *"Created"* ]]'
+  chmod 755 "$HOME/.config/preflight"
+  trap - EXIT
+fi
 
 echo "$passes passed, $fails failed"
 [[ $fails -eq 0 ]]

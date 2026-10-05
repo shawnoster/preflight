@@ -358,7 +358,7 @@ _pf_config_prompt_text() {
 #   Enter  keep the current value      -  clear it (strings, paths and lists; not yes/no)
 # With --stdin the answers are read from standard input, one per line in key order, for scripting.
 _pf_config_init() {
-  local from_stdin=0 k var type exp def cur reply new tries changed=0 total=0
+  local from_stdin=0 k var type exp def cur reply new tries shown changed=0 total=0
   case "${1:-}" in
     "") ;;
     --stdin) from_stdin=1 ;;
