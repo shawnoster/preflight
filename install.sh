@@ -188,7 +188,7 @@ main() {
   echo ""
   _pf_info "Next steps:"
   _pf_info "  1. Reload your shell:  $reload_cmd  (or open a new terminal)"
-  _pf_info "     — on first load, you'll be prompted to pick a config profile."
+  _pf_info "     — on first load, the general config profile is created; for the company profile, set PREFLIGHT_PROFILE=company before the source line."
   _pf_info "  2. Register your 1Password secrets:  op-env add"
   _pf_info "     (set your account first: preflight config set op.account ADDRESS)"
   _pf_info "  3. Run: preflight"

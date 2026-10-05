@@ -54,7 +54,7 @@ uses them instead:
   (`config/theme-catppuccin.omp.json`), and the user-facing messages that say "set in config/accounts.sh" in
   `lib/help.sh`, `lib/aws.sh`, `lib/project.sh`, `lib/onepassword.sh`, `lib/envsets.sh` and
   `lib/preflight.sh`. `pwsh/config/` is a separate directory and is not renamed.
-- `init.sh`: profile picker, template copy, `source` of `accounts.sh` and `owl.sh`. The sha256 block that
+- `init.sh`: template copy (profile from `PREFLIGHT_PROFILE`, default `general`; never prompts), `source` of `accounts.sh` and `owl.sh`. The sha256 block that
   refreshes an untouched `owl.sh` is deleted; it only exists to upgrade old installs.
 - `install.sh`: first-run copy.
 - `lib/envsets.sh`: `_op_envsets_dir`.

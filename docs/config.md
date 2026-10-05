@@ -2,7 +2,7 @@
 
 Settings live in one JSON file, `$PREFLIGHT_CONFIG_DIR/config.json` (default `~/.config/preflight/config.json`). It
 is created on first load from a profile in `defaults/` (`config.general.json` or `config.company.json`), and
-`preflight update` never touches it. Secrets are not settings: they live in env sets (`op-env`), see the README.
+`preflight update` never touches it. The first load never prompts: it uses `general` unless `PREFLIGHT_PROFILE=company` is set before `init.sh` is sourced. Secrets are not settings: they live in env sets (`op-env`), see the README.
 
 `jq` is required to read the file.
 

@@ -396,7 +396,11 @@ _pf_config_init() {
     echo "$k: $(_pf_config_prompt_text "$k")" >&2
     tries=0
     while :; do
-      if ! _pf_ask reply "  [${cur:-(empty)}] > "; then
+      shown="$cur"
+      if [[ "$type" == b ]]; then
+        case "$cur" in true) shown=yes ;; false) shown=no ;; esac
+      fi
+      if ! _pf_ask reply "  [${shown:-(empty)}] > "; then
         echo "" >&2
         echo "Input ended: no changes were written." >&2
         return 1

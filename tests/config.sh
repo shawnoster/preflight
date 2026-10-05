@@ -286,7 +286,7 @@ chk "init: the result passes check"           '_pf_config_check >/dev/null'
 
 # The current value is shown as the default.
 init_with "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP" "$KEEP"
-chk "init: prompts show the current value"    '[[ "$(cat "$T/init.out")" == *"[new.1password.com]"* && "$(cat "$T/init.out")" == *"[~/x:~/y]"* && "$(cat "$T/init.out")" == *"[false]"* ]]'
+chk "init: prompts show the current value"    '[[ "$(cat "$T/init.out")" == *"[new.1password.com]"* && "$(cat "$T/init.out")" == *"[~/x:~/y]"* && "$(cat "$T/init.out")" == *"[no]"* ]]'
 
 # Stopping part-way writes nothing, even after some answers were given.
 before=$(cat "$CFG")
