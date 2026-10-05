@@ -258,5 +258,28 @@ else
   echo "skipped: install.sh checks (not on a git branch)"
 fi
 
+# ── first run: profile selection never prompts ────────────────────────────────
+fresh
+out=$(PREFLIGHT_PROFILE=company source "$PREFLIGHT_DIR/init.sh" 2>&1 </dev/null)
+chk "PREFLIGHT_PROFILE=company seeds the company profile"  'cmp -s "$HOME/.config/preflight/config.json" "$R/defaults/config.company.json"'
+for bad in nosuch ../../x schema; do
+  fresh
+  out=$(PREFLIGHT_PROFILE=$bad source "$PREFLIGHT_DIR/init.sh" 2>&1 </dev/null)
+  chk "PREFLIGHT_PROFILE='$bad' falls back to general with a warning" 'cmp -s "$HOME/.config/preflight/config.json" "$R/defaults/config.general.json" && [[ "$out" == *"no profile"* ]]'
+done
+fresh
+rm -f "$PREFLIGHT_DIR/defaults/config.general.json"
+out=$(source "$PREFLIGHT_DIR/init.sh" 2>&1 </dev/null)
+chk "a missing general profile warns and creates no config.json" '[[ "$out" == *"is missing"* && ! -e "$HOME/.config/preflight/config.json" ]]'
+if [[ "$(id -u)" != 0 ]]; then   # root ignores the read-only directory
+  fresh
+  mkdir -p "$HOME/.config/preflight" && chmod 555 "$HOME/.config/preflight"
+  trap 'chmod 755 "$HOME/.config/preflight" 2>/dev/null' EXIT
+  out=$(source "$PREFLIGHT_DIR/init.sh" 2>&1 </dev/null)
+  chk "a failed copy does not claim the file was created" '[[ "$out" != *"Created"* ]]'
+  chmod 755 "$HOME/.config/preflight"
+  trap - EXIT
+fi
+
 echo "$passes passed, $fails failed"
 [[ $fails -eq 0 ]]

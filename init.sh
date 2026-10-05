@@ -44,56 +44,32 @@ if [[ -z "${SSH_AUTH_SOCK:-}" && -S "$HOME/.1password/agent.sock" ]]; then
   export SSH_AUTH_SOCK="$HOME/.1password/agent.sock"
 fi
 
-# ── First-time setup: pick a profile if there is no config.json yet ──────────
+# ── First-time setup: create config.json from a profile if there is none yet ─
+# Never prompts: a new shell must not block on a question. The general profile is
+# the default; PREFLIGHT_PROFILE=company (set before sourcing this file) picks
+# another defaults/config.<name>.json.
 
 if [[ ! -f "$PREFLIGHT_CONFIG_DIR/config.json" ]]; then
-  # NOTE: this file is *sourced*, so we are not inside a function — `local` is
-  # an error here ("local: can only be used in a function"). Plain vars + an
-  # explicit unset at the end instead.
-  #
-  # Profiles are defaults/config.<name>.json; the schema is not one.
-  _pf_profiles=()
-  for _pf_file in "$PREFLIGHT_DIR/defaults/config."*.json; do
-    [[ -f "$_pf_file" ]] || continue
-    _pf_base=$(basename "$_pf_file")
-    [[ "$_pf_base" == "config.schema.json" ]] && continue
-    _pf_profiles+=("$_pf_file")
-  done
-  _pf_pick=""
-  [[ -f "$PREFLIGHT_DIR/defaults/config.general.json" ]] && _pf_pick="$PREFLIGHT_DIR/defaults/config.general.json"
-
-  # Only prompt when there is a human to answer. A non-interactive shell (a
-  # script sourcing .bashrc, a provisioning run) would otherwise block on
-  # `read` or silently consume the caller's stdin.
-  if [[ ${#_pf_profiles[@]} -gt 0 && $- == *i* ]]; then
-    echo "🔧 First-time setup — pick a config profile:"
-    for _pf_idx in "${!_pf_profiles[@]}"; do
-      _pf_label=$(basename "${_pf_profiles[$_pf_idx]}" | sed 's/config\.\(.*\)\.json/\1/')
-      printf "  %d) %s\n" "$((_pf_idx + 1))" "$_pf_label"
-    done
-    printf "  Choice [1-%d]: " "${#_pf_profiles[@]}"
-    read -r _pf_choice
-    # Validate as a plain integer before arithmetic, so stray input can't reach
-    # the arithmetic evaluator.
-    if [[ "$_pf_choice" =~ ^[0-9]+$ ]]; then
-      _pf_choice=$((_pf_choice - 1))
-    else
-      _pf_choice=-1
-    fi
-    if [[ $_pf_choice -ge 0 && $_pf_choice -lt ${#_pf_profiles[@]} ]]; then
-      _pf_pick="${_pf_profiles[$_pf_choice]}"
-    else
-      echo "   (invalid choice — using the general profile)"
-    fi
+  _pf_name="${PREFLIGHT_PROFILE:-general}"
+  # A profile name is a bare word: no path separators, and the schema is not a profile.
+  if [[ ! "$_pf_name" =~ ^[A-Za-z0-9_-]+$ || "$_pf_name" == schema \
+        || ! -f "$PREFLIGHT_DIR/defaults/config.$_pf_name.json" ]]; then
+    [[ "$_pf_name" == general ]] \
+      || echo "⚠️  preflight: no profile '$_pf_name' in $PREFLIGHT_DIR/defaults — using general." >&2
+    _pf_name=general
   fi
-  if [[ -n "$_pf_pick" ]]; then
-    cp "$_pf_pick" "$PREFLIGHT_CONFIG_DIR/config.json"
-    echo "📋 Created $PREFLIGHT_CONFIG_DIR/config.json from $(basename "$_pf_pick")."
-    echo "   Walk through the settings with: preflight config init  (or: preflight config set KEY VALUE)"
+  _pf_pick="$PREFLIGHT_DIR/defaults/config.$_pf_name.json"
+  if [[ -f "$_pf_pick" ]]; then
+    if cp "$_pf_pick" "$PREFLIGHT_CONFIG_DIR/config.json"; then
+      echo "📋 Created $PREFLIGHT_CONFIG_DIR/config.json from $(basename "$_pf_pick")."
+      echo "   Change settings with: preflight config set KEY VALUE  (or: preflight config init)"
+    else
+      echo "⚠️  preflight: could not write $PREFLIGHT_CONFIG_DIR/config.json (built-in defaults in use)." >&2
+    fi
+  else
+    echo "⚠️  preflight: $_pf_pick is missing, so no config.json was created. Reinstall preflight." >&2
   fi
-  # These are globals (see the `local` note above) — don't leak them into the
-  # user's interactive shell.
-  unset _pf_profiles _pf_file _pf_base _pf_idx _pf_label _pf_choice _pf_pick
+  unset _pf_name _pf_pick
 fi
 
 # ── Source all library scripts ────────────────────────────────────────────────
