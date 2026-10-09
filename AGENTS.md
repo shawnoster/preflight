@@ -85,6 +85,7 @@ Read this repo when working on:
 | WSL SSH setup guide | `docs/wsl-ssh-setup.md` |
 | Tests (env sets, `op-env load`/`clear`; bash + zsh, fake `op`) | `tests/op-env.sh` |
 | Tests (directory layout, first run, `uninstall --purge`; bash + zsh) | `tests/paths.sh` |
+| Tests (`wsl-browser` plugin: `$BROWSER` wiring, `wsl-browser-doctor [--fix]`, the `~/.profile` block; bash + zsh, fake `rundll32.exe`) | `tests/wsl-browser.sh` |
 | Tests (`config.json` loader, `preflight config`, table/schema/profile drift; bash + zsh) | `tests/config.sh` |
 
 ## Upstream / Downstream

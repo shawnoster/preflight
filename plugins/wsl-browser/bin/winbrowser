@@ -1,0 +1,53 @@
+#!/bin/sh
+# Open URLs and files in the Windows host's default browser from WSL.
+#
+# Why this exists: a Linux browser installed inside WSL opens a WSLg window rather than a native
+# Windows one, and its launcher (/usr/bin/google-chrome-stable) relays Chrome's stderr to the launching
+# tty (`exec 2> >(exec cat >&2)`), so lines like
+#   ERROR:google_apis/gcm/engine/registration_request.cc:291] ...DEPRECATED_ENDPOINT
+# show up in unrelated terminals. Handing links to the Windows shell avoids both problems.
+#
+# Note: /etc/wsl.conf often sets interop.appendWindowsPath=false, so Windows
+# executables are not on PATH and must be invoked by absolute path.
+
+set -u
+
+RUNDLL32="${WSL_BROWSER_RUNDLL32:-/mnt/c/Windows/System32/rundll32.exe}"
+
+if [ ! -x "$RUNDLL32" ]; then
+	echo "${0##*/}: cannot find $RUNDLL32 (is WSL interop enabled?)" >&2
+	exit 1
+fi
+
+open_one() {
+	target=$1
+
+	case $target in
+	# Already a URI (http://, https://, mailto:, ...) - pass through untouched.
+	[a-zA-Z][a-zA-Z0-9+.-]*:*) ;;
+	# Otherwise, if it names an existing local file, translate it to a
+	# Windows path so the host browser can actually resolve it.
+	*)
+		if [ -e "$target" ]; then
+			converted=$(wslpath -w "$target" 2>/dev/null) && target=$converted
+		fi
+		;;
+	esac
+
+	# rundll32 hands the target to the Windows default browser and exits
+	# immediately. stdio is discarded so no interop chatter can leak into the
+	# caller's terminal - the whole point of this wrapper.
+	"$RUNDLL32" url.dll,FileProtocolHandler "$target" >/dev/null 2>&1
+}
+
+if [ "$#" -eq 0 ]; then
+	echo "usage: ${0##*/} URL|FILE ..." >&2
+	exit 2
+fi
+
+status=0
+for arg in "$@"; do
+	open_one "$arg" || status=1
+done
+
+exit "$status"

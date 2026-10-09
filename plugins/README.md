@@ -22,6 +22,7 @@ PowerShell reads the same `plugins` list.
 Remove the name from the list and open a new terminal: the plugin's functions, `PATH` entries, hooks and colors are gone from new shells (a shell that is already open keeps them until it closes). What a plugin wrote is left alone:
 
 - `owl`: `~/.local/state/preflight/owl/` (your theme choice and the patched Oh My Posh config). Delete the directory to start over.
+- `wsl-browser`: `~/.local/share/applications/winbrowser.desktop` and the `winbrowser.desktop` entries in `~/.config/mimeapps.list`, if you ran `wsl-browser-doctor --fix`, and the block between `# >>> preflight wsl-browser >>>` and `# <<< preflight wsl-browser <<<` in `~/.profile`. Disabling the plugin does not remove that block, so login shells keep exporting `$BROWSER` until you delete it (the block checks the wrapper still exists, so removing preflight itself is safe). Remove all of these to go back to the distro's own browser.
 - `nanoleaf`: `~/.config/nanoleaf-direct/env` keeps the last `NANOLEAF_TOKEN` (kept on purpose so cron jobs still work). **Delete that file to revoke it** once you no longer want it on disk.
 
 ## Available
@@ -29,6 +30,7 @@ Remove the name from the list and open a new terminal: the plugin's functions, `
 | Plugin | What it adds |
 |---|---|
 | `nanoleaf` | Hands `NANOLEAF_TOKEN` to cron on every `op-env load` (copies it to `~/.config/nanoleaf-direct/env`, mode 600), and puts `light-remind`, `nanoleaf-kitt` and `nanoleaf-streak` on `PATH`. bash/zsh only. |
+| `wsl-browser` | On WSL, points `$BROWSER` at `plugins/wsl-browser/bin/winbrowser`, which opens links in the Windows default browser (via `rundll32.exe`) instead of a Linux browser inside the distro. Adds `wsl-browser-doctor [--fix]`, which checks interop, `$BROWSER`, `winbrowser.desktop`, the XDG (freedesktop.org desktop standard, which `xdg-open` follows) http/https/html defaults, a marked `BROWSER` block in `~/.profile` (so hooks, cron and scripts get it too) and a dangling `env.BROWSER` pin in Claude Code's settings; `--fix` repairs all but the settings pin, which it only reports. Inert outside WSL. bash/zsh only; the `~/.profile` block is read by bash and POSIX `sh` login shells, not by zsh. |
 | `owl` | The OOO theme engine: `owl-theme`, a MOTD splash (shown once per session in bash/zsh; in PowerShell call `Show-OwlSplash` yourself) and Oh My Posh prompt integration (`owl.omp_config`). Seeds `~/.local/state/preflight/owl/theme-catppuccin.omp.json` on first load. |
 
 ## Writing one
