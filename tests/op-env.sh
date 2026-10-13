@@ -38,6 +38,9 @@ mkdir -p "$HOME" "$PREFLIGHT_CONFIG_DIR" "$PREFLIGHT_DIR/lib"
 # FAKE_OP_SILENT_EMPTY_ACCT=<account> makes that account's `inject` exit 0 while
 #   substituting empty values (real op.exe behaviour against a secondary account),
 #   so the loader has to notice and re-read the account per secret.
+# FAKE_OP_FLAKY=<n> makes the first n whoami/vault/inject/read calls fail with op.exe's
+#   "cannot connect to 1Password app" (the desktop pipe not being ready yet), then work.
+#   The count lives in a flaky-count file beside the stub; delete it to start over.
 # FAKE_OP_LOG=<file> records one "<verb> --account <account>" line per op call, so a
 # test can assert which account each read was made against.
 cat > "$OP_BIN" <<'STUB'
@@ -52,6 +55,14 @@ novault() {
   printf '%s\n' "[ERROR] 2026/10/02 14:54:38 could not read secret 'op://Employee/Atlassian - API Token - Local Development/credential': could not get item Employee/Atlassian - API Token - Local Development: \"Employee\" isn't a vault in this account. Specify the vault with its ID or name." >&2
   return 0
 }
+if [[ -n "$FAKE_OP_FLAKY" && "$1" =~ ^(whoami|vault|inject|read)$ ]]; then
+  cf="$(dirname "$0")/flaky-count"; n=$(cat "$cf" 2>/dev/null || echo 0)
+  if [[ $n -lt $FAKE_OP_FLAKY ]]; then
+    echo $((n + 1)) > "$cf"
+    printf '%s\n' "[ERROR] 2026/10/12 21:20:56 could not read secret 'op://v/i/f': error initializing client: connecting to desktop app: cannot connect to 1Password app, make sure it is running" >&2
+    exit 1
+  fi
+fi
 case "$1" in
   whoami) a=$(acct_of "$@")
           [[ -e "$(dirname "$0")/signed-in-$a" ]] && exit 0
@@ -824,6 +835,30 @@ PS1
 else
   echo "skipped: bash/PowerShell op-env parity (needs pwsh and GNU stat, bash pass only)"
 fi
+
+# ── desktop pipe not ready: op.exe's "cannot connect to 1Password app" is retried ──
+export _OP_RETRY_DELAY=0
+clean_sets; mkdir -p "$sets"
+printf 'FLK1\top://v/i/f1\nFLK2\top://v/i/f2\n' > "$sets/flaky.tsv"
+flk="$T/flaky-count"
+rm -f "$flk"; out=$(FAKE_OP_FLAKY=3 op-env load 2>&1); rc=$?
+chk "flaky pipe: load succeeds after retries" '[[ $rc -eq 0 && "$out" == *"FLK1"* && "$out" == *"FLK2"* ]]'
+chk "flaky pipe: no fallback to per-secret reads" '[[ "$out" != *"falling back"* && "$out" != *"failed to load"* ]]'
+chk "flaky pipe: the failures were consumed by retries" '[[ "$(cat "$flk")" == 3 ]]'
+op-env clear >/dev/null
+rm -f "$flk"; out=$(FAKE_OP_FLAKY=99 op-env load 2>&1); rc=$?
+chk "flaky pipe: a load that never connects fails" '[[ $rc -ne 0 ]]'
+rm -f "$flk"; out=$(FAKE_OP_FLAKY=99 _op_call read --account test op://v/i/f 2>&1); rc=$?
+chk "flaky pipe: gives up after 5 attempts, exit status kept" '[[ $rc -eq 1 && "$(cat "$flk")" == 5 ]]'
+chk "flaky pipe: the app's error is still reported" '[[ "$out" == *"cannot connect to 1Password app"* ]]'
+rm -f "$flk"; out=$(FAKE_OP_FLAKY=2 op-signin 2>&1); rc=$?
+chk "flaky pipe: op-signin retries too" '[[ $rc -eq 0 ]]'
+# A different failure is not retried.
+rm -f "$flk"; : > "$T/log"
+printf 'BRK\top://v/broken/f\n' > "$sets/flaky.tsv"
+out=$(FAKE_OP_LOG="$T/log" FAKE_OP_READ_ERR="boom" op-env load 2>&1)
+chk "other errors are not retried" '[[ "$(grep -c "^read " "$T/log")" -eq 1 ]]'
+unset _OP_RETRY_DELAY; op-env clear >/dev/null 2>&1; clean_sets
 
 echo "$passes passed, $fails failed"
 [[ $fails -eq 0 ]]
