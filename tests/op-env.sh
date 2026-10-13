@@ -41,6 +41,7 @@ mkdir -p "$HOME" "$PREFLIGHT_CONFIG_DIR" "$PREFLIGHT_DIR/lib"
 # FAKE_OP_FLAKY=<n> makes the first n whoami/vault/inject/read calls fail with op.exe's
 #   "cannot connect to 1Password app" (the desktop pipe not being ready yet), then work.
 #   The count lives in a flaky-count file beside the stub; delete it to start over.
+#   FAKE_OP_FLAKY_ERR="text" makes those failures say that instead (an error to not retry).
 # FAKE_OP_LOG=<file> records one "<verb> --account <account>" line per op call, so a
 # test can assert which account each read was made against.
 cat > "$OP_BIN" <<'STUB'
@@ -59,7 +60,7 @@ if [[ -n "$FAKE_OP_FLAKY" && "$1" =~ ^(whoami|vault|inject|read)$ ]]; then
   cf="$(dirname "$0")/flaky-count"; n=$(cat "$cf" 2>/dev/null || echo 0)
   if [[ $n -lt $FAKE_OP_FLAKY ]]; then
     echo $((n + 1)) > "$cf"
-    printf '%s\n' "[ERROR] 2026/10/12 21:20:56 could not read secret 'op://v/i/f': error initializing client: connecting to desktop app: cannot connect to 1Password app, make sure it is running" >&2
+    printf '%s\n' "${FAKE_OP_FLAKY_ERR:-[ERROR] 2026/10/12 21:20:56 could not read secret 'op://v/i/f': error initializing client: connecting to desktop app: cannot connect to 1Password app, make sure it is running}" >&2
     exit 1
   fi
 fi
@@ -841,24 +842,40 @@ export _OP_RETRY_DELAY=0
 clean_sets; mkdir -p "$sets"
 printf 'FLK1\top://v/i/f1\nFLK2\top://v/i/f2\n' > "$sets/flaky.tsv"
 flk="$T/flaky-count"
-rm -f "$flk"; out=$(FAKE_OP_FLAKY=3 op-env load 2>&1); rc=$?
+fresh() { rm -f "$flk"; _OP_PIPE_DEAD_AT=""; }
+fresh; out=$(FAKE_OP_FLAKY=3 op-env load 2>&1); rc=$?
 chk "flaky pipe: load succeeds after retries" '[[ $rc -eq 0 && "$out" == *"FLK1"* && "$out" == *"FLK2"* ]]'
 chk "flaky pipe: no fallback to per-secret reads" '[[ "$out" != *"falling back"* && "$out" != *"failed to load"* ]]'
 chk "flaky pipe: the failures were consumed by retries" '[[ "$(cat "$flk")" == 3 ]]'
 op-env clear >/dev/null
-rm -f "$flk"; out=$(FAKE_OP_FLAKY=99 op-env load 2>&1); rc=$?
-chk "flaky pipe: a load that never connects fails" '[[ $rc -ne 0 ]]'
-rm -f "$flk"; out=$(FAKE_OP_FLAKY=99 _op_call read --account test op://v/i/f 2>&1); rc=$?
-chk "flaky pipe: gives up after 5 attempts, exit status kept" '[[ $rc -eq 1 && "$(cat "$flk")" == 5 ]]'
-chk "flaky pipe: the app's error is still reported" '[[ "$out" == *"cannot connect to 1Password app"* ]]'
-rm -f "$flk"; out=$(FAKE_OP_FLAKY=2 op-signin 2>&1); rc=$?
+fresh; out=$(FAKE_OP_FLAKY=2 op-signin 2>&1); rc=$?
 chk "flaky pipe: op-signin retries too" '[[ $rc -eq 0 ]]'
-# A different failure is not retried.
-rm -f "$flk"; : > "$T/log"
-printf 'BRK\top://v/broken/f\n' > "$sets/flaky.tsv"
-out=$(FAKE_OP_LOG="$T/log" FAKE_OP_READ_ERR="boom" op-env load 2>&1)
-chk "other errors are not retried" '[[ "$(grep -c "^read " "$T/log")" -eq 1 ]]'
-unset _OP_RETRY_DELAY; op-env clear >/dev/null 2>&1; clean_sets
+# stdin is sent again on every attempt, and stdout reaches the caller untouched.
+fresh; out=$(FAKE_OP_FLAKY=2 _op_call --stdin $'{{ op://v/i/x }}\n' inject --account test 2>/dev/null)
+chk "flaky pipe: inject gets its stdin on the retry, stdout passes through" '[[ "$out" == "val-of-x" ]]'
+
+# Gives up after 4 attempts, keeps the exit status and the app's own message.
+fresh; FAKE_OP_FLAKY=99 _op_call read --account test op://v/i/f 2>"$T/err"; rc=$?
+chk "flaky pipe: gives up after 4 attempts, exit status kept" '[[ $rc -eq 1 && "$(cat "$flk")" == 4 ]]'
+chk "flaky pipe: the app's error is still reported" 'grep -q "cannot connect to 1Password app" "$T/err"'
+# ...and having given up (in this shell, not a $(...) subshell, which cannot set the memo),
+# the next call is a single attempt (no stacked waits), until one succeeds.
+FAKE_OP_FLAKY=99 _op_call read --account test op://v/i/f >/dev/null 2>&1 || true
+chk "flaky pipe: after giving up, the next call is not retried" '[[ "$(cat "$flk")" == 5 ]]'
+FAKE_OP_FLAKY=0 _op_call read --account test op://v/i/f >/dev/null 2>&1
+chk "flaky pipe: a success clears the memo" '[[ -z "$_OP_PIPE_DEAD_AT" ]]'
+rm -f "$flk"; FAKE_OP_FLAKY=99 _op_call read --account test op://v/i/f >/dev/null 2>&1
+chk "flaky pipe: retries again once cleared" '[[ "$(cat "$flk")" == 4 ]]'
+# A load against an app that never answers stops at sign-in, without a wait per call.
+fresh; out=$(FAKE_OP_FLAKY=999 op-env load 2>&1); rc=$?
+chk "flaky pipe: a load that never connects fails" '[[ $rc -ne 0 ]]'
+chk "flaky pipe: ...with 4 + 1 + (native) attempts, not 4 per call" '[[ "$(cat "$flk")" -le 6 ]]'
+
+# A different failure is not retried: one attempt, status and message kept.
+fresh; out=$(FAKE_OP_FLAKY=99 FAKE_OP_FLAKY_ERR="[ERROR] not signed in" _op_call read --account test op://v/i/f 2>&1); rc=$?
+chk "other errors are not retried" '[[ $rc -eq 1 && "$(cat "$flk")" == 1 && "$out" == *"not signed in"* ]]'
+chk "other errors do not set the memo" '[[ -z "$_OP_PIPE_DEAD_AT" ]]'
+unset _OP_RETRY_DELAY _OP_PIPE_DEAD_AT; op-env clear >/dev/null 2>&1; clean_sets
 
 echo "$passes passed, $fails failed"
 [[ $fails -eq 0 ]]

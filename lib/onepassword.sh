@@ -57,33 +57,40 @@ _op_resolve_bin() {
 # ready. op.exe fails with "cannot connect to 1Password app" for a moment after the
 # previous op.exe call (whoami, account list) has closed its connection, so back-to-back
 # calls such as op-env load's sign-in check followed by its batch inject fail at random.
-# Only that error is retried (up to 4 times, _OP_RETRY_DELAY seconds apart, default 1);
+# Only that error is retried (up to 3 times, _OP_RETRY_DELAY seconds apart, default 1);
 # any other failure, stdout, stderr and the exit status pass through unchanged.
 #   _op_call [--stdin TEXT] ARGS...     --stdin feeds TEXT to op on every attempt
+#
+# When every retry fails the app is really unreachable (closed, or integration off), so
+# for the next 30 seconds calls get a single attempt: a failing op-env load makes three
+# calls in a row (whoami, op-signin's whoami and vault list) and would otherwise wait
+# out the retries three times. Any success clears that. (The memo is set in the calling
+# shell, so a call made inside $(...) honours it but cannot set it.)
 _op_call() {
   local _in="" _has=0
   if [[ "${1:-}" == --stdin ]]; then _has=1; _in="$2"; shift 2; fi
-  local _errf _rc _try=0
-  _errf=$(mktemp "${TMPDIR:-/tmp}/op-call.XXXXXX" 2>/dev/null) || _errf=""
-  if [[ -z "$_errf" ]]; then
-    # No temp file, so no way to read the error: run once.
-    if [[ $_has -eq 1 ]]; then "$OP_BIN" "$@" < <(printf '%s' "$_in"); else "$OP_BIN" "$@"; fi
-    return $?
-  fi
+  local _err _rc _try=0 _max=3
+  if [[ -n "${_OP_PIPE_DEAD_AT:-}" ]] && (( SECONDS - _OP_PIPE_DEAD_AT < 30 )); then _max=0; fi
   while :; do
+    # op's stdout goes straight to ours (fd 3); only its stderr is captured, in a
+    # variable, so there is no temp file to leak if the call is interrupted.
     if [[ $_has -eq 1 ]]; then
-      "$OP_BIN" "$@" 2>"$_errf" < <(printf '%s' "$_in")
+      { _err=$("$OP_BIN" "$@" 2>&1 1>&3 3>&- < <(printf '%s' "$_in")); } 3>&1
     else
-      "$OP_BIN" "$@" 2>"$_errf"
+      { _err=$("$OP_BIN" "$@" 2>&1 1>&3 3>&-); } 3>&1
     fi
     _rc=$?
-    if [[ $_rc -ne 0 && $_try -lt 4 ]] && grep -q 'cannot connect to 1Password app' "$_errf" 2>/dev/null; then
-      _try=$((_try + 1))
-      sleep "${_OP_RETRY_DELAY:-1}"
-      continue
+    if [[ $_rc -eq 0 ]]; then
+      _OP_PIPE_DEAD_AT=""
+    elif [[ "$_err" == *"cannot connect to 1Password app"* ]]; then
+      if [[ $_try -lt $_max ]]; then
+        _try=$((_try + 1))
+        sleep "${_OP_RETRY_DELAY:-1}"
+        continue
+      fi
+      [[ $_max -gt 0 ]] && _OP_PIPE_DEAD_AT=$SECONDS
     fi
-    cat "$_errf" >&2
-    rm -f "$_errf"
+    if [[ -n "$_err" ]]; then printf '%s\n' "$_err" >&2; fi
     return $_rc
   done
 }
