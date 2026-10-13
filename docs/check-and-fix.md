@@ -40,18 +40,19 @@ A **check item** is a named unit of recommended state.
 | Field | Meaning |
 |---|---|
 | `id` | Dotted name, for example `git.fetch.prune`, `ssh.bridge.units`, `settings.keys` |
-| `group` | What `checks.*` can switch off: `settings`, `git`, `ssh`, `aws`, `tools` |
+| `group` | The section the item belongs to, used by `--only`: `settings`, `git`, `ssh`, `aws`, `gh`, `tools`. Where a `checks.*` switch exists it turns the group off: `git` is `checks.git_config`, `ssh` is `checks.ssh`, `aws` is `checks.aws`, `gh` is `checks.gh`. `settings` and `tools` have no switch and always run |
+| `severity` | `issue` (counts toward the summary) or `hint` (listed, not counted) |
 | `tier` | `fast` (local files and config), `slow` (network, `op`, `aws`), `updates` (only with `-u`) |
 | `applies` | Predicate, for example WSL only or `aws` installed; a false predicate reports `skipped` |
 | `check` | Read-only. Sets a status and a one-line message |
 | `fix` | Optional. Makes the machine match, idempotently |
 | `fix_class` | `auto` (no input), `input` (needs a choice or value), `manual` (instructions only) |
 
-A check reports one status: `ok`, `drift` (present but different), `missing`, `skipped` or `error` (the check could not run). Everything except `ok` and `skipped` counts as an issue, as it does today.
+A check reports one status: `ok`, `drift` (present but different), `missing`, `skipped` or `error` (the check could not run). An item with severity `issue` that is not `ok` or `skipped` counts as an issue; a `hint` is listed with a 💡 and not counted. That is how `preflight` treats them today: `fetch.prune`, `push.autoSetupRemote`, `pull.rebase` and `rebase.autoStash` count, while `diff.algorithm`, `merge.conflictstyle` and `core.excludesFile` are suggestions only. Each item takes its severity from the icon it has now (⚠️ is `issue`, 💡 is `hint`).
 
 A fix is safe to run twice, and running the check after it reports `ok`. A fix that cannot make that true is `manual`.
 
-Table-driven items keep the definition in one place. The git globals become rows in one list (`key|value|reason|severity`). Both the check and the fix read the row, so they cannot disagree.
+Table-driven items keep the definition in one place. The git globals become rows in one list (`key|value|accepted|reason|severity`). `value` is what the fix writes. `accepted` lists every value the check passes, separated by `/`, and defaults to `value`: `pull.rebase` accepts `true/merges/interactive` and `merge.conflictstyle` accepts `zdiff3/diff3`, as the check does today, so a user who chose `merges` or `diff3` is neither reported nor overwritten. Both the check and the fix read the row, so they cannot disagree. Two globals are not plain rows: `push.default` (reported only when it is `matching`, fixed to `simple`) and `core.excludesFile` (passes when the file exists; the fix creates `~/.gitignore` and sets the key). Each is its own item.
 
 Items live in `lib/items/<group>.sh` and register in one ordered list. The runner is `lib/items.sh`. Items use only constructs the shell already allows (no associative arrays, no `mapfile`, no 0-based array indexes) so they work in bash and zsh.
 
@@ -79,10 +80,13 @@ The settings walkthrough disappears into the model: a key missing from `config.j
 | `config init` | `settings.keys` | `auto` |
 | Git Configuration, `_pf_config_apply` globals | `git.identity` | `input` |
 | | one `git.<key>` per recommended global | `auto` |
+| | `git.push-default`, `git.excludes` | `auto` |
 | | `git.pager.delta` group | `auto`, only when `delta` is installed |
 | SSH section, WSL SSH bridge | `ssh.agent` | `manual` |
 | | `ssh.bridge.prereq` (systemd, interop) | `manual` |
-| | `ssh.bridge.npiperelay`, `.units`, `.socket`, `.profile`, `.ssh-config`, `.host-keys`, `.op-exe` | `auto` |
+| | `ssh.bridge.npiperelay`, `.units`, `.socket`, `.profile`, `.ssh-config`, `.host-keys` | `auto` |
+| | `ssh.bridge.op-exe` | `manual` (the current step only reports; `winget install` and the app setting happen on Windows) |
+| GitHub auth (`checks.gh`) | `gh.auth` | `manual` (`gh auth login`) |
 | AWS Profile | `aws.default-profile` | `input` |
 | AWS Session | `aws.session` | `manual` (`aws-login`), `slow` |
 | Secrets, Installed Tools, Node.js, Python | `secrets.*`, `tools.*`, `node`, `python` | `manual` |
@@ -94,13 +98,13 @@ Each bridge item takes over one numbered step of the current WSL section. `_pf_u
 - Each `check` reads state through a small accessor (`git config --global` for git, file reads for units) and runs in a temp `HOME` with a controlled `PATH`. No terminal is needed.
 - Every `auto` fix has an idempotency test: check reports `drift`, fix runs, check reports `ok`, fix runs again and changes nothing.
 - The runner has its own tests: status counting, `--only`, `skipped` predicates, and that `fix` without a terminal and without `--yes` does not prompt.
-- A single parity test asserts that the git rows are the only place a recommended global is named.
+- A single parity test asserts that the git rows (plus `git.push-default` and `git.excludes`) are the only place a recommended global is named, and that `config apply` and `preflight` agree on every row.
 
 ## Migration
 
 Each step is a separate PR, and `preflight` keeps working after each.
 
-1. Runner, registry and item contract. Port `settings.*` and the git globals. The legacy Git Configuration section is removed, and the runner appends to the same `issues` and `issue_msgs` counters.
+1. Runner, registry and item contract. Port `settings.*` and the git globals. The legacy Git Configuration section is removed, and the runner appends to the same `issues` and `issue_msgs` counters. `_pf_config_apply` reads the same git rows in this step, so the recommended state is defined once from here on, and the parity test lands with it. The issue count does not change: every key that `config apply` marks ⚠️ is already counted by `preflight`, and the keys `preflight` does not read today (`fetch.pruneTags`, `push.followTags`, `rebase.autoSquash`, `diff.colorMoved`, `branch.sort`, the delta group) are `hint` items, so existing installs see new 💡 lines but no new issues. Promoting any of them to `issue` is a separate, deliberate change.
 2. Port the SSH check and the WSL bridge items from `_pf_config_apply`.
 3. Add `preflight fix`. Port `aws.default-profile` and the delta group. Remove `config apply`. Upgrade note: `preflight config apply` is now `preflight fix`.
 4. Add `settings.keys`. Remove `config init`. Upgrade note: use `preflight fix` for missing keys and `config set` for values.
@@ -119,5 +123,5 @@ Each step is a separate PR, and `preflight` keeps working after each.
 1. Should `preflight` exit non-zero when issues exist? Any caller that runs it from a prompt or script would see the change.
 2. Three things in the health run act on the session rather than report drift: storing the Gitea credential, exporting `AWS_PROFILE`, and the AWS login prompt. Should they stay in `preflight` as a separate `session` kind, or move to a startup step?
 3. Should `fix` handle `input` items (git identity, AWS profile) or only list them and point to `config set`?
-4. Is a per-item ignore list needed, or are the four `checks.*` group switches enough?
+4. Is a per-item ignore list needed, or are the four `checks.*` switches (`aws`, `gh`, `ssh`, `git_config`) enough?
 5. Is machine-readable output (`--json`) in scope for the runner?
