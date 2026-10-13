@@ -62,7 +62,7 @@ _op_resolve_bin() {
 #   _op_call [--stdin TEXT] ARGS...     --stdin feeds TEXT to op on every attempt
 #
 # When every retry fails the app is really unreachable (closed, or integration off), so
-# for the next 30 seconds calls get a single attempt: a failing op-env load makes three
+# for the next 10 seconds calls get a single attempt: a failing op-env load makes three
 # calls in a row (whoami, op-signin's whoami and vault list) and would otherwise wait
 # out the retries three times. Any success clears that. (The memo is set in the calling
 # shell, so a call made inside $(...) honours it but cannot set it.)
@@ -70,7 +70,7 @@ _op_call() {
   local _in="" _has=0
   if [[ "${1:-}" == --stdin ]]; then _has=1; _in="$2"; shift 2; fi
   local _err _rc _try=0 _max=3
-  if [[ -n "${_OP_PIPE_DEAD_AT:-}" ]] && (( SECONDS - _OP_PIPE_DEAD_AT < 30 )); then _max=0; fi
+  if [[ -n "${_OP_PIPE_DEAD_AT:-}" ]] && (( SECONDS - _OP_PIPE_DEAD_AT < 10 )); then _max=0; fi
   while :; do
     # op's stdout goes straight to ours (fd 3); only its stderr is captured, in a
     # variable, so there is no temp file to leak if the call is interrupted.
