@@ -53,6 +53,48 @@ _op_resolve_bin() {
   [[ -n "$OP_BIN" ]]
 }
 
+# Run "$OP_BIN" with the given arguments, retrying while the desktop app's pipe is not
+# ready. op.exe fails with "cannot connect to 1Password app" for a moment after the
+# previous op.exe call (whoami, account list) has closed its connection, so back-to-back
+# calls such as op-env load's sign-in check followed by its batch inject fail at random.
+# Only that error is retried (up to 3 times, _OP_RETRY_DELAY seconds apart, default 1);
+# any other failure, stdout, stderr and the exit status pass through unchanged.
+#   _op_call [--stdin TEXT] ARGS...     --stdin feeds TEXT to op on every attempt
+#
+# When every retry fails the app is really unreachable (closed, or integration off), so
+# for the next 10 seconds calls get a single attempt: a failing op-env load makes three
+# calls in a row (whoami, op-signin's whoami and vault list) and would otherwise wait
+# out the retries three times. Any success clears that. (The memo is set in the calling
+# shell, so a call made inside $(...) honours it but cannot set it.)
+_op_call() {
+  local _in="" _has=0
+  if [[ "${1:-}" == --stdin ]]; then _has=1; _in="$2"; shift 2; fi
+  local _err _rc _try=0 _max=3
+  if [[ -n "${_OP_PIPE_DEAD_AT:-}" ]] && (( SECONDS - _OP_PIPE_DEAD_AT < 10 )); then _max=0; fi
+  while :; do
+    # op's stdout goes straight to ours (fd 3); only its stderr is captured, in a
+    # variable, so there is no temp file to leak if the call is interrupted.
+    if [[ $_has -eq 1 ]]; then
+      { _err=$("$OP_BIN" "$@" 2>&1 1>&3 3>&- < <(printf '%s' "$_in")); } 3>&1
+    else
+      { _err=$("$OP_BIN" "$@" 2>&1 1>&3 3>&-); } 3>&1
+    fi
+    _rc=$?
+    if [[ $_rc -eq 0 ]]; then
+      _OP_PIPE_DEAD_AT=""
+    elif [[ "$_err" == *"cannot connect to 1Password app"* ]]; then
+      if [[ $_try -lt $_max ]]; then
+        _try=$((_try + 1))
+        sleep "${_OP_RETRY_DELAY:-1}"
+        continue
+      fi
+      [[ $_max -gt 0 ]] && _OP_PIPE_DEAD_AT=$SECONDS
+    fi
+    if [[ -n "$_err" ]]; then printf '%s\n' "$_err" >&2; fi
+    return $_rc
+  done
+}
+
 # Display help for all 1Password commands
 op-help() {
   cat <<'EOF'
@@ -128,7 +170,7 @@ op-status() {
   _op_resolve_bin || { echo "❌ 1Password CLI not found (need op.exe or op on PATH)"; return 1; }
   echo "🔧 op binary: $OP_BIN"
   echo "🔑 account:   $OP_ACCOUNT"
-  if "$OP_BIN" whoami --account "$OP_ACCOUNT" >/dev/null 2>&1; then
+  if _op_call whoami --account "$OP_ACCOUNT" >/dev/null 2>&1; then
     echo "✅ Signed in to 1Password ($OP_ACCOUNT)"
     return 0
   elif [[ "$OP_BIN" == *op.exe ]]; then
@@ -147,7 +189,7 @@ op-signin() {
   local account="${1:-$OP_ACCOUNT}"
   _op_resolve_bin || { echo "❌ 1Password CLI not found (need op.exe or op on PATH)"; return 1; }
 
-  if "$OP_BIN" whoami --account "$account" >/dev/null 2>&1; then
+  if _op_call whoami --account "$account" >/dev/null 2>&1; then
     echo "✅ Already signed in to 1Password ($account)"
     return 0
   fi
@@ -156,7 +198,7 @@ op-signin() {
   if [[ "$OP_BIN" == *op.exe ]]; then
     # Desktop-app integration: trigger Windows Hello / desktop unlock.
     local out
-    if out=$("$OP_BIN" vault list --account "$account" 2>&1); then
+    if out=$(_op_call vault list --account "$account" 2>&1); then
       echo "✅ 1Password ready ($account)"
       return 0
     fi
@@ -168,7 +210,7 @@ op-signin() {
 
   # Native CLI: manual session-token flow.
   eval "$("$OP_BIN" signin --account "$account")"
-  if "$OP_BIN" whoami --account "$account" >/dev/null 2>&1; then
+  if _op_call whoami --account "$account" >/dev/null 2>&1; then
     echo "✅ Signed in to 1Password ($account)"
     return 0
   else
@@ -279,7 +321,7 @@ _op_env_load() {
   local _op_acct
   while IFS= read -r _op_acct; do
     [[ -n "$_op_acct" ]] || continue
-    "$OP_BIN" whoami --account "$_op_acct" >/dev/null 2>&1 || op-signin "$_op_acct" || return 1
+    _op_call whoami --account "$_op_acct" >/dev/null 2>&1 || op-signin "$_op_acct" || return 1
   done <<< "$_op_accts"
 
   # Only now record what this load manages. If sign-in failed above, the
@@ -375,8 +417,7 @@ _op_env_load() {
     # fallback, which re-reads it and reports the broken reference by name. (The
     # other accounts are unaffected — their batches still run.)
     local _op_batch_failed=0 _op_empty=0
-    if ! _op_resolved=$(printf '%s' "$_op_template" \
-          | "$OP_BIN" inject --account "$_op_acct" 2>/dev/null); then
+    if ! _op_resolved=$(_op_call --stdin "$_op_template" inject --account "$_op_acct" 2>/dev/null); then
       _op_batch_failed=1
     else
       _op_empty=$(printf '%s\n' "$_op_resolved" | awk -v t="$_op_tag" \
@@ -399,7 +440,7 @@ _op_env_load() {
         _op_ref="${_op_rest%%$'\t'*}"
         # </dev/null: op must not swallow the entries this loop is reading.
         : > "$_op_errf" 2>/dev/null
-        _op_val2="$("$OP_BIN" read --account "$_op_acct" "$_op_ref" 2>"$_op_errf" </dev/null)"
+        _op_val2="$(_op_call read --account "$_op_acct" "$_op_ref" 2>"$_op_errf" </dev/null)"
         _op_rc=$?
         if [[ -n "$_op_val2" ]]; then
           export "$_op_name2"="$_op_val2"
@@ -475,7 +516,7 @@ op-new() {
     echo "❌ 'jq' is required for op-new (secrets are passed via a JSON template)"
     return 1
   fi
-  if ! "$OP_BIN" whoami --account "$OP_ACCOUNT" >/dev/null 2>&1; then
+  if ! _op_call whoami --account "$OP_ACCOUNT" >/dev/null 2>&1; then
     op-signin "$OP_ACCOUNT" || return 1
   fi
 
@@ -689,7 +730,7 @@ EOF
   fi
 
   # Sign-in handled the same way as `op-env load`.
-  if ! "$OP_BIN" whoami --account "$OP_ACCOUNT" >/dev/null 2>&1; then
+  if ! _op_call whoami --account "$OP_ACCOUNT" >/dev/null 2>&1; then
     op-signin "$OP_ACCOUNT" || return 1
   fi
 
@@ -714,7 +755,7 @@ EOF
   fi
 
   # Verify the vault exists and we can see it.
-  if ! "$OP_BIN" vault get "$vault" --account "$OP_ACCOUNT" </dev/null >/dev/null 2>&1; then
+  if ! _op_call vault get "$vault" --account "$OP_ACCOUNT" </dev/null >/dev/null 2>&1; then
     echo "❌ Vault '$vault' not visible to account '$OP_ACCOUNT'"
     return 1
   fi
