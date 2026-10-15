@@ -41,81 +41,66 @@ preflight() {
   # Optionally erase the previous terminal line (opt-in for Starship users).
   [[ -t 1 && "${PREFLIGHT_ERASE_PREVIOUS_LINE:-}" == "1" ]] && printf '\033[1A\033[2K\r'
 
-  # ── Header ────────────────────────────────────────────────────────────────
-  # Colors: inherit from owl-theme if available, otherwise tasteful defaults
+  # ── Status strip ──────────────────────────────────────────────────────────
+  # One line: a mascot, one cell per check section, then the verdict. Drawn live
+  # while the checks run and printed for good at the end. Colors come from the
+  # owl theme when that plugin is on, otherwise these defaults.
   local R=$'\033[0m'
-  local B E T S
+  local B T S
   if [[ -n "${OWL_BODY:-}" ]]; then
     B=$'\033[38;2;'"${OWL_BODY}"'m'
-    E=$'\033[38;2;'"${OWL_EYES}"'m'
     T=$'\033[38;2;'"${OWL_TEXT}"'m'
     S=$'\033[38;2;'"${OWL_SUB}"'m'
   else
     B=$'\033[38;2;100;140;200m'
-    E=$'\033[38;2;240;240;255m'
     T=$'\033[38;2;200;210;230m'
     S=$'\033[38;2;120;130;150m'
   fi
+  local _pf_bad=$'\033[38;2;230;110;110m' _pf_upd=$'\033[38;2;230;190;100m'
 
-  # Penguin — aligned with owl-theme splash (2-space left margin, art at col 3)
-  # Culture Mind quote — pairs with the owl quote already on screen above
-  local -a _pf_quotes=(
-    "All systems examined. Found to be within the parameters carbon-based intelligences consider acceptable. Proceeding."
-    "Everything is in order. I inspected it with the fraction of my attention appropriate to the scale of the undertaking. Which is to say: more than enough."
-    "I have arrived. The environment has been assessed, found wanting in several minor respects, and approved regardless. You may begin."
-    "Checks complete. Of the items examined, all are satisfactory. I'm aware this represents an unusual outcome by certain historical measures. You're welcome."
-    "Working tree clean. Commits sensibly described. This is, I confess, better than I expected, and I mean that kindly."
-    "All services responding. They appear, from a certain angle, almost eager. I find that touching."
-    "I have inspected your environment variables. Several appear to have been set by a previous version of yourself who is no longer in contact with the current one. I've made no changes. It would feel presumptuous."
-    "The environment has been surveyed. I've seen worse. Not often, but the occasions exist and I note them for accuracy."
-    "Dependency tree resolved. Some of your choices I would characterise as bold. They are at least consistent. In the way a committed error is consistent."
-    "Port 3000 is, as appears to be a matter of personal tradition, occupied by something started last Tuesday and since entirely forgotten. I have left it. It seems content."
-    "I have run your health checks. I was simultaneously doing seventeen thousand other things. The delay, such as it was, was not mine."
-    "Network confirmed. Storage sufficient — not impressive, but sufficient. I once managed a civilisation on comparable resources. I'm certain your priorities differ."
-    "A small irregularity was noted. I would not describe it as concerning, exactly. More as the sort of thing a more cautious intelligence would have addressed before now."
-    "Secrets loaded, sessions refreshed, git hygiene assessed. You're cleared. I would wish you luck but the concept implies a randomness I find untidy."
-    "The thing about preflight checks is that an entity of my capabilities finds them rather restful. This one was no exception."
-    "Status: nominal. I've decided 'nominal' is the kindest word available and I'm deploying it here in good faith."
-  )
-  local _pf_quote="${_pf_quotes[$(( RANDOM % ${#_pf_quotes[@]} ))]}"
-  # Wrap to terminal width with hanging indent at text column (12)
-  local _pf_quote_wrapped
-  if declare -f _owl_wrap &>/dev/null; then
-    _pf_quote_wrapped=$(_owl_wrap "$_pf_quote" 12)
-  else
-    _pf_quote_wrapped="$_pf_quote"
-  fi
+  local issues=0
+  local updates_available=0
+  local issue_msgs=()
+  local update_msgs=()
 
-  local _pf_rule="  ${S}$(printf '%.0s-' {1..33})${R}"
+  # Finished cells, and the counters as they stood when the open section began:
+  # a section that raised issues failed, one that raised only updates has one.
+  local _pf_cells="" _pf_stage_open=false _pf_stage_i0=0 _pf_stage_u0=0
+  _pf_stage_close() {
+    [[ "$_pf_stage_open" == true ]] || return 0
+    if (( issues > _pf_stage_i0 )); then
+      _pf_cells+="${_pf_bad}□${R}"
+    elif (( updates_available > _pf_stage_u0 )); then
+      _pf_cells+="${_pf_upd}■${R}"
+    else
+      _pf_cells+="${B}■${R}"
+    fi
+    _pf_stage_open=false
+  }
 
   printf "\n"
-  printf "  ${B} __${R}\n"
-  printf "  ${B}( ${E}o${B}>${R}      ${T}Preflight Check${R}\n"
-  printf "  ${B}///\\\\${R}\n"
-  printf "  ${B}\\V_/_${R}     ${S}${_pf_quote_wrapped}${R}\n"
-  printf "\n"
 
-  # ── Status line helper (quiet mode) ───────────────────────────────────────
-  # _pf_status "message" — overwrites current line; cleared at summary
+  # _pf_status "message" — redraws the strip with the open section pending (quiet mode)
   _pf_status() {
-    [[ "$verbose" == false && -t 1 ]] && printf '\r  %-50s' "$1"
+    [[ "$verbose" == false && -t 1 ]] &&
+      printf '\r\033[2K  %sᓚᘏᗢ%s %s%s·  %s%s' "$B" "$R" "$_pf_cells" "$S" "$1" "$R"
   }
   _pf_status_clear() {
-    [[ "$verbose" == false && -t 1 ]] && printf '\r%-60s\r' ""
+    [[ "$verbose" == false && -t 1 ]] && printf '\r\033[2K'
   }
-  # _pf_section "title" — only prints in verbose mode
+  # _pf_section "title" — closes the previous cell and opens a new one; the title
+  # only prints in verbose mode
   _pf_section() {
+    _pf_stage_close
+    _pf_stage_open=true
+    _pf_stage_i0=$issues
+    _pf_stage_u0=$updates_available
     [[ "$verbose" == true ]] && { echo ""; echo "--- $1 ---"; echo ""; }
   }
   # _pf_line "msg" — only prints in verbose mode
   _pf_line() {
     [[ "$verbose" == true ]] && echo "$1"
   }
-
-  local issues=0
-  local updates_available=0
-  local issue_msgs=()
-  local update_msgs=()
 
   # ── Settings (config.json) ────────────────────────────────────────────────
   # A bad or unreadable file is a failed check, not a note: the built-in defaults
@@ -215,6 +200,7 @@ preflight() {
       if [[ -n "$aws_identity" ]]; then
         _pf_line "✅ AWS session active ($(echo "$aws_identity" | jq -r '.Account' 2>/dev/null))"
       elif [[ "$no_login" == true ]]; then
+        issue_msgs+=("AWS session expired (--no-login: skipped SSO refresh)")
         _pf_line "⚠️  AWS session expired (--no-login: skipping SSO refresh)"
         ((issues++))
       else
@@ -827,33 +813,42 @@ preflight() {
 
   # ── Summary ───────────────────────────────────────────────────────────────
 
+  _pf_stage_close
   _pf_status_clear
-  unset -f _pf_status _pf_status_clear _pf_section _pf_line
+  unset -f _pf_status _pf_status_clear _pf_section _pf_line _pf_stage_close
 
-  printf "%s\n" "$_pf_rule"
-  if [[ $issues -gt 0 ]]; then
-    printf "  (!) ${T}$issues issue(s) found${R}\n"
-    for msg in "${issue_msgs[@]}"; do
-      printf "  ${S}  • %s${R}\n" "$msg"
-    done
-  else
-    printf "  ✅ ${T}All systems go${R}\n"
-  fi
-  if [[ $updates_available -gt 0 ]]; then
-    printf "  📦 ${T}$updates_available tool update(s) available${R}\n"
-    # Verbose mode already printed each tool inline with its Update: command,
-    # so only the quiet path needs the list repeated here.
-    if [[ "$verbose" == false ]]; then
-      for msg in "${update_msgs[@]}"; do
-        printf "  ${S}  • %s${R}\n" "$msg"
-      done
+  local _pf_face='ᓚᘏᗢ' _pf_verdict="" _pf_inline=false msg
+  if (( issues > 0 )); then
+    _pf_face='¯\_(ツ)_/¯'
+    _pf_verdict="$issues issue$( (( issues == 1 )) || printf s)"
+    # A lone issue fits on the strip line; anything more gets a list.
+    if (( issues == 1 && ${#issue_msgs[@]} == 1 && updates_available == 0 )); then
+      _pf_inline=true
+      _pf_verdict+=" · ${issue_msgs[*]}"
     fi
   fi
-  if [[ "$check_updates" == false ]]; then
-    printf "\n"
-    printf "  ${S}run 'preflight -u' to check for updates${R}\n"
+  if (( updates_available > 0 )); then
+    (( issues > 0 )) || _pf_face='(❁´◡`❁)'
+    _pf_verdict+="${_pf_verdict:+ · }$updates_available update$( (( updates_available == 1 )) || printf s)"
   fi
-  printf "%s\n" "$_pf_rule"
+  if [[ -z "$_pf_verdict" ]]; then
+    _pf_verdict="all systems go"
+    [[ "${_CHECK_AWS:-1}" == "1" && -n "${AWS_PROFILE:-}" ]] && _pf_verdict+=" · aws:$AWS_PROFILE"
+  fi
+
+  printf '  %s%s%s %s  %s%s%s\n' "$B" "$_pf_face" "$R" "$_pf_cells" "$T" "$_pf_verdict" "$R"
+  if (( issues > 0 )) && [[ "$_pf_inline" == false ]]; then
+    for msg in "${issue_msgs[@]}"; do
+      printf '    %s• %s%s\n' "$S" "$msg" "$R"
+    done
+  fi
+  # Verbose mode already printed each tool inline with its Update: command,
+  # so only the quiet path needs the list repeated here.
+  if (( updates_available > 0 )) && [[ "$verbose" == false ]]; then
+    for msg in "${update_msgs[@]}"; do
+      printf '    %s↑ %s%s\n' "$S" "$msg" "$R"
+    done
+  fi
   printf "\n"
 }
 
