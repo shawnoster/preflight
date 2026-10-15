@@ -31,6 +31,20 @@ _pf_cell() {  # issues_before issues_after updates_before updates_after
   fi
 }
 
+# Whether `op-env load` may put a password prompt on the terminal: only native op,
+# and only when an account the active sets use is not signed in. op.exe unlocks
+# through a desktop dialog instead. Accounts are grouped as _op_env_load groups them.
+_pf_op_may_prompt() {
+  [[ "$OP_BIN" == *op.exe ]] && return 1
+  local acct
+  while IFS= read -r acct; do
+    [[ -n "$acct" ]] || continue
+    _op_call whoami --account "$acct" >/dev/null 2>&1 || return 0
+  done < <(_op_env_entries 2>/dev/null | awk -F'\t' -v def="${OP_ACCOUNT:-}" \
+    '{ a = ($3 == "" ? def : $3); if (!(a in seen)) { seen[a] = 1; print a } }')
+  return 1
+}
+
 # The summary: the cells, the verdict and the mascot, then any issue and update
 # lists. Reads the caller's issues, updates_available, issue_msgs, update_msgs,
 # _pf_cells, verbose and colors B, T, S, R; $1 is the AWS profile to show on an
@@ -191,14 +205,18 @@ preflight() {
         _pf_line "✅ Secrets loaded"
       fi
     else
-      # Clear status line before op runs — its /dev/tty password prompt can't
-      # be redirected, so give it a clean line. Reprint status afterward.
-      _pf_status_clear
+      # Native op's password prompt goes to /dev/tty and can't be redirected, so
+      # give it a clean line, but only when it can actually appear. Otherwise keep
+      # the strip up: op inject (and an op.exe desktop unlock) can take seconds.
+      if _pf_op_may_prompt; then
+        _pf_status_clear
+      elif [[ "$OP_BIN" == *op.exe ]]; then
+        _pf_status "Secrets: waiting for 1Password (approve the unlock if asked)..."
+      fi
       if ! op-env load &>/dev/null 2>&1; then
         issue_msgs+=("1Password sign-in or secret loading failed")
         ((issues++))
       fi
-      _pf_status "Secrets: loading..."
     fi
   else
     issue_msgs+=("1Password CLI not installed — skipping secret loading")

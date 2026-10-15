@@ -69,6 +69,21 @@ _reset; verbose=true; updates_available=1; update_msgs=("a"); _render ""
 chk "verbose: blank line first"       '[ -z "$(printf "%s\n" "$out" | head -1)" ]'
 chk "verbose: no repeated update list" '! printf "%s\n" "$out" | grep -q "↑"'
 
+# ── _pf_op_may_prompt ─────────────────────────────────────────────────────────
+# Stubs: entries name two accounts (one by default); whoami succeeds for those in $signed_in.
+_op_env_entries() { printf 'A\top://v/a/f\nB\top://v/b/f\twork.1password.com\n'; }
+_op_call() { case " $signed_in " in *" $3 "*) return 0 ;; *) return 1 ;; esac; }
+OP_ACCOUNT=me.1password.com
+OP_BIN=/usr/bin/op; signed_in="me.1password.com work.1password.com"
+chk "native op, all signed in: no prompt"   '! _pf_op_may_prompt'
+OP_BIN=/usr/bin/op; signed_in="me.1password.com"
+chk "native op, one account out: may prompt" '_pf_op_may_prompt'
+OP_BIN=/mnt/c/x/op.exe; signed_in=""
+chk "op.exe: never a terminal prompt"        '! _pf_op_may_prompt'
+_op_env_entries() { :; }
+OP_BIN=/usr/bin/op; signed_in=""
+chk "no secrets configured: no prompt"       '! _pf_op_may_prompt'
+
 # ── every issue message is counted ────────────────────────────────────────────
 # A message without ((issues++)) leaves its cell green and, alone, reads as all clear.
 uncounted=$(awk '
