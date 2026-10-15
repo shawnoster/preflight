@@ -38,31 +38,31 @@ chk "cell: issue wins over update"    '[ "$(_pf_cell 0 1 0 1)" = "□" ]'
 
 # ── all clear ─────────────────────────────────────────────────────────────────
 _reset; _render dev
-chk "clear: one line, cells then cat" '[ "$out" = "  ■■■ ᓚᘏᗢ  all systems go · aws:dev" ]'
+chk "clear: cells, verdict, cat last" '[ "$out" = "  ■■■  all systems go · aws:dev  ᓚᘏᗢ" ]'
 _reset; _render ""
-chk "clear: no aws label when empty"  '[ "$out" = "  ■■■ ᓚᘏᗢ  all systems go" ]'
+chk "clear: no aws label when empty"  '[ "$out" = "  ■■■  all systems go  ᓚᘏᗢ" ]'
 
 # ── issues ────────────────────────────────────────────────────────────────────
 _reset; issues=1; issue_msgs=("AWS SSO refresh failed"); _pf_cells="■□■"; _render dev
-chk "one issue: inline, shrug, no aws" '[ "$out" = "  ■□■ ¯\_(ツ)_/¯  1 issue · AWS SSO refresh failed" ]'
+chk "one issue: inline, shrug, no aws" '[ "$out" = "  ■□■  1 issue · AWS SSO refresh failed  ¯\_(ツ)_/¯" ]'
 
 _reset; issues=2; issue_msgs=("first" "second"); _render ""
-chk "two issues: plural header"       '[ "$(printf "%s\n" "$out" | head -1)" = "  ■■■ ¯\_(ツ)_/¯  2 issues" ]'
+chk "two issues: plural header"       '[ "$(printf "%s\n" "$out" | head -1)" = "  ■■■  2 issues  ¯\_(ツ)_/¯" ]'
 chk "two issues: both listed"         '[ "$(printf "%s\n" "$out" | sed -n 2p)" = "    • first" ] && [ "$(printf "%s\n" "$out" | sed -n 3p)" = "    • second" ]'
 
 _reset; issues=1; issue_msgs=("only"); updates_available=1; update_msgs=("jq: 1 → 2"); _render ""
-chk "issue + update: not inlined"     '[ "$(printf "%s\n" "$out" | head -1)" = "  ■■■ ¯\_(ツ)_/¯  1 issue · 1 update" ]'
+chk "issue + update: not inlined"     '[ "$(printf "%s\n" "$out" | head -1)" = "  ■■■  1 issue · 1 update  ¯\_(ツ)_/¯" ]'
 chk "issue + update: both lists"      'printf "%s\n" "$out" | grep -qxF "    • only" && printf "%s\n" "$out" | grep -qxF "    ↑ jq: 1 → 2"'
 
 _reset; issues=1; _render ""
-chk "counted issue without message"   '[ "$out" = "  ■■■ ¯\_(ツ)_/¯  1 issue" ]'
+chk "counted issue without message"   '[ "$out" = "  ■■■  1 issue  ¯\_(ツ)_/¯" ]'
 
 _reset; issues=1; issue_msgs=('100% \n literal'); _render ""
-chk "message printed as typed"        '[ "$out" = "  ■■■ ¯\_(ツ)_/¯  1 issue · 100% \n literal" ]'
+chk "message printed as typed"        '[ "$out" = "  ■■■  1 issue · 100% \n literal  ¯\_(ツ)_/¯" ]'
 
 # ── updates ───────────────────────────────────────────────────────────────────
 _reset; updates_available=2; update_msgs=("a" "b"); _render dev
-chk "updates only: flower face"       '[ "$(printf "%s\n" "$out" | head -1)" = "  ■■■ (❁´◡\`❁)  2 updates" ]'
+chk "updates only: flower face"       '[ "$(printf "%s\n" "$out" | head -1)" = "  ■■■  2 updates  (❁´◡\`❁)" ]'
 chk "updates only: listed"            '[ "$(printf "%s\n" "$out" | wc -l | tr -d " ")" = 3 ]'
 
 _reset; verbose=true; updates_available=1; update_msgs=("a"); _render ""

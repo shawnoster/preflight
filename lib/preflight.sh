@@ -31,7 +31,7 @@ _pf_cell() {  # issues_before issues_after updates_before updates_after
   fi
 }
 
-# The summary: the cells, the mascot, the verdict, then any issue and update
+# The summary: the cells, the verdict and the mascot, then any issue and update
 # lists. Reads the caller's issues, updates_available, issue_msgs, update_msgs,
 # _pf_cells, verbose and colors B, T, S, R; $1 is the AWS profile to show on an
 # all-clear line (empty for none).
@@ -57,8 +57,8 @@ _pf_render_summary() {
 
   # Verbose output ends on a detail line; keep the strip off it.
   [[ "$verbose" == true ]] && printf '\n'
-  # Mascot after the cells, so the cells start in the same column live and final.
-  printf '  %s %s%s%s  %s%s%s\n' "$_pf_cells" "${B:-}" "$face" "${R:-}" "${T:-}" "$verdict" "${R:-}"
+  # The mascot closes the line, and only appears once the checks are done.
+  printf '  %s  %s%s%s  %s%s%s\n' "$_pf_cells" "${T:-}" "$verdict" "${R:-}" "${B:-}" "$face" "${R:-}"
   if (( issues > 0 )) && [[ "$inline" == false ]]; then
     for msg in "${issue_msgs[@]}"; do
       printf '    %s• %s%s\n' "${S:-}" "$msg" "${R:-}"
@@ -98,7 +98,7 @@ preflight() {
   [[ -t 1 && "${PREFLIGHT_ERASE_PREVIOUS_LINE:-}" == "1" ]] && printf '\033[1A\033[2K\r'
 
   # ── Status strip ──────────────────────────────────────────────────────────
-  # One line: one cell per check section, a mascot, then the verdict. Drawn live
+  # One line: one cell per check section, the verdict, then a mascot. Drawn live
   # while the checks run and printed for good at the end. Colors come from the
   # owl theme when that plugin is on, otherwise these defaults.
   local R=$'\033[0m'
@@ -133,7 +133,7 @@ preflight() {
   # _pf_status "message" — redraws the strip with the open section pending (quiet mode)
   _pf_status() {
     [[ "$verbose" == false && -t 1 ]] &&
-      printf '\r\033[2K  %s%s·%s %sᓚᘏᗢ%s  %s%s%s' "$_pf_cells" "$S" "$R" "$B" "$R" "$S" "$1" "$R"
+      printf '\r\033[2K  %s%s·%s  %s%s%s' "$_pf_cells" "$S" "$R" "$S" "$1" "$R"
   }
   _pf_status_clear() {
     [[ "$verbose" == false && -t 1 ]] && printf '\r\033[2K'
