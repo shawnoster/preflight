@@ -18,6 +18,62 @@ _pf_hr() {
   printf '  \033[38;2;%sm%s\033[0m\n' "${OWL_SUB:-120;130;150}" "$(printf '%0.s-' {1..33})"
 }
 
+# The status strip's cell for one finished section: a red □ when the section
+# raised the issue count, an amber ■ when it raised only the update count, a ■
+# otherwise. Colors are read from the caller's B, R, _pf_bad and _pf_upd (unset = plain).
+_pf_cell() {  # issues_before issues_after updates_before updates_after
+  if (( $2 > $1 )); then
+    printf '%s□%s' "${_pf_bad:-}" "${R:-}"
+  elif (( $4 > $3 )); then
+    printf '%s■%s' "${_pf_upd:-}" "${R:-}"
+  else
+    printf '%s■%s' "${B:-}" "${R:-}"
+  fi
+}
+
+# The summary: the cells, the mascot, the verdict, then any issue and update
+# lists. Reads the caller's issues, updates_available, issue_msgs, update_msgs,
+# _pf_cells, verbose and colors B, T, S, R; $1 is the AWS profile to show on an
+# all-clear line (empty for none).
+_pf_render_summary() {
+  local aws="${1:-}" face='ᓚᘏᗢ' verdict="" inline=false msg
+  if (( issues > 0 )); then
+    face='¯\_(ツ)_/¯'
+    verdict="$issues issue$( (( issues == 1 )) || printf s)"
+    # A lone issue fits on the strip line; anything more gets a list.
+    if (( issues == 1 && ${#issue_msgs[@]} == 1 && updates_available == 0 )); then
+      inline=true
+      verdict+=" · ${issue_msgs[*]}"
+    fi
+  fi
+  if (( updates_available > 0 )); then
+    (( issues > 0 )) || face='(❁´◡`❁)'
+    verdict+="${verdict:+ · }$updates_available update$( (( updates_available == 1 )) || printf s)"
+  fi
+  if [[ -z "$verdict" ]]; then
+    verdict="all systems go"
+    [[ -n "$aws" ]] && verdict+=" · aws:$aws"
+  fi
+
+  # Verbose output ends on a detail line; keep the strip off it.
+  [[ "$verbose" == true ]] && printf '\n'
+  # Mascot after the cells, so the cells start in the same column live and final.
+  printf '  %s %s%s%s  %s%s%s\n' "$_pf_cells" "${B:-}" "$face" "${R:-}" "${T:-}" "$verdict" "${R:-}"
+  if (( issues > 0 )) && [[ "$inline" == false ]]; then
+    for msg in "${issue_msgs[@]}"; do
+      printf '    %s• %s%s\n' "${S:-}" "$msg" "${R:-}"
+    done
+  fi
+  # Verbose mode already printed each tool inline with its Update: command,
+  # so only the quiet path needs the list repeated here.
+  if (( updates_available > 0 )) && [[ "$verbose" == false ]]; then
+    for msg in "${update_msgs[@]}"; do
+      printf '    %s↑ %s%s\n' "${S:-}" "$msg" "${R:-}"
+    done
+  fi
+  return 0
+}
+
 preflight() {
   # Dispatch subcommands before doing anything else
   case "${1:-}" in
@@ -42,7 +98,7 @@ preflight() {
   [[ -t 1 && "${PREFLIGHT_ERASE_PREVIOUS_LINE:-}" == "1" ]] && printf '\033[1A\033[2K\r'
 
   # ── Status strip ──────────────────────────────────────────────────────────
-  # One line: a mascot, one cell per check section, then the verdict. Drawn live
+  # One line: one cell per check section, a mascot, then the verdict. Drawn live
   # while the checks run and printed for good at the end. Colors come from the
   # owl theme when that plugin is on, otherwise these defaults.
   local R=$'\033[0m'
@@ -68,13 +124,7 @@ preflight() {
   local _pf_cells="" _pf_stage_open=false _pf_stage_i0=0 _pf_stage_u0=0
   _pf_stage_close() {
     [[ "$_pf_stage_open" == true ]] || return 0
-    if (( issues > _pf_stage_i0 )); then
-      _pf_cells+="${_pf_bad}□${R}"
-    elif (( updates_available > _pf_stage_u0 )); then
-      _pf_cells+="${_pf_upd}■${R}"
-    else
-      _pf_cells+="${B}■${R}"
-    fi
+    _pf_cells+=$(_pf_cell "$_pf_stage_i0" "$issues" "$_pf_stage_u0" "$updates_available")
     _pf_stage_open=false
   }
 
@@ -83,7 +133,7 @@ preflight() {
   # _pf_status "message" — redraws the strip with the open section pending (quiet mode)
   _pf_status() {
     [[ "$verbose" == false && -t 1 ]] &&
-      printf '\r\033[2K  %sᓚᘏᗢ%s %s%s·  %s%s' "$B" "$R" "$_pf_cells" "$S" "$1" "$R"
+      printf '\r\033[2K  %s%s·%s %sᓚᘏᗢ%s  %s%s%s' "$_pf_cells" "$S" "$R" "$B" "$R" "$S" "$1" "$R"
   }
   _pf_status_clear() {
     [[ "$verbose" == false && -t 1 ]] && printf '\r\033[2K'
@@ -200,7 +250,7 @@ preflight() {
       if [[ -n "$aws_identity" ]]; then
         _pf_line "✅ AWS session active ($(echo "$aws_identity" | jq -r '.Account' 2>/dev/null))"
       elif [[ "$no_login" == true ]]; then
-        issue_msgs+=("AWS session expired (--no-login: skipped SSO refresh)")
+        issue_msgs+=("AWS session expired (--no-login: skipping SSO refresh)")
         _pf_line "⚠️  AWS session expired (--no-login: skipping SSO refresh)"
         ((issues++))
       else
@@ -773,6 +823,7 @@ preflight() {
     else
       issue_msgs+=("Git not installed")
       _pf_line "❌ Git not installed"
+      ((issues++))
     fi
   fi
 
@@ -817,38 +868,9 @@ preflight() {
   _pf_status_clear
   unset -f _pf_status _pf_status_clear _pf_section _pf_line _pf_stage_close
 
-  local _pf_face='ᓚᘏᗢ' _pf_verdict="" _pf_inline=false msg
-  if (( issues > 0 )); then
-    _pf_face='¯\_(ツ)_/¯'
-    _pf_verdict="$issues issue$( (( issues == 1 )) || printf s)"
-    # A lone issue fits on the strip line; anything more gets a list.
-    if (( issues == 1 && ${#issue_msgs[@]} == 1 && updates_available == 0 )); then
-      _pf_inline=true
-      _pf_verdict+=" · ${issue_msgs[*]}"
-    fi
-  fi
-  if (( updates_available > 0 )); then
-    (( issues > 0 )) || _pf_face='(❁´◡`❁)'
-    _pf_verdict+="${_pf_verdict:+ · }$updates_available update$( (( updates_available == 1 )) || printf s)"
-  fi
-  if [[ -z "$_pf_verdict" ]]; then
-    _pf_verdict="all systems go"
-    [[ "${_CHECK_AWS:-1}" == "1" && -n "${AWS_PROFILE:-}" ]] && _pf_verdict+=" · aws:$AWS_PROFILE"
-  fi
-
-  printf '  %s%s%s %s  %s%s%s\n' "$B" "$_pf_face" "$R" "$_pf_cells" "$T" "$_pf_verdict" "$R"
-  if (( issues > 0 )) && [[ "$_pf_inline" == false ]]; then
-    for msg in "${issue_msgs[@]}"; do
-      printf '    %s• %s%s\n' "$S" "$msg" "$R"
-    done
-  fi
-  # Verbose mode already printed each tool inline with its Update: command,
-  # so only the quiet path needs the list repeated here.
-  if (( updates_available > 0 )) && [[ "$verbose" == false ]]; then
-    for msg in "${update_msgs[@]}"; do
-      printf '    %s↑ %s%s\n' "$S" "$msg" "$R"
-    done
-  fi
+  local _pf_aws=""
+  [[ "${_CHECK_AWS:-1}" == "1" ]] && _pf_aws="${AWS_PROFILE:-}"
+  _pf_render_summary "$_pf_aws"
   printf "\n"
 }
 
