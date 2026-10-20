@@ -532,8 +532,9 @@ chk "op.exe: nothing from the first account was exported" '[[ -z "$exe_sess" && 
 chk "op.exe: no inject ran before the failure" '! grep -q "^inject " "$FAKE_OP_LOG"'
 unset FAKE_OP_SIGNED_OUT_ACCT FAKE_OP_SIGNIN_OK_ACCT
 
-# With op.exe and one account, each call costs over a second, so the sign-in check is
-# skipped: the batch inject goes first and signs in only if it fails.
+# With op.exe and one account the sign-in check is skipped, because each call costs over a
+# second. The batch inject runs first, and the loader signs in only after it fails and the
+# session turns out to be signed out.
 clean_sets; op-env clear >/dev/null
 printf 'LAZY1\top://v/i/l1\nLAZY2\top://v/i/l2\n' > "$sets/lazy.tsv"
 : > "$FAKE_OP_LOG"
@@ -542,22 +543,35 @@ IFS='|' read -r exe_rc exe_l1 exe_l2 < "$T/exe-result"
 chk "op.exe, one account: loads" '[[ $exe_rc -eq 0 && "$exe_l1" == val-of-l1 && "$exe_l2" == val-of-l2 ]]'
 chk "op.exe, one account: no whoami or unlock before the inject" '! grep -qE "^(whoami|vault|signin) " "$FAKE_OP_LOG"'
 chk "op.exe, one account: a single inject" '[[ $(grep -c "^inject " "$FAKE_OP_LOG") -eq 1 ]]'
-# One failed inject (not the retried "cannot connect" kind): sign in, then try once more.
+# A failed inject against a signed-out session (two failures: the inject, then the check
+# that follows it): sign in, then inject again. The flaky errors are not the retried
+# "cannot connect" kind.
 rm -f "$T/winbin/flaky-count"; : > "$FAKE_OP_LOG"
-( OP_BIN="$T/winbin/op.exe" FAKE_OP_FLAKY=1 FAKE_OP_FLAKY_ERR='[ERROR] session expired'
+( OP_BIN="$T/winbin/op.exe" FAKE_OP_FLAKY=2 FAKE_OP_FLAKY_ERR='[ERROR] session expired'
   export FAKE_OP_FLAKY FAKE_OP_FLAKY_ERR
-  op-env load >/dev/null 2>&1; echo "$?|${LAZY1:-}|${LAZY2:-}" > "$T/exe-result" )
+  op-env load > "$T/exe-out" 2>&1; echo "$?|${LAZY1:-}|${LAZY2:-}" > "$T/exe-result" )
 IFS='|' read -r exe_rc exe_l1 exe_l2 < "$T/exe-result"
-chk "op.exe, one account: failed inject then sign-in then retry loads" '[[ $exe_rc -eq 0 && "$exe_l1" == val-of-l1 && "$exe_l2" == val-of-l2 ]]'
-chk "op.exe, one account: signed in after the failed inject" 'grep -qx "whoami --account test" "$FAKE_OP_LOG"'
-chk "op.exe, one account: the first inject was the failed call, the retry resolved" '[[ "$(cat "$T/winbin/flaky-count")" == 1 && $(grep -c "^inject " "$FAKE_OP_LOG") -eq 1 ]]'
-# The inject fails and the sign-in cannot succeed either: the load fails, exports nothing.
+chk "op.exe, one account: signed-out session is signed in and the inject retried" '[[ $exe_rc -eq 0 && "$exe_l1" == val-of-l1 && "$exe_l2" == val-of-l2 ]]'
+chk "op.exe, one account: the retry used the batch, not the per-secret fallback" '[[ "$(cat "$T/exe-out")" != *"falling back"* && "$(cat "$T/winbin/flaky-count")" == 2 && $(grep -c "^inject " "$FAKE_OP_LOG") -eq 1 ]]'
+# A bad reference fails the inject too, but the session is fine: no sign-in, no second
+# inject, straight to the per-secret fallback.
+clean_sets; op-env clear >/dev/null
+printf 'LAZYBAD\top://v/broken/x\n' > "$sets/lazybad.tsv"
+: > "$FAKE_OP_LOG"
+( OP_BIN="$T/winbin/op.exe"; op-env load > "$T/exe-out" 2>&1; echo "$?" > "$T/exe-result" )
+chk "op.exe, one account: a bad reference goes to the fallback" '[[ "$(cat "$T/exe-out")" == *"falling back"* ]]'
+chk "op.exe, one account: a bad reference does not sign in or retry" '! grep -qE "^(vault|signin) " "$FAKE_OP_LOG" && [[ "$(cat "$T/exe-out")" != *"Already signed in"* && $(grep -c "^inject " "$FAKE_OP_LOG") -eq 1 ]]'
+clean_sets; printf 'LAZY1\top://v/i/l1\nLAZY2\top://v/i/l2\n' > "$sets/lazy.tsv"
+# The inject fails and the sign-in cannot succeed either: the load fails, exports nothing,
+# and what an earlier load remembered is left as it was.
 : > "$FAKE_OP_LOG"
 ( OP_BIN="$T/winbin/op.exe" FAKE_OP_SIGNED_OUT_ACCT=test FAKE_OP_NOVAULT_ACCT=test
   export FAKE_OP_SIGNED_OUT_ACCT FAKE_OP_NOVAULT_ACCT
-  op-env load >/dev/null 2>&1; echo "$?|${LAZY1:-}" > "$T/exe-result" )
-IFS='|' read -r exe_rc exe_l1 < "$T/exe-result"
+  _OP_LOADED_VARS="PREV_VAR"; _OP_LOADED_SRC=$'PREV_VAR\tprev'
+  op-env load >/dev/null 2>&1; echo "$?|${LAZY1:-}|${_OP_LOADED_VARS}|${_OP_LOADED_SRC}" > "$T/exe-result" )
+IFS='|' read -r exe_rc exe_l1 exe_mem exe_src < "$T/exe-result"
 chk "op.exe, one account: failed inject and failed sign-in fails the load" '[[ $exe_rc -ne 0 && -z "$exe_l1" ]]'
+chk "op.exe, one account: a failed sign-in leaves the remembered variables alone" '[[ "$exe_mem" == PREV_VAR && "$exe_src" == "PREV_VAR"$'"'"'\t'"'"'"prev" ]]'
 chk "op.exe, one account: no second inject after a failed sign-in" '[[ $(grep -c "^inject " "$FAKE_OP_LOG") -eq 1 ]]'
 op-env clear >/dev/null; rm -f "$T/winbin/flaky-count"; clean_sets
 

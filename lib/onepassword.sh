@@ -56,7 +56,7 @@ _op_resolve_bin() {
 # Run "$OP_BIN" with the given arguments, retrying while the desktop app's pipe is not
 # ready. op.exe fails with "cannot connect to 1Password app" for a moment after the
 # previous op.exe call (whoami, account list) has closed its connection, so back-to-back
-# calls such as op-env load's sign-in check followed by its batch inject fail at random.
+# calls such as op-signin's whoami followed by its vault list fail at random.
 # Only that error is retried (up to 3 times, _OP_RETRY_DELAY seconds apart, default 1);
 # any other failure, stdout, stderr and the exit status pass through unchanged.
 #   _op_call [--stdin TEXT] ARGS...     --stdin feeds TEXT to op on every attempt
@@ -146,10 +146,11 @@ op-env load [set...]
   Load the active env sets' secrets from 1Password into environment variables
   (or only the named sets: additive, works on an inactive set).
   Resolves each account's secrets in one `op inject` call (a single-account set
-  is a single call). Native op signs in to every account first and uses the cached
-  session. Under WSL, op.exe with one account goes straight to the inject, which
-  triggers the desktop unlock, and signs in only if that call fails; with several
-  accounts it signs in to each first. Falls back to per-secret reads for an account whose batch fails.
+  is a single call). Native op signs in to every account first and uses the
+  cached session. Under WSL, op.exe with one account goes straight to the
+  inject, which triggers the desktop unlock, and signs in only if that call
+  fails and the session is signed out. With several accounts it signs in to
+  each first. Falls back to per-secret reads for an account whose batch fails.
 
 op-env [load|clear|add|list|rm|use]
   Manage named env sets (guild, personal, ...) of VAR -> op:// references.
@@ -320,11 +321,12 @@ _op_env_load() {
   # accounts loaded would leave the loaded-vars memory describing secrets that
   # only half resolved.
   #
-  # With op.exe and a single account the check is skipped: each call crosses WSL to the
-  # Windows desktop app and costs over a second, and the batch inject below triggers the
-  # desktop unlock by itself. Only when that inject fails does it sign in and try once
-  # more (see _op_lazy). One account cannot leave a half-resolved load behind; with
-  # several, every account is still established before anything is exported.
+  # With op.exe and a single account this check is skipped. Each call crosses from WSL
+  # to the Windows desktop app and costs over a second, and the batch inject below
+  # triggers the desktop unlock by itself. When that inject fails, the loader checks the
+  # session once and, if it is signed out, signs in and injects again (see _op_lazy).
+  # A single account cannot leave a half-resolved load behind. With several accounts,
+  # every account is established before anything is exported.
   local _op_acct _op_lazy=0
   if [[ "$OP_BIN" == *op.exe && $(printf '%s\n' "$_op_accts" | awk 'NF' | wc -l) -le 1 ]]; then
     _op_lazy=1
@@ -339,7 +341,7 @@ _op_env_load() {
   # Only now record what this load manages. If sign-in failed above, the
   # previous list stays, so op-env clear still knows what is in the environment. A full
   # load replaces the list; a named-set load adds to it.
-  local _op_src
+  local _op_src _op_prev_vars="$_OP_LOADED_VARS" _op_prev_src="$_OP_LOADED_SRC"
   _op_src=$(declare -f _op_env_sources >/dev/null && _op_env_sources "$@")
   if [[ $_op_subset -eq 0 ]]; then
     _OP_LOADED_VARS="$_op_names"
@@ -430,8 +432,16 @@ _op_env_load() {
     # other accounts are unaffected — their batches still run.)
     local _op_batch_failed=0 _op_empty=0 _op_inject_failed=0
     _op_resolved=$(_op_call --stdin "$_op_template" inject --account "$_op_acct" 2>/dev/null) || _op_inject_failed=1
-    if [[ $_op_inject_failed -eq 1 && $_op_lazy -eq 1 ]]; then
-      op-signin "$_op_acct" || return 1
+    # Only a signed-out session is worth a sign-in and a second inject. A bad reference
+    # fails the same way, and goes straight to the per-secret fallback below.
+    if [[ $_op_inject_failed -eq 1 && $_op_lazy -eq 1 ]] \
+       && ! _op_call whoami --account "$_op_acct" >/dev/null 2>&1; then
+      if ! op-signin "$_op_acct"; then
+        # The sign-in this skipped up front failed, so put back what was remembered.
+        _OP_LOADED_VARS="$_op_prev_vars"
+        _OP_LOADED_SRC="$_op_prev_src"
+        return 1
+      fi
       _op_inject_failed=0
       _op_resolved=$(_op_call --stdin "$_op_template" inject --account "$_op_acct" 2>/dev/null) || _op_inject_failed=1
     fi

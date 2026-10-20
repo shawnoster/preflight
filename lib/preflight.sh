@@ -37,10 +37,10 @@ _pf_cell_pending() {
 }
 
 # The sections this run will open, so the strip can show every box before the first
-# check starts. Mirrors the conditions around each _pf_section call in preflight().
-# Git Credentials only runs when GITEA_TOKEN ends up set, so it counts when the token is
-# already set or an active env set will supply it. A wrong guess only shows one box too
-# many or too few while the checks run; the final strip is built from the sections that ran.
+# check starts. Matches the conditions around each _pf_section call in preflight().
+# Git Credentials runs only when GITEA_TOKEN ends up set, so it counts when the token is
+# already set or an active env set will supply it. A wrong guess changes the box count
+# while the checks run. The final strip comes from the sections that ran.
 _pf_planned_sections() {
   local n=4   # Settings, Secrets, Environment Variables, Installed Tools
   [[ "${_CHECK_AWS:-1}" == "1" ]] && n=$((n + 1))
@@ -54,8 +54,8 @@ _pf_planned_sections() {
   printf '%s' "$n"
 }
 
-# The live strip: the finished cells, an empty box for every section still to come, then
-# the message. Reads the caller's _pf_cells, _pf_planned and _pf_closed.
+# Draws the live strip: the finished cells, then an empty box for every section still to
+# come, then the message. Reads the caller's _pf_cells, _pf_planned and _pf_closed.
 _pf_strip() {  # message
   local todo=$(( ${_pf_planned:-0} - ${_pf_closed:-0} )) boxes=""
   while (( todo > 0 )); do boxes+=$(_pf_cell_pending); todo=$((todo - 1)); done
@@ -178,8 +178,8 @@ preflight() {
 
   printf "\n"
 
-  # _pf_status "message" — redraws the strip (quiet mode): finished cells filled in,
-  # every section still to come as an empty box, then the message
+  # _pf_status "message" redraws the strip in quiet mode, with the finished cells filled
+  # in and an empty box for every section still to come.
   _pf_status() {
     [[ "$verbose" == false && -t 1 ]] && _pf_strip "$1"
   }

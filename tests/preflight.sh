@@ -97,6 +97,13 @@ unset GITEA_TOKEN
 _op_env_entries() { printf 'GITEA_TOKEN\top://v/g/t\n'; }
 chk "plan: gitea token from a set"    '[ "$(_pf_planned_sections)" = 10 ]'
 _op_env_entries() { printf 'GITEA_SERVER_TOKEN\top://v/g/t\n'; }
+# The plan restates the conditions around each _pf_section call, so it must agree with
+# the sections in preflight() when every check is on and the Gitea token is set. The
+# Installed Tools section opens under two titles; the suffix is dropped before counting.
+declared=$(grep -E '^[[:space:]]+_pf_section "' "$R_/lib/preflight.sh" | sed -E 's/.*_pf_section "([^"(]*).*/\1/; s/ +$//' | sort -u | wc -l | tr -d ' ')
+GITEA_TOKEN=x
+chk "plan: matches the sections preflight() opens ($declared)" '[ "$(_pf_planned_sections)" = "$declared" ]'
+unset GITEA_TOKEN
 chk "plan: other gitea var: no box"   '[ "$(_pf_planned_sections)" = 9 ]'
 _op_env_entries() { :; }
 
