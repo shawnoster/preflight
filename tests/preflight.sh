@@ -23,8 +23,8 @@ chk() { if eval "$2"; then passes=$((passes + 1)); else fails=$((fails + 1)); ec
 source "$R_/lib/preflight.sh"
 unset B T S R _pf_bad _pf_upd
 
-# _render <aws> — run the summary with the current globals
-_render() { out=$(_pf_render_summary "$1"); }
+# _render — run the summary with the current globals
+_render() { out=$(_pf_render_summary); }
 _reset() {
   issues=0; updates_available=0; issue_msgs=(); update_msgs=()
   _pf_cells="■■■"; verbose=false
@@ -37,35 +37,33 @@ chk "cell: new update only is ■"      '[ "$(_pf_cell 0 0 0 1)" = "■" ]'
 chk "cell: issue wins over update"    '[ "$(_pf_cell 0 1 0 1)" = "□" ]'
 
 # ── all clear ─────────────────────────────────────────────────────────────────
-_reset; _render dev
-chk "clear: cells, verdict, cat last" '[ "$out" = "  ■■■  all systems go · aws:dev  ᓚᘏᗢ" ]'
-_reset; _render ""
-chk "clear: no aws label when empty"  '[ "$out" = "  ■■■  all systems go  ᓚᘏᗢ" ]'
+_reset; _render
+chk "clear: cells and the cat, no verdict" '[ "$out" = "  ■■■  ᓚᘏᗢ" ]'
 
 # ── issues ────────────────────────────────────────────────────────────────────
-_reset; issues=1; issue_msgs=("AWS SSO refresh failed"); _pf_cells="■□■"; _render dev
+_reset; issues=1; issue_msgs=("AWS SSO refresh failed"); _pf_cells="■□■"; _render
 chk "one issue: inline, shrug, no aws" '[ "$out" = "  ■□■  1 issue · AWS SSO refresh failed  ¯\_(ツ)_/¯" ]'
 
-_reset; issues=2; issue_msgs=("first" "second"); _render ""
+_reset; issues=2; issue_msgs=("first" "second"); _render
 chk "two issues: plural header"       '[ "$(printf "%s\n" "$out" | head -1)" = "  ■■■  2 issues  ¯\_(ツ)_/¯" ]'
 chk "two issues: both listed"         '[ "$(printf "%s\n" "$out" | sed -n 2p)" = "    • first" ] && [ "$(printf "%s\n" "$out" | sed -n 3p)" = "    • second" ]'
 
-_reset; issues=1; issue_msgs=("only"); updates_available=1; update_msgs=("jq: 1 → 2"); _render ""
+_reset; issues=1; issue_msgs=("only"); updates_available=1; update_msgs=("jq: 1 → 2"); _render
 chk "issue + update: not inlined"     '[ "$(printf "%s\n" "$out" | head -1)" = "  ■■■  1 issue · 1 update  ¯\_(ツ)_/¯" ]'
 chk "issue + update: both lists"      'printf "%s\n" "$out" | grep -qxF "    • only" && printf "%s\n" "$out" | grep -qxF "    ↑ jq: 1 → 2"'
 
-_reset; issues=1; _render ""
+_reset; issues=1; _render
 chk "counted issue without message"   '[ "$out" = "  ■■■  1 issue  ¯\_(ツ)_/¯" ]'
 
-_reset; issues=1; issue_msgs=('100% \n literal'); _render ""
+_reset; issues=1; issue_msgs=('100% \n literal'); _render
 chk "message printed as typed"        '[ "$out" = "  ■■■  1 issue · 100% \n literal  ¯\_(ツ)_/¯" ]'
 
 # ── updates ───────────────────────────────────────────────────────────────────
-_reset; updates_available=2; update_msgs=("a" "b"); _render dev
+_reset; updates_available=2; update_msgs=("a" "b"); _render
 chk "updates only: flower face"       '[ "$(printf "%s\n" "$out" | head -1)" = "  ■■■  2 updates  (❁´◡\`❁)" ]'
 chk "updates only: listed"            '[ "$(printf "%s\n" "$out" | wc -l | tr -d " ")" = 3 ]'
 
-_reset; verbose=true; updates_available=1; update_msgs=("a"); _render ""
+_reset; verbose=true; updates_available=1; update_msgs=("a"); _render
 chk "verbose: blank line first"       '[ -z "$(printf "%s\n" "$out" | head -1)" ]'
 chk "verbose: no repeated update list" '! printf "%s\n" "$out" | grep -q "↑"'
 

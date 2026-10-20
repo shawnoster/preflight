@@ -77,11 +77,11 @@ _pf_op_may_prompt() {
 }
 
 # The summary: the cells, the verdict and the mascot, then any issue and update
-# lists. Reads the caller's issues, updates_available, issue_msgs, update_msgs,
-# _pf_cells, verbose and colors B, T, S, R; $1 is the AWS profile to show on an
-# all-clear line (empty for none).
+# lists. All clear is the cells and the cat alone, with no verdict. Reads the caller's
+# issues, updates_available, issue_msgs, update_msgs, _pf_cells, verbose and colors
+# B, T, S, R.
 _pf_render_summary() {
-  local aws="${1:-}" face='ᓚᘏᗢ' verdict="" inline=false msg
+  local face='ᓚᘏᗢ' verdict="" inline=false msg
   if (( issues > 0 )); then
     face='¯\_(ツ)_/¯'
     verdict="$issues issue$( (( issues == 1 )) || printf s)"
@@ -95,15 +95,15 @@ _pf_render_summary() {
     (( issues > 0 )) || face='(❁´◡`❁)'
     verdict+="${verdict:+ · }$updates_available update$( (( updates_available == 1 )) || printf s)"
   fi
-  if [[ -z "$verdict" ]]; then
-    verdict="all systems go"
-    [[ -n "$aws" ]] && verdict+=" · aws:$aws"
-  fi
 
   # Verbose output ends on a detail line; keep the strip off it.
   [[ "$verbose" == true ]] && printf '\n'
   # The mascot closes the line, and only appears once the checks are done.
-  printf '  %s  %s%s%s  %s%s%s\n' "$_pf_cells" "${T:-}" "$verdict" "${R:-}" "${B:-}" "$face" "${R:-}"
+  if [[ -n "$verdict" ]]; then
+    printf '  %s  %s%s%s  %s%s%s\n' "$_pf_cells" "${T:-}" "$verdict" "${R:-}" "${B:-}" "$face" "${R:-}"
+  else
+    printf '  %s  %s%s%s\n' "$_pf_cells" "${B:-}" "$face" "${R:-}"
+  fi
   if (( issues > 0 )) && [[ "$inline" == false ]]; then
     for msg in "${issue_msgs[@]}"; do
       printf '    %s• %s%s\n' "${S:-}" "$msg" "${R:-}"
@@ -922,9 +922,7 @@ preflight() {
   _pf_status_clear
   unset -f _pf_status _pf_status_clear _pf_section _pf_line _pf_stage_close
 
-  local _pf_aws=""
-  [[ "${_CHECK_AWS:-1}" == "1" ]] && _pf_aws="${AWS_PROFILE:-}"
-  _pf_render_summary "$_pf_aws"
+  _pf_render_summary
   printf "\n"
 }
 
