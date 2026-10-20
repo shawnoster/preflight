@@ -145,10 +145,11 @@ op-import-csv <csv-path> [--vault <vault>] [--tag <tag>] [--dry-run]
 op-env load [set...]
   Load the active env sets' secrets from 1Password into environment variables
   (or only the named sets: additive, works on an inactive set).
-  Signs in to every account the active sets name, then resolves each account's
-  secrets in one `op inject` call (a single-account set is a single call). Under
-  WSL the sign-in step triggers the desktop unlock; native op uses the cached
-  session. Falls back to per-secret reads for an account whose batch fails.
+  Resolves each account's secrets in one `op inject` call (a single-account set
+  is a single call). Native op signs in to every account first and uses the cached
+  session. Under WSL, op.exe with one account goes straight to the inject, which
+  triggers the desktop unlock, and signs in only if that call fails; with several
+  accounts it signs in to each first. Falls back to per-secret reads for an account whose batch fails.
 
 op-env [load|clear|add|list|rm|use]
   Manage named env sets (guild, personal, ...) of VAR -> op:// references.
@@ -318,11 +319,22 @@ _op_env_load() {
   # rather than lazily inside the loop below: a sign-in that fails after some
   # accounts loaded would leave the loaded-vars memory describing secrets that
   # only half resolved.
-  local _op_acct
-  while IFS= read -r _op_acct; do
-    [[ -n "$_op_acct" ]] || continue
-    _op_call whoami --account "$_op_acct" >/dev/null 2>&1 || op-signin "$_op_acct" || return 1
-  done <<< "$_op_accts"
+  #
+  # With op.exe and a single account the check is skipped: each call crosses WSL to the
+  # Windows desktop app and costs over a second, and the batch inject below triggers the
+  # desktop unlock by itself. Only when that inject fails does it sign in and try once
+  # more (see _op_lazy). One account cannot leave a half-resolved load behind; with
+  # several, every account is still established before anything is exported.
+  local _op_acct _op_lazy=0
+  if [[ "$OP_BIN" == *op.exe && $(printf '%s\n' "$_op_accts" | awk 'NF' | wc -l) -le 1 ]]; then
+    _op_lazy=1
+  fi
+  if [[ $_op_lazy -eq 0 ]]; then
+    while IFS= read -r _op_acct; do
+      [[ -n "$_op_acct" ]] || continue
+      _op_call whoami --account "$_op_acct" >/dev/null 2>&1 || op-signin "$_op_acct" || return 1
+    done <<< "$_op_accts"
+  fi
 
   # Only now record what this load manages. If sign-in failed above, the
   # previous list stays, so op-env clear still knows what is in the environment. A full
@@ -416,8 +428,14 @@ _op_env_load() {
     # legitimately resolved to nothing: it sends this account down the per-secret
     # fallback, which re-reads it and reports the broken reference by name. (The
     # other accounts are unaffected — their batches still run.)
-    local _op_batch_failed=0 _op_empty=0
-    if ! _op_resolved=$(_op_call --stdin "$_op_template" inject --account "$_op_acct" 2>/dev/null); then
+    local _op_batch_failed=0 _op_empty=0 _op_inject_failed=0
+    _op_resolved=$(_op_call --stdin "$_op_template" inject --account "$_op_acct" 2>/dev/null) || _op_inject_failed=1
+    if [[ $_op_inject_failed -eq 1 && $_op_lazy -eq 1 ]]; then
+      op-signin "$_op_acct" || return 1
+      _op_inject_failed=0
+      _op_resolved=$(_op_call --stdin "$_op_template" inject --account "$_op_acct" 2>/dev/null) || _op_inject_failed=1
+    fi
+    if [[ $_op_inject_failed -eq 1 ]]; then
       _op_batch_failed=1
     else
       _op_empty=$(printf '%s\n' "$_op_resolved" | awk -v t="$_op_tag" \
