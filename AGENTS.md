@@ -87,7 +87,7 @@ Read this repo when working on:
 | Tests (directory layout, first run, `uninstall --purge`; bash + zsh) | `tests/paths.sh` |
 | Tests (`wsl-browser` plugin: `$BROWSER` wiring, `wsl-browser-doctor [--fix]`, the `~/.profile` block; bash + zsh, fake `rundll32.exe`) | `tests/wsl-browser.sh` |
 | Tests (`config.json` loader, `preflight config`, table/schema/profile drift; bash + zsh) | `tests/config.sh` |
-| Tests (`preflight` status strip: `_pf_cell`, `_pf_render_summary`, every issue message counted; bash + zsh) | `tests/preflight.sh` |
+| Tests (`preflight` status strip: `_pf_cell`, `_pf_cell_pending`, `_pf_planned_sections`, `_pf_strip`, `_pf_render_summary`, every issue message counted; bash + zsh) | `tests/preflight.sh` |
 
 ## Upstream / Downstream
 

@@ -31,6 +31,37 @@ _pf_cell() {  # issues_before issues_after updates_before updates_after
   fi
 }
 
+# An empty box for a section that has not finished yet, in the sub color (unset = plain).
+_pf_cell_pending() {
+  printf '%s□%s' "${S:-}" "${R:-}"
+}
+
+# The sections this run will open, so the strip can show every box before the first
+# check starts. Matches the conditions around each _pf_section call in preflight().
+# Git Credentials runs only when GITEA_TOKEN ends up set, so it counts when the token is
+# already set or an active env set will supply it. A wrong guess changes the box count
+# while the checks run. The final strip comes from the sections that ran.
+_pf_planned_sections() {
+  local n=4   # Settings, Secrets, Environment Variables, Installed Tools
+  [[ "${_CHECK_AWS:-1}" == "1" ]] && n=$((n + 1))
+  [[ "${_CHECK_SSH:-1}" == "1" ]] && n=$((n + 1))
+  [[ "${_CHECK_GIT_CONFIG:-1}" == "1" ]] && n=$((n + 1))
+  n=$((n + 2))   # Node.js, Python
+  if [[ -n "${GITEA_TOKEN:-}" ]] ||
+     { declare -f _op_env_entries >/dev/null && _op_env_entries 2>/dev/null | cut -f1 | grep -x GITEA_TOKEN >/dev/null; }; then
+    n=$((n + 1))
+  fi
+  printf '%s' "$n"
+}
+
+# Draws the live strip: the finished cells, then an empty box for every section still to
+# come, then the message. Reads the caller's _pf_cells, _pf_planned and _pf_closed.
+_pf_strip() {  # message
+  local todo=$(( ${_pf_planned:-0} - ${_pf_closed:-0} )) boxes=""
+  while (( todo > 0 )); do boxes+=$(_pf_cell_pending); todo=$((todo - 1)); done
+  printf '\r\033[2K  %s%s  %s%s%s' "${_pf_cells:-}" "$boxes" "${S:-}" "$1" "${R:-}"
+}
+
 # Whether `op-env load` may put a password prompt on the terminal: only native op,
 # and only when an account the active sets use is not signed in. op.exe unlocks
 # through a desktop dialog instead. Accounts are grouped as _op_env_load groups them.
@@ -46,11 +77,11 @@ _pf_op_may_prompt() {
 }
 
 # The summary: the cells, the verdict and the mascot, then any issue and update
-# lists. Reads the caller's issues, updates_available, issue_msgs, update_msgs,
-# _pf_cells, verbose and colors B, T, S, R; $1 is the AWS profile to show on an
-# all-clear line (empty for none).
+# lists. All clear is the cells and the cat alone, with no verdict. Reads the caller's
+# issues, updates_available, issue_msgs, update_msgs, _pf_cells, verbose and colors
+# B, T, S, R.
 _pf_render_summary() {
-  local aws="${1:-}" face='ᓚᘏᗢ' verdict="" inline=false msg
+  local face='ᓚᘏᗢ' verdict="" inline=false msg
   if (( issues > 0 )); then
     face='¯\_(ツ)_/¯'
     verdict="$issues issue$( (( issues == 1 )) || printf s)"
@@ -64,15 +95,15 @@ _pf_render_summary() {
     (( issues > 0 )) || face='(❁´◡`❁)'
     verdict+="${verdict:+ · }$updates_available update$( (( updates_available == 1 )) || printf s)"
   fi
-  if [[ -z "$verdict" ]]; then
-    verdict="all systems go"
-    [[ -n "$aws" ]] && verdict+=" · aws:$aws"
-  fi
 
   # Verbose output ends on a detail line; keep the strip off it.
   [[ "$verbose" == true ]] && printf '\n'
   # The mascot closes the line, and only appears once the checks are done.
-  printf '  %s  %s%s%s  %s%s%s\n' "$_pf_cells" "${T:-}" "$verdict" "${R:-}" "${B:-}" "$face" "${R:-}"
+  if [[ -n "$verdict" ]]; then
+    printf '  %s  %s%s%s  %s%s%s\n' "$_pf_cells" "${T:-}" "$verdict" "${R:-}" "${B:-}" "$face" "${R:-}"
+  else
+    printf '  %s  %s%s%s\n' "$_pf_cells" "${B:-}" "$face" "${R:-}"
+  fi
   if (( issues > 0 )) && [[ "$inline" == false ]]; then
     for msg in "${issue_msgs[@]}"; do
       printf '    %s• %s%s\n' "${S:-}" "$msg" "${R:-}"
@@ -136,18 +167,21 @@ preflight() {
   # Finished cells, and the counters as they stood when the open section began:
   # a section that raised issues failed, one that raised only updates has one.
   local _pf_cells="" _pf_stage_open=false _pf_stage_i0=0 _pf_stage_u0=0
+  local _pf_closed=0 _pf_planned
+  _pf_planned=$(_pf_planned_sections)
   _pf_stage_close() {
     [[ "$_pf_stage_open" == true ]] || return 0
     _pf_cells+=$(_pf_cell "$_pf_stage_i0" "$issues" "$_pf_stage_u0" "$updates_available")
+    _pf_closed=$((_pf_closed + 1))
     _pf_stage_open=false
   }
 
   printf "\n"
 
-  # _pf_status "message" — redraws the strip with the open section pending (quiet mode)
+  # _pf_status "message" redraws the strip in quiet mode, with the finished cells filled
+  # in and an empty box for every section still to come.
   _pf_status() {
-    [[ "$verbose" == false && -t 1 ]] &&
-      printf '\r\033[2K  %s%s·%s  %s%s%s' "$_pf_cells" "$S" "$R" "$S" "$1" "$R"
+    [[ "$verbose" == false && -t 1 ]] && _pf_strip "$1"
   }
   _pf_status_clear() {
     [[ "$verbose" == false && -t 1 ]] && printf '\r\033[2K'
@@ -171,6 +205,7 @@ preflight() {
   # include a placeholder OP_ACCOUNT, so running on them silently would mislead.
 
   _pf_section "Settings"
+  _pf_status "Settings: checking..."
   if [[ "${_PF_CONFIG_STATUS:-ok}" != ok ]]; then
     issue_msgs+=("Settings: ${_PF_CONFIG_ERROR:-config.json was not loaded}")
     _pf_line "❌ Settings: ${_PF_CONFIG_ERROR:-config.json was not loaded}"
@@ -211,7 +246,7 @@ preflight() {
       if _pf_op_may_prompt; then
         _pf_status_clear
       elif [[ "$OP_BIN" == *op.exe ]]; then
-        _pf_status "Secrets: waiting for 1Password (approve the unlock if asked)..."
+        _pf_status "Secrets: approve the 1Password unlock if asked..."
       fi
       if ! op-env load &>/dev/null 2>&1; then
         issue_msgs+=("1Password sign-in or secret loading failed")
@@ -231,6 +266,7 @@ preflight() {
 
   if [[ -n "${GITEA_TOKEN:-}" ]]; then
     _pf_section "Git Credentials"
+    _pf_status "Git: storing credential..."
     if [[ -n "${GITEA_USERNAME:-}" && -n "${GITEA_HOST:-}" ]]; then
       if _pf_write_git_credential "$GITEA_HOST" "$GITEA_USERNAME" "$GITEA_TOKEN"; then
         _pf_line "✅ Gitea credential stored for $GITEA_USERNAME@$GITEA_HOST"
@@ -886,9 +922,7 @@ preflight() {
   _pf_status_clear
   unset -f _pf_status _pf_status_clear _pf_section _pf_line _pf_stage_close
 
-  local _pf_aws=""
-  [[ "${_CHECK_AWS:-1}" == "1" ]] && _pf_aws="${AWS_PROFILE:-}"
-  _pf_render_summary "$_pf_aws"
+  _pf_render_summary
   printf "\n"
 }
 
