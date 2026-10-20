@@ -99,11 +99,12 @@ chk "plan: gitea token from a set"    '[ "$(_pf_planned_sections)" = 10 ]'
 _op_env_entries() { printf 'GITEA_SERVER_TOKEN\top://v/g/t\n'; }
 # The plan restates the conditions around each _pf_section call, so it must agree with
 # the sections in preflight() when every check is on and the Gitea token is set. The
-# Installed Tools section opens under two titles; the suffix is dropped before counting.
+# Installed Tools section opens under two titles, so the suffix is dropped before counting.
 declared=$(grep -E '^[[:space:]]+_pf_section "' "$R_/lib/preflight.sh" | sed -E 's/.*_pf_section "([^"(]*).*/\1/; s/ +$//' | sort -u | wc -l | tr -d ' ')
 GITEA_TOKEN=x
 chk "plan: matches the sections preflight() opens ($declared)" '[ "$(_pf_planned_sections)" = "$declared" ]'
 unset GITEA_TOKEN
+chk "plan: gitea token found under pipefail with a long list" '( set -o pipefail; _op_env_entries() { awk "BEGIN { for (i = 0; i < 5000; i++) print \"GITEA_TOKEN\\top://v/g/t\" }"; }; [ "$(_pf_planned_sections)" = "$declared" ] )'
 chk "plan: other gitea var: no box"   '[ "$(_pf_planned_sections)" = 9 ]'
 _op_env_entries() { :; }
 

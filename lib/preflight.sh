@@ -48,7 +48,7 @@ _pf_planned_sections() {
   [[ "${_CHECK_GIT_CONFIG:-1}" == "1" ]] && n=$((n + 1))
   n=$((n + 2))   # Node.js, Python
   if [[ -n "${GITEA_TOKEN:-}" ]] ||
-     { declare -f _op_env_entries >/dev/null && _op_env_entries 2>/dev/null | cut -f1 | grep -qx GITEA_TOKEN; }; then
+     { declare -f _op_env_entries >/dev/null && _op_env_entries 2>/dev/null | cut -f1 | grep -x GITEA_TOKEN >/dev/null; }; then
     n=$((n + 1))
   fi
   printf '%s' "$n"
@@ -246,7 +246,7 @@ preflight() {
       if _pf_op_may_prompt; then
         _pf_status_clear
       elif [[ "$OP_BIN" == *op.exe ]]; then
-        _pf_status "Secrets: waiting for 1Password (approve the unlock if asked)..."
+        _pf_status "Secrets: approve the 1Password unlock if asked..."
       fi
       if ! op-env load &>/dev/null 2>&1; then
         issue_msgs+=("1Password sign-in or secret loading failed")

@@ -573,6 +573,16 @@ IFS='|' read -r exe_rc exe_l1 exe_mem exe_src < "$T/exe-result"
 chk "op.exe, one account: failed inject and failed sign-in fails the load" '[[ $exe_rc -ne 0 && -z "$exe_l1" ]]'
 chk "op.exe, one account: a failed sign-in leaves the remembered variables alone" '[[ "$exe_mem" == PREV_VAR && "$exe_src" == "PREV_VAR"$'"'"'\t'"'"'"prev" ]]'
 chk "op.exe, one account: no second inject after a failed sign-in" '[[ $(grep -c "^inject " "$FAKE_OP_LOG") -eq 1 ]]'
+# The app is unreachable: the inject's own retries (1 try + 3 retries) already showed it,
+# so the check and the sign-in that follow get one attempt each. Without that they would
+# retry again and the failure would take about three more waits. 4 + 1 + 1 + 1 = 7 calls.
+rm -f "$T/winbin/flaky-count"
+( OP_BIN="$T/winbin/op.exe" FAKE_OP_FLAKY=999 _OP_RETRY_DELAY=0 _OP_PIPE_DEAD_AT=""
+  export FAKE_OP_FLAKY _OP_RETRY_DELAY
+  op-env load >/dev/null 2>&1; echo "$?" > "$T/exe-result" )
+chk "op.exe, one account: an unreachable app fails the load" '[[ "$(cat "$T/exe-result")" != 0 ]]'
+chk "op.exe, one account: an unreachable app is not retried a second time" '[[ "$(cat "$T/winbin/flaky-count")" == 7 ]]'
+chk "op.exe, one account: no temp file is left behind" '! ls "${TMPDIR:-/tmp}"/op-env-inject.* >/dev/null 2>&1'
 op-env clear >/dev/null; rm -f "$T/winbin/flaky-count"; clean_sets
 
 # ── add / list / rm with an account ────────────────────────────────────────────

@@ -327,9 +327,12 @@ _op_env_load() {
   # session once and, if it is signed out, signs in and injects again (see _op_lazy).
   # A single account cannot leave a half-resolved load behind. With several accounts,
   # every account is established before anything is exported.
-  local _op_acct _op_lazy=0
+  local _op_acct _op_lazy=0 _op_injerr=/dev/null
   if [[ "$OP_BIN" == *op.exe && $(printf '%s\n' "$_op_accts" | awk 'NF' | wc -l) -le 1 ]]; then
     _op_lazy=1
+    # The inject runs inside $(...), so its stderr goes to a file where the loader can
+    # read why it failed. No temp file just means a slower failure, never a failed load.
+    _op_injerr=$(mktemp "${TMPDIR:-/tmp}/op-env-inject.XXXXXX" 2>/dev/null) || _op_injerr=/dev/null
   fi
   if [[ $_op_lazy -eq 0 ]]; then
     while IFS= read -r _op_acct; do
@@ -431,19 +434,26 @@ _op_env_load() {
     # fallback, which re-reads it and reports the broken reference by name. (The
     # other accounts are unaffected — their batches still run.)
     local _op_batch_failed=0 _op_empty=0 _op_inject_failed=0
-    _op_resolved=$(_op_call --stdin "$_op_template" inject --account "$_op_acct" 2>/dev/null) || _op_inject_failed=1
+    _op_resolved=$(_op_call --stdin "$_op_template" inject --account "$_op_acct" 2>"$_op_injerr") || _op_inject_failed=1
     # Only a signed-out session is worth a sign-in and a second inject. A bad reference
     # fails the same way, and goes straight to the per-secret fallback below.
-    if [[ $_op_inject_failed -eq 1 && $_op_lazy -eq 1 ]] \
-       && ! _op_call whoami --account "$_op_acct" >/dev/null 2>&1; then
-      if ! op-signin "$_op_acct"; then
-        # The sign-in this skipped up front failed, so put back what was remembered.
-        _OP_LOADED_VARS="$_op_prev_vars"
-        _OP_LOADED_SRC="$_op_prev_src"
-        return 1
+    if [[ $_op_inject_failed -eq 1 && $_op_lazy -eq 1 ]]; then
+      # An inject that still cannot connect after its own retries means the app is
+      # unreachable, so the calls below get one attempt each instead of retrying again.
+      if grep -q 'cannot connect to 1Password app' "$_op_injerr" 2>/dev/null; then
+        _OP_PIPE_DEAD_AT=$SECONDS
       fi
-      _op_inject_failed=0
-      _op_resolved=$(_op_call --stdin "$_op_template" inject --account "$_op_acct" 2>/dev/null) || _op_inject_failed=1
+      if ! _op_call whoami --account "$_op_acct" >/dev/null 2>&1; then
+        if ! op-signin "$_op_acct"; then
+          # The sign-in this skipped up front failed, so put back what was remembered.
+          _OP_LOADED_VARS="$_op_prev_vars"
+          _OP_LOADED_SRC="$_op_prev_src"
+          [[ "$_op_injerr" == /dev/null ]] || rm -f "$_op_injerr"
+          return 1
+        fi
+        _op_inject_failed=0
+        _op_resolved=$(_op_call --stdin "$_op_template" inject --account "$_op_acct" 2>/dev/null) || _op_inject_failed=1
+      fi
     fi
     if [[ $_op_inject_failed -eq 1 ]]; then
       _op_batch_failed=1
@@ -507,6 +517,7 @@ _op_env_load() {
     fi
   done <<< "$_op_accts"
   unset -f _op_pf_flush
+  [[ "$_op_injerr" == /dev/null ]] || rm -f "$_op_injerr"
 
   local _op_hook
   for _op_hook in "${_OP_AFTER_LOAD_HOOKS[@]}"; do
