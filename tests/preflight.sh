@@ -84,6 +84,35 @@ _op_env_entries() { :; }
 OP_BIN=/usr/bin/op; signed_in=""
 chk "no secrets configured: no prompt"       '! _pf_op_may_prompt'
 
+# ── the live strip: every box up front ────────────────────────────────────────
+# _op_env_entries is still the empty stub from above.
+unset GITEA_TOKEN _CHECK_AWS _CHECK_SSH _CHECK_GIT_CONFIG
+chk "plan: every section on"          '[ "$(_pf_planned_sections)" = 9 ]'
+_CHECK_AWS=0
+chk "plan: aws off drops its box"     '[ "$(_pf_planned_sections)" = 8 ]'
+_CHECK_SSH=0; _CHECK_GIT_CONFIG=0
+chk "plan: ssh and git off"           '[ "$(_pf_planned_sections)" = 6 ]'
+unset _CHECK_AWS _CHECK_SSH _CHECK_GIT_CONFIG
+GITEA_TOKEN=x
+chk "plan: gitea token set adds one"  '[ "$(_pf_planned_sections)" = 10 ]'
+unset GITEA_TOKEN
+_op_env_entries() { printf 'GITEA_TOKEN\top://v/g/t\n'; }
+chk "plan: gitea token from a set"    '[ "$(_pf_planned_sections)" = 10 ]'
+_op_env_entries() { printf 'GITEA_SERVER_TOKEN\top://v/g/t\n'; }
+chk "plan: other gitea var: no box"   '[ "$(_pf_planned_sections)" = 9 ]'
+_op_env_entries() { :; }
+
+chk "pending cell: empty box"         '[ "$(_pf_cell_pending)" = "□" ]'
+_strip() { _pf_strip "$1" | sed $'s/^\r\033\\[2K//'; }
+_pf_planned=5; _pf_closed=0; _pf_cells=""
+chk "strip: all empty at the start"   '[ "$(_strip "Settings: checking...")" = "  □□□□□  Settings: checking..." ]'
+_pf_closed=2; _pf_cells="■■"
+chk "strip: finished cells fill in"   '[ "$(_strip "SSH: checking...")" = "  ■■□□□  SSH: checking..." ]'
+_pf_closed=5; _pf_cells="■■■■■"
+chk "strip: all filled, no extras"    '[ "$(_strip x)" = "  ■■■■■  x" ]'
+_pf_closed=6; _pf_cells="■■■■■■"
+chk "strip: more sections than planned" '[ "$(_strip x)" = "  ■■■■■■  x" ]'
+
 # ── every issue message is counted ────────────────────────────────────────────
 # A message without ((issues++)) leaves its cell green and, alone, reads as all clear.
 uncounted=$(awk '

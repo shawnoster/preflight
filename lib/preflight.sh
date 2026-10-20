@@ -31,6 +31,37 @@ _pf_cell() {  # issues_before issues_after updates_before updates_after
   fi
 }
 
+# An empty box for a section that has not finished yet, in the sub color (unset = plain).
+_pf_cell_pending() {
+  printf '%s□%s' "${S:-}" "${R:-}"
+}
+
+# The sections this run will open, so the strip can show every box before the first
+# check starts. Mirrors the conditions around each _pf_section call in preflight().
+# Git Credentials only runs when GITEA_TOKEN ends up set, so it counts when the token is
+# already set or an active env set will supply it. A wrong guess only shows one box too
+# many or too few while the checks run; the final strip is built from the sections that ran.
+_pf_planned_sections() {
+  local n=4   # Settings, Secrets, Environment Variables, Installed Tools
+  [[ "${_CHECK_AWS:-1}" == "1" ]] && n=$((n + 1))
+  [[ "${_CHECK_SSH:-1}" == "1" ]] && n=$((n + 1))
+  [[ "${_CHECK_GIT_CONFIG:-1}" == "1" ]] && n=$((n + 1))
+  n=$((n + 2))   # Node.js, Python
+  if [[ -n "${GITEA_TOKEN:-}" ]] ||
+     { declare -f _op_env_entries >/dev/null && _op_env_entries 2>/dev/null | cut -f1 | grep -qx GITEA_TOKEN; }; then
+    n=$((n + 1))
+  fi
+  printf '%s' "$n"
+}
+
+# The live strip: the finished cells, an empty box for every section still to come, then
+# the message. Reads the caller's _pf_cells, _pf_planned and _pf_closed.
+_pf_strip() {  # message
+  local todo=$(( ${_pf_planned:-0} - ${_pf_closed:-0} )) boxes=""
+  while (( todo > 0 )); do boxes+=$(_pf_cell_pending); todo=$((todo - 1)); done
+  printf '\r\033[2K  %s%s  %s%s%s' "${_pf_cells:-}" "$boxes" "${S:-}" "$1" "${R:-}"
+}
+
 # Whether `op-env load` may put a password prompt on the terminal: only native op,
 # and only when an account the active sets use is not signed in. op.exe unlocks
 # through a desktop dialog instead. Accounts are grouped as _op_env_load groups them.
@@ -136,18 +167,21 @@ preflight() {
   # Finished cells, and the counters as they stood when the open section began:
   # a section that raised issues failed, one that raised only updates has one.
   local _pf_cells="" _pf_stage_open=false _pf_stage_i0=0 _pf_stage_u0=0
+  local _pf_closed=0 _pf_planned
+  _pf_planned=$(_pf_planned_sections)
   _pf_stage_close() {
     [[ "$_pf_stage_open" == true ]] || return 0
     _pf_cells+=$(_pf_cell "$_pf_stage_i0" "$issues" "$_pf_stage_u0" "$updates_available")
+    _pf_closed=$((_pf_closed + 1))
     _pf_stage_open=false
   }
 
   printf "\n"
 
-  # _pf_status "message" — redraws the strip with the open section pending (quiet mode)
+  # _pf_status "message" — redraws the strip (quiet mode): finished cells filled in,
+  # every section still to come as an empty box, then the message
   _pf_status() {
-    [[ "$verbose" == false && -t 1 ]] &&
-      printf '\r\033[2K  %s%s·%s  %s%s%s' "$_pf_cells" "$S" "$R" "$S" "$1" "$R"
+    [[ "$verbose" == false && -t 1 ]] && _pf_strip "$1"
   }
   _pf_status_clear() {
     [[ "$verbose" == false && -t 1 ]] && printf '\r\033[2K'
@@ -171,6 +205,7 @@ preflight() {
   # include a placeholder OP_ACCOUNT, so running on them silently would mislead.
 
   _pf_section "Settings"
+  _pf_status "Settings: checking..."
   if [[ "${_PF_CONFIG_STATUS:-ok}" != ok ]]; then
     issue_msgs+=("Settings: ${_PF_CONFIG_ERROR:-config.json was not loaded}")
     _pf_line "❌ Settings: ${_PF_CONFIG_ERROR:-config.json was not loaded}"
@@ -231,6 +266,7 @@ preflight() {
 
   if [[ -n "${GITEA_TOKEN:-}" ]]; then
     _pf_section "Git Credentials"
+    _pf_status "Git: storing credential..."
     if [[ -n "${GITEA_USERNAME:-}" && -n "${GITEA_HOST:-}" ]]; then
       if _pf_write_git_credential "$GITEA_HOST" "$GITEA_USERNAME" "$GITEA_TOKEN"; then
         _pf_line "✅ Gitea credential stored for $GITEA_USERNAME@$GITEA_HOST"
